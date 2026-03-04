@@ -1,35 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Mic, MicOff, X, ChevronDown, ChevronUp, Loader2, Settings } from 'lucide-react'
 
-interface Question {
-  id: string
-  text: string
-  timestamp: number
-  source?: 'gemini' | 'regex'
-}
-
 interface DetectionSettings {
   gemini: boolean
   regex: boolean
-}
-
-declare global {
-  interface Window {
-    electronAPI: {
-      startListening: () => Promise<{ success: boolean; error?: string }>
-      stopListening: () => Promise<{ success: boolean; error?: string }>
-      processMicChunk: (data: Float32Array) => void
-      getQuestions: () => Promise<Question[]>
-      clearQuestions: () => Promise<void>
-      generateResponse: (q: string) => Promise<{ success: boolean; error?: string }>
-      setDetectionSettings: (gemini: boolean, regex: boolean) => Promise<void>
-      onQuestionDetected: (cb: (q: Question) => void) => () => void
-      onResponseChunk: (cb: (chunk: string) => void) => () => void
-      onResponseDone: (cb: () => void) => () => void
-      quitApp: () => void
-      setWindowSize: (w: number, h: number) => void
-    }
-  }
 }
 
 // ── Toggle switch ────────────────────────────────────────────────────────────
@@ -38,14 +12,12 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   return (
     <button
       onClick={() => onChange(!on)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        on ? 'bg-blue-500' : 'bg-white/15'
-      }`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-blue-500' : 'bg-white/15'
+        }`}
     >
       <span
-        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-          on ? 'translate-x-[18px]' : 'translate-x-[3px]'
-        }`}
+        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[18px]' : 'translate-x-[3px]'
+          }`}
       />
     </button>
   )
@@ -57,11 +29,10 @@ function SourceBadge({ source }: { source?: 'gemini' | 'regex' }) {
   if (!source) return null
   return (
     <span
-      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
-        source === 'gemini'
+      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${source === 'gemini'
           ? 'bg-blue-500/15 text-blue-400'
           : 'bg-amber-500/15 text-amber-400'
-      }`}
+        }`}
     >
       {source}
     </span>
@@ -204,21 +175,19 @@ export default function App() {
           )}
           <button
             onClick={() => setSettingsOpen((o) => !o)}
-            className={`p-1.5 rounded-lg transition-colors ${
-              settingsOpen
+            className={`p-1.5 rounded-lg transition-colors ${settingsOpen
                 ? 'bg-white/15 text-white/80'
                 : 'hover:bg-white/10 text-white/30 hover:text-white/60'
-            }`}
+              }`}
           >
             <Settings size={13} />
           </button>
           <button
             onClick={toggleListening}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              listening
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${listening
                 ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
                 : 'bg-white/10 text-white/70 hover:bg-white/15 border border-white/10'
-            }`}
+              }`}
           >
             {listening ? <MicOff size={12} /> : <Mic size={12} />}
             {listening ? 'Stop' : 'Listen'}
@@ -306,11 +275,10 @@ export default function App() {
               <button
                 key={q.id}
                 onClick={() => selectQuestion(q)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${
-                  selectedId === q.id
+                className={`w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${selectedId === q.id
                     ? 'bg-white/15 text-white border border-white/20'
                     : 'bg-white/[0.04] text-white/70 hover:bg-white/10 hover:text-white border border-transparent'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="flex-1">{q.text}</span>

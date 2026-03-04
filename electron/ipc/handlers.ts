@@ -1,11 +1,19 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { GeminiDetector } from '../audio/GeminiDetector'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { searchSimilar } from '../services/rag'
+
+type GetWindowFn = () => BrowserWindow | null
 
 let detector: GeminiDetector | null = null
 let genAI: GoogleGenerativeAI | null = null
 
-export function registerHandlers(getWindow: () => BrowserWindow | null) {
+export function registerHandlers(
+  getOverlayWindow: GetWindowFn,
+  getMainWindow: GetWindowFn,
+  getSupabase?: () => SupabaseClient | null
+) {
   const apiKey = process.env.GEMINI_API_KEY || ''
 
   if (apiKey) {
@@ -23,7 +31,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null) {
 
       detector = new GeminiDetector(apiKey, {
         onQuestion: (q) => {
-          const win = getWindow()
+          const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
         },
         onError: (err) => {
@@ -53,7 +61,6 @@ export function registerHandlers(getWindow: () => BrowserWindow | null) {
 
   ipcMain.handle('process-mic-chunk', (_event, float32Array: Float32Array) => {
     if (!detector?.active) return
-    // Convert Float32 samples to Int16 PCM
     const buf = Buffer.alloc(float32Array.length * 2)
     for (let i = 0; i < float32Array.length; i++) {
       const s = Math.max(-1, Math.min(1, float32Array[i]))
@@ -80,21 +87,39 @@ export function registerHandlers(getWindow: () => BrowserWindow | null) {
     return { success: true }
   })
 
-  // --- AI Response (streaming) ---
+  // --- AI Response (streaming, with optional RAG context) ---
 
-  ipcMain.handle('generate-response', async (_event, question: string) => {
-    const win = getWindow()
+  ipcMain.handle('generate-response', async (_event, question: string, collectionId?: string) => {
+    const win = getOverlayWindow()
     if (!genAI || !win) return { success: false, error: 'AI not available' }
 
     try {
+      // Optionally fetch RAG context
+      let contextBlock = ''
+      if (collectionId && getSupabase) {
+        const supabase = getSupabase()
+        if (supabase) {
+          try {
+            const chunks = await searchSimilar(supabase, question, collectionId)
+            if (chunks.length > 0) {
+              contextBlock = `\n\nRelevant context from uploaded documents:\n${chunks.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}\n\n`
+            }
+          } catch (e) {
+            console.warn('[Handlers] RAG search failed, proceeding without context:', e)
+          }
+        }
+      }
+
+      const prompt = contextBlock
+        ? `You are a helpful assistant. Use the provided context to answer the question, if relevant.${contextBlock}Question: ${question}`
+        : `You are a helpful assistant. Answer the following question clearly and concisely:\n\n${question}`
+
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.0-flash',
         generationConfig: { temperature: 0.7, maxOutputTokens: 1000 },
       })
 
-      const result = await model.generateContentStream(
-        `You are a helpful assistant. Answer the following question clearly and concisely:\n\n${question}`
-      )
+      const result = await model.generateContentStream(prompt)
 
       for await (const chunk of result.stream) {
         const text = chunk.text()
@@ -113,7 +138,7 @@ export function registerHandlers(getWindow: () => BrowserWindow | null) {
   // --- Window size ---
 
   ipcMain.handle('set-window-size', (_event, width: number, height: number) => {
-    const win = getWindow()
+    const win = getOverlayWindow()
     if (win) win.setSize(width, height)
   })
 }

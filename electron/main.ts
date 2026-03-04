@@ -1,14 +1,26 @@
 import 'dotenv/config'
 import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer } from 'electron'
 import * as path from 'path'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
+import { registerAuthHandlers, registerAuthStateListener } from './ipc/auth'
+import { registerDocumentHandlers } from './ipc/documents'
 
 let mainWindow: BrowserWindow | null = null
+let overlayWindow: BrowserWindow | null = null
+let supabase: SupabaseClient | null = null
 
-function createWindow() {
+const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
+const BASE_URL = 'http://localhost:5182'
+
+function devUrl(path: string) {
+  return DEV ? `${BASE_URL}${path}` : `file://${__dirname}/../dist/index.html#${path}`
+}
+
+function createOverlayWindow() {
   const { workAreaSize } = screen.getPrimaryDisplay()
 
-  mainWindow = new BrowserWindow({
+  overlayWindow = new BrowserWindow({
     width: 380,
     height: 520,
     x: workAreaSize.width - 400,
@@ -19,6 +31,7 @@ function createWindow() {
     resizable: true,
     hasShadow: true,
     skipTaskbar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -26,13 +39,11 @@ function createWindow() {
     },
   })
 
-  // Float over full-screen apps on macOS
   if (process.platform === 'darwin') {
-    mainWindow.setAlwaysOnTop(true, 'screen-saver')
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   }
 
-  // Enable system audio loopback capture
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       if (sources && sources.length > 0) {
@@ -43,44 +54,104 @@ function createWindow() {
     }).catch(() => callback({}))
   })
 
-  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
-    mainWindow.loadURL('http://localhost:5182')
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  overlayWindow.loadURL(devUrl('/overlay'))
+
+  overlayWindow.on('closed', () => {
+    overlayWindow = null
+  })
+}
+
+async function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    minWidth: 800,
+    minHeight: 600,
+    frame: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  // Check session to decide landing page
+  let startPath = '/auth'
+  if (supabase) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) startPath = '/documents'
+    } catch { }
   }
+
+  mainWindow.loadURL(devUrl(startPath))
 
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  return mainWindow
+}
+
+function getOverlayWindow() { return overlayWindow }
+function getMainWindow() { return mainWindow }
+
+function toggleOverlay() {
+  if (!overlayWindow) return
+  if (overlayWindow.isVisible()) {
+    overlayWindow.hide()
+  } else {
+    overlayWindow.show()
+    overlayWindow.focus()
+  }
 }
 
 async function init() {
-  app.setName('FlowNote')
+  app.setName('CueMe')
 
   const gotLock = app.requestSingleInstanceLock()
-  if (!gotLock) {
-    app.quit()
-    return
+  if (!gotLock) { app.quit(); return }
+
+  // Initialize Supabase
+  const supabaseUrl = process.env.SUPABASE_URL || 'https://qysgsadrjijofvtzmziw.supabase.co'
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || ''
+
+  if (supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey)
+  } else {
+    console.warn('[Main] SUPABASE_ANON_KEY not set')
   }
 
-  // Register IPC handlers (pass getter for mainWindow)
-  registerHandlers(() => mainWindow)
-
-  // Window close handler
+  // Register all IPC handlers
+  registerHandlers(getOverlayWindow, getMainWindow, () => supabase)
+  registerAuthHandlers(getMainWindow, getOverlayWindow, () => supabase)
+  registerDocumentHandlers(getMainWindow, () => supabase)
   ipcMain.handle('quit-app', () => app.quit())
 
-  app.whenReady().then(() => {
-    createWindow()
+  // Register auth state listener after supabase is ready
+  if (supabase) {
+    registerAuthStateListener(supabase, getMainWindow, getOverlayWindow)
+  }
 
-    // Cmd+B: Toggle visibility
-    globalShortcut.register('CommandOrControl+B', () => {
-      if (!mainWindow) return
-      if (mainWindow.isVisible()) {
-        mainWindow.hide()
-      } else {
-        mainWindow.show()
-        mainWindow.focus()
+  app.whenReady().then(async () => {
+    await createMainWindow()
+    createOverlayWindow()
+
+    // Global shortcut: toggle overlay (only when logged in)
+    globalShortcut.register('CommandOrControl+Shift+C', () => {
+      if (!supabase) {
+        mainWindow?.webContents.send('toast:show', { type: 'error', message: 'Supabase not configured' })
+        return
       }
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          toggleOverlay()
+        } else {
+          mainWindow?.webContents.send('toast:show', { type: 'info', message: 'Please log in first to use the overlay' })
+          mainWindow?.show()
+          mainWindow?.focus()
+        }
+      })
     })
   })
 
@@ -89,7 +160,7 @@ async function init() {
   })
 
   app.on('activate', () => {
-    if (mainWindow === null) createWindow()
+    if (mainWindow === null) createMainWindow()
   })
 
   app.on('will-quit', () => {
