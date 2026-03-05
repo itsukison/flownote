@@ -18,9 +18,9 @@ function getOpenAI(): OpenAI {
 
 // ── Text extraction ──────────────────────────────────────────────────────────
 
-export async function extractText(filePath: string): Promise<string> {
-    const ext = path.extname(filePath).toLowerCase()
-    const buf = fs.readFileSync(filePath)
+export async function extractText(fileName: string, arrayBuffer: ArrayBuffer): Promise<string> {
+    const ext = path.extname(fileName).toLowerCase()
+    const buf = Buffer.from(arrayBuffer)
 
     if (ext === '.pdf') {
         const data = await pdfParse(buf)
@@ -51,22 +51,31 @@ export function chunkText(text: string, chunkSize = 500, overlap = 50): string[]
 
 // ── Embeddings ────────────────────────────────────────────────────────────────
 
-export async function embedChunks(chunks: string[]): Promise<number[][]> {
+export async function embedChunks(chunks: string[]): Promise<{ embeddings: number[][], tokensUsed: number }> {
+    if (chunks.length === 0) return { embeddings: [], tokensUsed: 0 }
     const client = getOpenAI()
     const response = await client.embeddings.create({
         model: 'text-embedding-3-small',
         input: chunks,
     })
-    return response.data.map((d) => d.embedding)
+    const tokensUsed = response.usage?.prompt_tokens || 0
+    return {
+        embeddings: response.data.map((d) => d.embedding),
+        tokensUsed
+    }
 }
 
-export async function embedQuery(query: string): Promise<number[]> {
+export async function embedQuery(query: string): Promise<{ embedding: number[], tokensUsed: number }> {
     const client = getOpenAI()
     const response = await client.embeddings.create({
         model: 'text-embedding-3-small',
         input: [query],
     })
-    return response.data[0].embedding
+    const tokensUsed = response.usage?.prompt_tokens || 0
+    return {
+        embedding: response.data[0].embedding,
+        tokensUsed
+    }
 }
 
 // ── Supabase storage ──────────────────────────────────────────────────────────
@@ -78,8 +87,9 @@ export async function storeDocument(
     fileName: string,
     fullText: string,
     chunks: string[],
-    embeddings: number[][]
-): Promise<string> {
+    embeddings: number[][],
+    embeddingTokens: number
+): Promise<{ id: string, tokensUsed: number }> {
     // Insert document record
     const { data: doc, error: docErr } = await supabase
         .from('documents')
@@ -102,10 +112,12 @@ export async function storeDocument(
         chunk_index: i,
     }))
 
-    const { error: chunkErr } = await supabase.from('document_chunks').insert(chunkRows)
-    if (chunkErr) throw new Error(chunkErr.message)
+    if (chunkRows.length > 0) {
+        const { error: chunkErr } = await supabase.from('document_chunks').insert(chunkRows)
+        if (chunkErr) throw new Error(chunkErr.message)
+    }
 
-    return doc.id
+    return { id: doc.id, tokensUsed: embeddingTokens }
 }
 
 // ── Semantic search ───────────────────────────────────────────────────────────
@@ -116,7 +128,7 @@ export async function searchSimilar(
     collectionId: string,
     topK = 5
 ): Promise<string[]> {
-    const queryEmbedding = await embedQuery(query)
+    const { embedding: queryEmbedding } = await embedQuery(query)
 
     const { data, error } = await supabase.rpc('match_chunks', {
         query_embedding: queryEmbedding,
@@ -137,7 +149,7 @@ export async function searchSimilar(
 export async function incrementUsage(
     supabase: SupabaseClient,
     userId: string,
-    field: 'questions_count' | 'documents_count',
+    field: 'questions_count' | 'documents_count' | 'tokens_used',
     tokensUsed = 0
 ) {
     const today = new Date().toISOString().split('T')[0]

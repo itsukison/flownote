@@ -161,7 +161,10 @@ export default function OverlayApp() {
         return (
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-[#111113]/90 backdrop-blur-xl border border-white/10 text-white select-none">
                 <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-white/[0.03]">
-                    <span className="text-xs font-semibold tracking-widest uppercase text-white/40">FlowNote</span>
+                    <div className="flex items-center gap-1.5">
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-white/50">FlowNote</span>
+                    </div>
                     <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors">
                         <X size={13} />
                     </button>
@@ -188,7 +191,10 @@ export default function OverlayApp() {
             {/* Header */}
             <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-white/[0.03]">
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold tracking-widest uppercase text-white/40">FlowNote</span>
+                    <div className="flex items-center gap-1.5">
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-white/50">FlowNote</span>
+                    </div>
                     {listening && (
                         <span className="flex items-center gap-1 text-[10px] text-red-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />

@@ -8,6 +8,12 @@ export interface DetectedQuestion {
   source: 'gemini' | 'regex'
 }
 
+export interface TokenUsage {
+  promptTokens: number
+  responseTokens: number
+  totalTokens: number
+}
+
 /**
  * Streams microphone audio to Gemini Live API and extracts questions in real-time.
  *
@@ -39,17 +45,20 @@ export class GeminiDetector {
 
   private onQuestion?: (q: DetectedQuestion) => void
   private onError?: (err: any) => void
+  private onTokensUsed?: (usage: TokenUsage) => void
 
   constructor(
     private readonly apiKey: string,
     callbacks?: {
       onQuestion?: (q: DetectedQuestion) => void
       onError?: (err: any) => void
+      onTokensUsed?: (usage: TokenUsage) => void
     }
   ) {
     this.genAI = new GoogleGenAI({ apiKey })
     this.onQuestion = callbacks?.onQuestion
     this.onError = callbacks?.onError
+    this.onTokensUsed = callbacks?.onTokensUsed
   }
 
   async start(): Promise<void> {
@@ -140,6 +149,18 @@ RULES:
 
     if (msg.serverContent?.turnComplete) {
       this.processTurn()
+      
+      // Track token usage from usageMetadata
+      const usageMetadata = msg.serverContent?.usageMetadata
+      if (usageMetadata && this.onTokensUsed) {
+        const promptTokens = usageMetadata.promptTokenCount || 0
+        const responseTokens = usageMetadata.candidatesTokenCount || usageMetadata.responseTokenCount || 0
+        this.onTokensUsed({
+          promptTokens,
+          responseTokens,
+          totalTokens: promptTokens + responseTokens
+        })
+      }
     }
 
     // Model was interrupted — output is stale, but keep inputBuffer (we may still process it)

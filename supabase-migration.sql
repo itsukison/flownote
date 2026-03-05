@@ -89,3 +89,24 @@ create table user_usage (
 alter table user_usage enable row level security;
 create policy "usage_self" on user_usage
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ── Usage increment RPC ───────────────────────────────────────────────────────
+create or replace function increment_usage(
+    p_user_id UUID,
+    p_date DATE,
+    p_field TEXT,
+    p_tokens INT DEFAULT 0
+)
+returns void
+language plpgsql
+security definer
+as $$
+begin
+    insert into user_usage (user_id, date, questions_count, documents_count, tokens_used)
+    values (p_user_id, p_date, 0, 0, 0)
+    on conflict (user_id, date) do update set
+        questions_count = user_usage.questions_count + case when p_field = 'questions_count' then 1 else 0 end,
+        documents_count = user_usage.documents_count + case when p_field = 'documents_count' then 1 else 0 end,
+        tokens_used = user_usage.tokens_used + p_tokens;
+end;
+$$;

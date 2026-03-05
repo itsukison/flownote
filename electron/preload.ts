@@ -60,10 +60,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Documents & RAG ───────────────────────────────────────────────────────
   listCollections: () => ipcRenderer.invoke('doc:list-collections'),
   createCollection: (name: string) => ipcRenderer.invoke('doc:create-collection', name),
+  deleteCollection: (id: string) => ipcRenderer.invoke('doc:delete-collection', id),
+  renameCollection: (id: string, newName: string) => ipcRenderer.invoke('doc:rename-collection', id, newName),
   listDocuments: (collectionId: string) => ipcRenderer.invoke('doc:list-documents', collectionId),
-  uploadDocument: (filePath: string, collectionId: string) =>
-    ipcRenderer.invoke('doc:upload', filePath, collectionId),
+  uploadDocument: (fileName: string, fileBuffer: ArrayBuffer, collectionId: string) =>
+    ipcRenderer.invoke('doc:upload', fileName, fileBuffer, collectionId),
+  uploadTextDocument: (title: string, text: string, collectionId: string) =>
+    ipcRenderer.invoke('doc:upload-text', title, text, collectionId),
   deleteDocument: (id: string) => ipcRenderer.invoke('doc:delete', id),
+  renameDocument: (id: string, newName: string) => ipcRenderer.invoke('doc:rename-document', id, newName),
+  getTextDocument: (id: string) => ipcRenderer.invoke('doc:get-text-document', id),
+  updateTextDocument: (id: string, text: string) => ipcRenderer.invoke('doc:update-text-document', id, text),
   searchDocuments: (query: string, collectionId: string) =>
     ipcRenderer.invoke('doc:search', query, collectionId),
 

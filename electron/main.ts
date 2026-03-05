@@ -32,6 +32,7 @@ function createOverlayWindow() {
     hasShadow: true,
     skipTaskbar: true,
     show: false,
+    icon: path.join(__dirname, '../public/app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -68,6 +69,7 @@ async function createMainWindow() {
     minWidth: 800,
     minHeight: 600,
     frame: true,
+    icon: path.join(__dirname, '../public/app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

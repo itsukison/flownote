@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Mic, Cpu, BarChart2, LogOut, Loader2 } from 'lucide-react'
+import { LogOut, Loader2 } from 'lucide-react'
 
 interface Props {
     user: any
@@ -9,153 +9,114 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
     return (
         <button
             onClick={() => onChange(!on)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-blue-500' : 'bg-white/15'}`}
+            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${on ? 'bg-zinc-600' : 'bg-zinc-800'}`}
         >
-            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
         </button>
-    )
-}
-
-function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: any; label: string }) {
-    return (
-        <button
-            onClick={onClick}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-xl transition-all ${active ? 'bg-white/[0.08] text-white' : 'text-white/40 hover:text-white/60'
-                }`}
-        >
-            <Icon size={13} />
-            {label}
-        </button>
-    )
-}
-
-function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
-    return (
-        <div className="flex items-center justify-between py-4 border-b border-white/[0.04]">
-            <div>
-                <p className="text-sm text-white/80">{label}</p>
-                {description && <p className="text-xs text-white/35 mt-0.5">{description}</p>}
-            </div>
-            <div className="flex-none">{children}</div>
-        </div>
     )
 }
 
 export default function SettingsPage({ user }: Props) {
-    const [tab, setTab] = useState<'account' | 'audio' | 'ai' | 'usage'>('account')
     const [detection, setDetection] = useState({ gemini: true, regex: true })
     const [usage, setUsage] = useState<{ questions_count: number; documents_count: number; tokens_used: number } | null>(null)
-    const [loadingUsage, setLoadingUsage] = useState(false)
+    const [loadingUsage, setLoadingUsage] = useState(true)
 
     useEffect(() => {
-        if (tab === 'usage') {
-            setLoadingUsage(true)
-            window.electronAPI?.getTokenUsage().then((u) => {
-                setUsage(u)
-                setLoadingUsage(false)
-            })
-        }
-    }, [tab])
-
-    const tabs = [
-        { id: 'account' as const, icon: User, label: 'Account' },
-        { id: 'audio' as const, icon: Mic, label: 'Detection' },
-        { id: 'ai' as const, icon: Cpu, label: 'AI' },
-        { id: 'usage' as const, icon: BarChart2, label: 'Usage' },
-    ]
+        setLoadingUsage(true)
+        window.electronAPI?.getTokenUsage().then((u) => {
+            setUsage(u)
+            setLoadingUsage(false)
+        })
+    }, [])
 
     return (
         <div className="max-w-2xl mx-auto px-8 py-8">
-            <h1 className="text-lg font-semibold text-white mb-6">Settings</h1>
+            <h1 className="text-lg font-semibold text-zinc-100 mb-8">Settings</h1>
 
-            {/* Tab bar */}
-            <div className="flex gap-1 bg-white/[0.03] border border-white/[0.06] rounded-2xl p-1.5 mb-8">
-                {tabs.map((t) => (
-                    <TabButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)} icon={t.icon} label={t.label} />
-                ))}
-            </div>
-
-            {/* Account tab */}
-            {tab === 'account' && (
-                <div>
-                    <SettingRow label="Email" description="Your account email address">
-                        <span className="text-xs text-white/40 font-mono">{user?.email}</span>
-                    </SettingRow>
-                    <SettingRow label="Sign out" description="You'll need to sign in again to use FlowNote">
-                        <button
-                            onClick={() => window.electronAPI?.signOut()}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 hover:bg-red-500/15 border border-red-500/20 rounded-xl text-xs text-red-400 transition-all"
-                        >
-                            <LogOut size={12} />
-                            Sign out
-                        </button>
-                    </SettingRow>
+            {/* Account Section */}
+            <section className="space-y-1 mb-10">
+                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">Account</h2>
+                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                    <div>
+                        <p className="text-sm text-zinc-300">Email</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">Your account email address</p>
+                    </div>
+                    <span className="text-xs text-zinc-400 font-mono">{user?.email}</span>
                 </div>
-            )}
+                <button
+    onClick={() => window.electronAPI?.signOut()}
+    // 1. Added text-left to ensure text doesn't center
+    // 2. Kept justify-between so the icon stays on the far right
+    className="w-full flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors text-left"
+>
+    <div>
+        <p className="text-sm text-zinc-300">Sign out</p>
+        <p className="text-xs text-zinc-500 mt-0.5">You'll need to sign in again to use FlowNote</p>
+    </div>
+    <LogOut size={16} className="text-zinc-500" />
+</button>
+            </section>
 
-            {/* Audio / Detection tab */}
-            {tab === 'audio' && (
-                <div>
-                    <p className="text-xs text-white/30 mb-4">These settings sync with the overlay's detection panel.</p>
-                    <SettingRow label="Gemini detection" description="AI understands context and informal phrasing">
-                        <Toggle on={detection.gemini} onChange={(v) => {
+            {/* Detection Section */}
+            <section className="space-y-1 mb-10">
+                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">Detection</h2>
+                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                    <div>
+                        <p className="text-sm text-zinc-300">Gemini detection</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">AI understands context and informal phrasing</p>
+                    </div>
+                    <Toggle 
+                        on={detection.gemini} 
+                        onChange={(v) => {
                             setDetection((d) => ({ ...d, gemini: v }))
                             window.electronAPI?.setDetectionSettings(v, detection.regex)
-                        }} />
-                    </SettingRow>
-                    <SettingRow label="Regex detection" description="Pattern matching for common question phrases in Japanese & English">
-                        <Toggle on={detection.regex} onChange={(v) => {
+                        }} 
+                    />
+                </div>
+                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                    <div>
+                        <p className="text-sm text-zinc-300">Regex detection</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">Pattern matching for Japanese & English</p>
+                    </div>
+                    <Toggle 
+                        on={detection.regex} 
+                        onChange={(v) => {
                             setDetection((d) => ({ ...d, regex: v }))
                             window.electronAPI?.setDetectionSettings(detection.gemini, v)
-                        }} />
-                    </SettingRow>
+                        }} 
+                    />
                 </div>
-            )}
+            </section>
 
-            {/* AI tab */}
-            {tab === 'ai' && (
-                <div>
-                    <SettingRow label="Question detection model" description="Identifies questions from audio transcription">
-                        <span className="text-xs text-white/30 bg-white/[0.06] px-2.5 py-1.5 rounded-lg">Gemini 2.0 Flash</span>
-                    </SettingRow>
-                    <SettingRow label="Answer generation model" description="Generates responses with optional RAG context">
-                        <span className="text-xs text-white/30 bg-white/[0.06] px-2.5 py-1.5 rounded-lg">Gemini 2.0 Flash</span>
-                    </SettingRow>
-                    <SettingRow label="Embedding model" description="Converts documents to vectors for semantic search">
-                        <span className="text-xs text-white/30 bg-white/[0.06] px-2.5 py-1.5 rounded-lg">OpenAI text-embedding-3-small</span>
-                    </SettingRow>
-                    <SettingRow label="Vector database" description="Stores and searches your document embeddings">
-                        <span className="text-xs text-white/30 bg-white/[0.06] px-2.5 py-1.5 rounded-lg">Supabase pgvector</span>
-                    </SettingRow>
+            {/* Usage Section */}
+            <section className="space-y-1">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Usage</h2>
+                    <span className="text-xs text-zinc-600">Today</span>
                 </div>
-            )}
-
-            {/* Usage tab */}
-            {tab === 'usage' && (
-                <div>
-                    {loadingUsage ? (
-                        <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-white/20" /></div>
-                    ) : usage ? (
-                        <>
-                            <p className="text-xs text-white/30 mb-4">Usage for today</p>
-                            <div className="grid grid-cols-3 gap-4">
-                                {[
-                                    { label: 'Questions', value: usage.questions_count.toString() },
-                                    { label: 'Documents', value: usage.documents_count.toString() },
-                                    { label: 'Tokens used', value: usage.tokens_used.toLocaleString() },
-                                ].map(({ label, value }) => (
-                                    <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
-                                        <p className="text-2xl font-semibold text-white">{value}</p>
-                                        <p className="text-xs text-white/35 mt-1">{label}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                        <p className="text-sm text-white/30 text-center py-12">No usage data yet</p>
-                    )}
-                </div>
-            )}
+                {loadingUsage ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 size={20} className="animate-spin text-zinc-600" />
+                    </div>
+                ) : usage ? (
+                    <div className="space-y-1">
+                        <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                            <span className="text-sm text-zinc-400">Questions</span>
+                            <span className="text-sm text-zinc-300">{usage.questions_count}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                            <span className="text-sm text-zinc-400">Documents</span>
+                            <span className="text-sm text-zinc-300">{usage.documents_count}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                            <span className="text-sm text-zinc-400">Tokens used</span>
+                            <span className="text-sm text-zinc-300">{usage.tokens_used.toLocaleString()}</span>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-sm text-zinc-500 text-center py-8">No usage data yet</p>
+                )}
+            </section>
         </div>
     )
 }

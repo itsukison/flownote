@@ -22,8 +22,9 @@ function Sidebar({ user }: { user: any }) {
     return (
         <aside className="w-52 flex-none flex flex-col bg-[#111113] border-r border-white/[0.06]">
             {/* Brand */}
-            <div className="px-5 py-5 border-b border-white/[0.06]">
-                <span className="text-xs font-bold tracking-widest uppercase text-white/50">FlowNote</span>
+            <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-2">
+                <img src="/logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                <span className="text-xs font-semibold text-white/60">FlowNote</span>
             </div>
 
             {/* Nav */}
@@ -48,7 +49,7 @@ function Sidebar({ user }: { user: any }) {
             {/* User */}
             <div className="p-3 border-t border-white/[0.06]">
                 <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.04]">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-[11px] font-semibold text-white flex-none">
+                    <div className="w-7 h-7 rounded-full bg-gray-500 flex items-center justify-center text-[11px] font-semibold text-white flex-none">
                         {user?.email?.[0]?.toUpperCase() ?? '?'}
                     </div>
                     <div className="flex-1 min-w-0">

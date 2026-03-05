@@ -34,9 +34,15 @@ declare global {
             // ── Documents & RAG ───────────────────────────────────────────────────────
             listCollections: () => Promise<Collection[]>
             createCollection: (name: string) => Promise<Collection | null>
+            deleteCollection: (id: string) => Promise<{ success: boolean; error?: string }>
+            renameCollection: (id: string, newName: string) => Promise<{ success: boolean; error?: string }>
             listDocuments: (collectionId: string) => Promise<Doc[]>
-            uploadDocument: (filePath: string, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
+            uploadDocument: (fileName: string, fileBuffer: ArrayBuffer, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
+            uploadTextDocument: (title: string, text: string, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
             deleteDocument: (id: string) => Promise<{ success: boolean; error?: string }>
+            renameDocument: (id: string, newName: string) => Promise<{ success: boolean; error?: string }>
+            getTextDocument: (id: string) => Promise<{ success: boolean; error?: string; text?: string; title?: string }>
+            updateTextDocument: (id: string, text: string) => Promise<{ success: boolean; error?: string }>
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
             // ── Usage ─────────────────────────────────────────────────────────────────
             getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number }>

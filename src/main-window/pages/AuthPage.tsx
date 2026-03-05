@@ -48,8 +48,8 @@ export default function AuthPage({ onAuth }: Props) {
             <div className="w-full max-w-sm px-6">
                 {/* Logo */}
                 <div className="mb-8 text-center">
-                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-white/10 mb-4">
-                        <span className="text-lg font-bold text-white">F</span>
+                    <div className="mb-4 flex justify-center">
+                        <img src="/logo.png" alt="FlowNote" className="w-12 h-12 object-contain" />
                     </div>
                     <h1 className="text-xl font-semibold text-white">FlowNote</h1>
                     <p className="text-sm text-white/40 mt-1">AI-powered meeting assistant</p>

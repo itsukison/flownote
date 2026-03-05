@@ -1,19 +1,49 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { GeminiDetector } from '../audio/GeminiDetector'
+import { GeminiDetector, TokenUsage } from '../audio/GeminiDetector'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { searchSimilar } from '../services/rag'
+import { searchSimilar, incrementUsage } from '../services/rag'
 
 type GetWindowFn = () => BrowserWindow | null
 
 let detector: GeminiDetector | null = null
 let genAI: GoogleGenerativeAI | null = null
+let getSupabaseFn: (() => SupabaseClient | null) | undefined = undefined
+
+async function trackTokenUsage(tokens: number) {
+  if (!getSupabaseFn) return
+  const supabase = getSupabaseFn()
+  if (!supabase) return
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await incrementUsage(supabase, user.id, 'tokens_used', tokens)
+  } catch (err) {
+    console.error('[Handlers] trackTokenUsage error:', err)
+  }
+}
+
+async function trackQuestionCount() {
+  if (!getSupabaseFn) return
+  const supabase = getSupabaseFn()
+  if (!supabase) return
+  
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await incrementUsage(supabase, user.id, 'questions_count', 0)
+  } catch (err) {
+    console.error('[Handlers] trackQuestionCount error:', err)
+  }
+}
 
 export function registerHandlers(
   getOverlayWindow: GetWindowFn,
   getMainWindow: GetWindowFn,
   getSupabase?: () => SupabaseClient | null
 ) {
+  getSupabaseFn = getSupabase
   const apiKey = process.env.GEMINI_API_KEY || ''
 
   if (apiKey) {
@@ -33,9 +63,13 @@ export function registerHandlers(
         onQuestion: (q) => {
           const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
+          trackQuestionCount()
         },
         onError: (err) => {
           console.error('[Handlers] Detector error:', err)
+        },
+        onTokensUsed: (usage: TokenUsage) => {
+          trackTokenUsage(usage.totalTokens)
         },
       })
 
@@ -96,8 +130,8 @@ export function registerHandlers(
     try {
       // Optionally fetch RAG context
       let contextBlock = ''
-      if (collectionId && getSupabase) {
-        const supabase = getSupabase()
+      if (collectionId && getSupabaseFn) {
+        const supabase = getSupabaseFn()
         if (supabase) {
           try {
             const chunks = await searchSimilar(supabase, question, collectionId)
@@ -121,9 +155,21 @@ export function registerHandlers(
 
       const result = await model.generateContentStream(prompt)
 
+      let lastUsageMetadata: any = null
       for await (const chunk of result.stream) {
         const text = chunk.text()
         if (text) win.webContents.send('response-chunk', text)
+        // Capture usageMetadata from each chunk (last chunk will have complete stats)
+        if (chunk.usageMetadata) {
+          lastUsageMetadata = chunk.usageMetadata
+        }
+      }
+
+      // Track token usage from response
+      if (lastUsageMetadata) {
+        const promptTokens = lastUsageMetadata.promptTokenCount || 0
+        const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
+        trackTokenUsage(promptTokens + responseTokens)
       }
 
       win.webContents.send('response-done')
