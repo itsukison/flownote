@@ -27,7 +27,6 @@ declare global {
             getQuestions: () => Promise<Question[]>
             clearQuestions: () => Promise<void>
             generateResponse: (question: string, collectionId?: string) => Promise<{ success: boolean; error?: string }>
-            setDetectionSettings: (gemini: boolean, regex: boolean) => Promise<void>
             onQuestionDetected: (cb: (q: Question) => void) => () => void
             onResponseChunk: (cb: (chunk: string) => void) => () => void
             onResponseDone: (cb: () => void) => () => void
@@ -46,6 +45,26 @@ declare global {
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
             // ── Usage ─────────────────────────────────────────────────────────────────
             getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number }>
+            // ── Prompts ────────────────────────────────────────────────────────────────
+            getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; error?: string }>
+            createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
+            updatePrompt: (id: string, name: string, content: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
+            deletePrompt: (id: string) => Promise<{ success: boolean; error?: string }>
+            selectPrompt: (id: string) => Promise<{ success: boolean; error?: string }>
+            // ── Permissions ──────────────────────────────────────────────────────────
+            checkSystemAudioPermission: () => Promise<'granted' | 'denied' | 'not-determined' | 'unknown'>
+            openSystemAudioSettings: () => Promise<void>
+            // ── Setup ────────────────────────────────────────────────────────────────
+            getSetupCompleted: () => Promise<boolean>
+            setSetupCompleted: () => Promise<void>
+            // ── Auto-update ──────────────────────────────────────────────────────────
+            update: {
+                onAvailable: (cb: (info: { version: string }) => void) => () => void
+                onProgress: (cb: (data: { percent: number; version?: string }) => void) => () => void
+                onReady: (cb: (info: { version: string }) => void) => () => void
+                onError: (cb: (data: { message: string }) => void) => () => void
+                install: () => Promise<void>
+            }
         }
     }
 
@@ -53,7 +72,7 @@ declare global {
         id: string
         text: string
         timestamp: number
-        source?: 'gemini' | 'regex'
+        source?: 'realtime'
     }
 
     interface Collection {
@@ -67,5 +86,16 @@ declare global {
         name: string
         created_at: string
         size_bytes?: number
+    }
+
+    interface Prompt {
+        id: string
+        user_id: string
+        name: string
+        content: string
+        prompt_type: 'base' | 'rag'
+        is_default: boolean
+        created_at: string
+        updated_at: string
     }
 }

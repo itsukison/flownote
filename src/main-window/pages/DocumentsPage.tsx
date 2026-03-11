@@ -15,6 +15,9 @@ import {
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import Folder from '../../components/Folder'
+import { ja } from '@/i18n/ja'
+
+const t = ja
 
 interface Collection {
     id: string
@@ -65,14 +68,14 @@ function ContextMenu({
                 onClick={() => { onRename(); onClose(); }}
                 className="w-full text-left px-3 py-1.5 hover:bg-white/10 transition-colors"
             >
-                Rename
+                {t.common.rename}
             </button>
             <div className="h-[1px] bg-white/5 my-1" />
             <button
                 onClick={() => { onDelete(); onClose(); }}
                 className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-400/10 transition-colors"
             >
-                Delete
+                {t.common.delete}
             </button>
         </div>
     )
@@ -131,7 +134,7 @@ export default function DocumentsPage() {
             setCollections(cols)
         } catch (err: any) {
             console.error(err)
-            toast.error('Failed to load folders')
+            toast.error(t.documents.failedToLoadFolders)
         }
     }
 
@@ -141,7 +144,7 @@ export default function DocumentsPage() {
             setDocuments(docs)
         } catch (err: any) {
             console.error(err)
-            toast.error('Failed to load documents')
+            toast.error(t.documents.failedToLoadDocuments)
         }
     }
 
@@ -156,38 +159,38 @@ export default function DocumentsPage() {
                 startInlineEditing(col.id, 'New Folder')
             }
         } catch (err: any) {
-            toast.error(err.message || 'Failed to create folder')
+            toast.error(err.message || t.documents.failedToCreateFolder)
         }
     }
 
     const handleDeleteFolder = async (id: string, name: string) => {
-        if (!window.confirm(`Are you sure you want to delete the folder "${name}" and all its documents?`)) return
+        if (!window.confirm(t.documents.confirmDeleteFolder.replace('{name}', name))) return
         try {
             const res = await window.electronAPI.deleteCollection(id)
             if (res?.success) {
                 setCollections(prev => prev.filter(c => c.id !== id))
                 if (selectedCol?.id === id) setSelectedCol(null)
-                toast.success('Folder deleted')
+                toast.success(t.documents.folderDeleted)
             } else {
-                toast.error(res?.error || 'Failed to delete folder')
+                toast.error(res?.error || t.documents.failedToDeleteFolder)
             }
         } catch (err: any) {
-            toast.error(err.message || 'Failed to delete folder')
+            toast.error(err.message || t.documents.failedToDeleteFolder)
         }
     }
 
     const handleDeleteDoc = async (id: string, name: string) => {
-        if (!window.confirm(`Are you sure you want to delete the document "${name}"?`)) return
+        if (!window.confirm(t.documents.confirmDeleteDocument.replace('{name}', name))) return
         try {
             const res = await window.electronAPI.deleteDocument(id)
             if (res?.success) {
                 setDocuments(prev => prev.filter(d => d.id !== id))
-                toast.success('Document deleted')
+                toast.success(t.documents.documentDeleted)
             } else {
-                toast.error(res?.error || 'Failed to delete document')
+                toast.error(res?.error || t.documents.failedToDeleteDocument)
             }
         } catch (err) {
-            toast.error('Error deleting document')
+            toast.error(t.documents.failedToDeleteDocument)
         }
     }
 
@@ -201,17 +204,17 @@ export default function DocumentsPage() {
             const files: File[] = Array.from(e.target.files)
             if (!files.length) return
 
-            const t = toast.loading(`Uploading ${files.length} file(s)...`)
+            const toastId = toast.loading(t.documents.uploadingFiles.replace('{count}', String(files.length)))
             try {
                 for (const file of files) {
                     const buf = await file.arrayBuffer()
                     const res = await window.electronAPI.uploadDocument(file.name, buf, selectedCol.id)
                     if (!res?.success) throw new Error(res?.error || `Failed to upload ${file.name}`)
                 }
-                toast.success(`Uploaded ${files.length} file(s)`, { id: t })
+                toast.success(t.documents.uploadedFiles.replace('{count}', String(files.length)), { id: toastId })
                 loadDocuments(selectedCol.id)
             } catch (err: any) {
-                toast.error(err.message || 'Upload error', { id: t })
+                toast.error(err.message || t.documents.uploadError, { id: toastId })
             }
         }
         fileInput.click()
@@ -220,7 +223,7 @@ export default function DocumentsPage() {
     const handleCreateOrUpdateTextDoc = async () => {
         if (!selectedCol) return
         if (!writeTitle.trim() || !writeContent.trim()) {
-            toast.error('Title and content are required')
+            toast.error(t.documents.titleAndContentRequired)
             return
         }
 
@@ -233,8 +236,8 @@ export default function DocumentsPage() {
                     await window.electronAPI.renameDocument(editingDocId, writeTitle)
                 }
                 const res = await window.electronAPI.updateTextDocument(editingDocId, writeContent)
-                if (!res?.success) throw new Error(res?.error || 'Failed to update')
-                toast.success('Saved')
+                if (!res?.success) throw new Error(res?.error || t.documents.errorOccurred)
+                toast.success(t.documents.saved)
             } else {
                 // Create new
                 let finalTitle = writeTitle.trim();
@@ -244,12 +247,12 @@ export default function DocumentsPage() {
                 }
                 const res = await window.electronAPI.uploadTextDocument(finalTitle, writeContent, selectedCol.id)
                 if (!res?.success) throw new Error(res?.error || 'Failed to save text doc')
-                toast.success('Document created')
+                toast.success(t.documents.documentCreated)
             }
             setIsWriteModalOpen(false)
             loadDocuments(selectedCol.id)
         } catch (err: any) {
-            toast.error(err.message || 'An error occurred while saving.')
+            toast.error(err.message || t.documents.errorOccurred)
         } finally {
             setUploadingText(false)
         }
@@ -266,22 +269,22 @@ export default function DocumentsPage() {
         // Only open editable text formats for editing
         const isEditable = /\.(txt|md)$/i.test(doc.name)
         if (!isEditable) {
-            toast('Only .txt and .md files can be edited here.', { icon: 'ℹ️' })
+            toast(t.documents.onlyEditableHere, { icon: 'ℹ️' })
             return
         }
 
-        const t = toast.loading('Opening document...')
+        const toastId = toast.loading(t.documents.openingDocument)
         try {
             const res = await window.electronAPI.getTextDocument(doc.id)
-            if (!res?.success) throw new Error(res?.error || 'Failed to get document text')
+            if (!res?.success) throw new Error(res?.error || t.documents.failedToOpenDocument)
 
             setEditingDocId(doc.id)
             setWriteTitle(res.title || doc.name)
             setWriteContent(res.text || '')
             setIsWriteModalOpen(true)
-            toast.dismiss(t)
+            toast.dismiss(toastId)
         } catch (err: any) {
-            toast.error(err.message || 'Failed opening document', { id: t })
+            toast.error(err.message || t.documents.failedToOpenDocument, { id: toastId })
         }
     }
 
@@ -325,7 +328,7 @@ export default function DocumentsPage() {
                 const res = await window.electronAPI.renameCollection(id, newName)
                 if (!res?.success) throw new Error(res?.error)
             } catch (e) {
-                toast.error('Failed to rename folder')
+                toast.error(t.documents.failedToDeleteFolder)
                 loadCollections() // revert
             }
         } else {
@@ -336,7 +339,7 @@ export default function DocumentsPage() {
                 const res = await window.electronAPI.renameDocument(id, newName)
                 if (!res?.success) throw new Error(res?.error)
             } catch (e) {
-                toast.error('Failed to rename document')
+                toast.error(t.documents.failedToDeleteDocument)
                 if (selectedCol) loadDocuments(selectedCol.id) // revert
             }
         }
@@ -385,7 +388,7 @@ export default function DocumentsPage() {
                             <h1 className="text-xl font-semibold tracking-tight">{selectedCol.name}</h1>
                         </>
                     ) : (
-                        <h1 className="text-xl font-semibold tracking-tight">Documents</h1>
+                        <h1 className="text-xl font-semibold tracking-tight">{t.documents.title}</h1>
                     )}
                 </div>
 
@@ -395,7 +398,7 @@ export default function DocumentsPage() {
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 group-focus-within:text-white/80 transition-colors" />
                         <input
                             type="text"
-                            placeholder="Search..."
+                            placeholder={t.common.search}
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             className="w-48 bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-white/20 focus:bg-white/10 transition-all placeholder-white/30"
@@ -409,14 +412,14 @@ export default function DocumentsPage() {
                                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/10 hover:bg-white/20 rounded-lg transition-colors border border-white/5"
                             >
                                 <Upload className="w-4 h-4" />
-                                Upload files
+                                {t.documents.uploadFiles}
                             </button>
                             <button
                                 onClick={openNewTextModal}
                                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-black hover:bg-gray-200 font-medium rounded-lg transition-colors shadow-sm"
                             >
                                 <Plus className="w-4 h-4" />
-                                New text doc
+                                {t.documents.newTextDoc}
                             </button>
                         </>
                     ) : (
@@ -425,7 +428,7 @@ export default function DocumentsPage() {
                             className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-black hover:bg-gray-200 font-medium rounded-lg transition-colors shadow-sm"
                         >
                             <Plus className="w-4 h-4" />
-                            New Folder
+                            {t.documents.newFolder}
                         </button>
                     )}
                 </div>
@@ -438,14 +441,14 @@ export default function DocumentsPage() {
                         {selectedCol ? (
                             <>
                                 <FileText className="w-12 h-12 mb-4 opacity-50" />
-                                <p>This folder is empty.</p>
-                                <p className="text-sm mt-1">Upload files or create a text document.</p>
+                                <p>{t.documents.folderEmpty}</p>
+                                <p className="text-sm mt-1">{t.documents.uploadFilesOrCreate}</p>
                             </>
                         ) : (
                             <>
                                 <FolderIcon className="w-12 h-12 mb-4 opacity-50 text-[#4cb0d8]" />
-                                <p>No folders yet.</p>
-                                <p className="text-sm mt-1">Create a folder to start organizing documents.</p>
+                                <p>{t.documents.noFoldersYet}</p>
+                                <p className="text-sm mt-1">{t.documents.createFolderToStart}</p>
                             </>
                         )}
                     </div>
@@ -463,7 +466,7 @@ export default function DocumentsPage() {
                                     className="group flex flex-col items-center justify-start w-[120px] gap-2 p-2 cursor-pointer transition-all border-transparent"
                                 >
                                     <div className="p-2 flex items-center justify-center bg-transparent relative rounded-xl transition-all group-hover:bg-white/[0.06] border border-transparent mt-2">
-                                        <Folder size={1.0} color="#FFD659" />
+                                        <Folder size={0.9} color="#FFD659" />
                                     </div>
                                     <div className="text-center px-1 w-full flex flex-col items-center">
                                         {editingId === col.id ? (
@@ -568,21 +571,21 @@ export default function DocumentsPage() {
             {isWriteModalOpen && (
                 <div className="absolute inset-0 z-[100] flex flex-col bg-[#111113]">
                     <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.05] bg-[#151518]">
-                        <h2 className="text-lg font-medium">{editingDocId ? 'Edit Document' : 'Write Document'}</h2>
+                        <h2 className="text-lg font-medium">{editingDocId ? t.documents.editDocument : t.documents.writeDocument}</h2>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setIsWriteModalOpen(false)}
                                 className="px-4 py-2 text-sm text-white/60 hover:text-white/90 transition-colors"
                                 disabled={uploadingText}
                             >
-                                Cancel
+                                {t.common.cancel}
                             </button>
                             <button
                                 onClick={handleCreateOrUpdateTextDoc}
                                 disabled={uploadingText || !writeTitle.trim() || !writeContent.trim()}
                                 className="flex items-center gap-2 px-4 py-2 text-sm bg-white text-black font-medium hover:bg-gray-200 rounded-lg transition-colors border border-transparent disabled:opacity-50"
                             >
-                                {uploadingText ? <Loader2 size={14} className="animate-spin text-black" /> : (editingDocId ? 'Save Edits' : 'Save Document')}
+                                {uploadingText ? <Loader2 size={14} className="animate-spin text-black" /> : (editingDocId ? t.documents.saveEdits : t.documents.saveDocument)}
                             </button>
                         </div>
                     </div>
@@ -591,14 +594,14 @@ export default function DocumentsPage() {
                             autoFocus
                             value={writeTitle}
                             onChange={e => setWriteTitle(e.target.value)}
-                            placeholder="Document Title (e.g., meeting-notes.md)"
+                            placeholder={t.documents.writeDocument}
                             className="text-2xl font-semibold bg-transparent border-none outline-none text-white placeholder-white/30 px-2"
                         />
                         <div className="h-[1px] bg-white/10 shrink-0" />
                         <textarea
                             value={writeContent}
                             onChange={e => setWriteContent(e.target.value)}
-                            placeholder="Start typing..."
+                            placeholder={t.documents.titleAndContentRequired}
                             className="flex-1 w-full bg-transparent border-none outline-none text-white/90 placeholder-white/20 resize-none leading-relaxed p-2 font-mono text-sm"
                             style={{ minHeight: '300px' }}
                         />

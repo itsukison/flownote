@@ -2,8 +2,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import OpenAI from 'openai'
 import { SupabaseClient } from '@supabase/supabase-js'
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
 
 let openai: OpenAI | null = null
 
@@ -23,8 +21,11 @@ export async function extractText(fileName: string, arrayBuffer: ArrayBuffer): P
     const buf = Buffer.from(arrayBuffer)
 
     if (ext === '.pdf') {
-        const data = await pdfParse(buf)
-        return data.text
+        const { getDocumentProxy, extractText: extractPdfText } = await import('unpdf')
+        const pdf = await getDocumentProxy(new Uint8Array(arrayBuffer))
+        const { text } = await extractPdfText(pdf, { mergePages: true })
+        if (!text.trim()) throw new Error('PDF appears to be image-only (no extractable text)')
+        return text
     }
 
     if (ext === '.docx') {
@@ -108,7 +109,7 @@ export async function storeDocument(
     const chunkRows = chunks.map((content, i) => ({
         document_id: doc.id,
         content,
-        embedding: JSON.stringify(embeddings[i]), // Supabase expects JSON for vector insert
+        embedding: embeddings[i],  // raw number[] — pgvector accepts this directly
         chunk_index: i,
     }))
 

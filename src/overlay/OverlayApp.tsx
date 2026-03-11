@@ -1,25 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, X, ChevronDown, ChevronUp, Loader2, Settings, LogIn } from 'lucide-react'
+import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft } from 'lucide-react'
+import { ja } from '@/i18n/ja'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
-interface DetectionSettings { gemini: boolean; regex: boolean }
+const t = ja
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
     return (
         <button
             onClick={() => onChange(!on)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-blue-500' : 'bg-white/15'}`}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${on ? 'bg-zinc-600' : 'bg-zinc-800'}`}
         >
             <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
         </button>
-    )
-}
-
-function SourceBadge({ source }: { source?: 'gemini' | 'regex' }) {
-    if (!source) return null
-    return (
-        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${source === 'gemini' ? 'bg-blue-500/15 text-blue-400' : 'bg-amber-500/15 text-amber-400'}`}>
-            {source}
-        </span>
     )
 }
 
@@ -31,11 +30,11 @@ export default function OverlayApp() {
     const [response, setResponse] = useState('')
     const [generating, setGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [panelOpen, setPanelOpen] = useState(true)
     const [settingsOpen, setSettingsOpen] = useState(false)
-    const [detection, setDetection] = useState<DetectionSettings>({ gemini: true, regex: true })
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
+    const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
+    const [systemAudioStatus, setSystemAudioStatus] = useState<string | null>(null)
 
     const audioCtxRef = useRef<AudioContext | null>(null)
     const processorRef = useRef<ScriptProcessorNode | null>(null)
@@ -65,6 +64,12 @@ export default function OverlayApp() {
         })
     }, [session])
 
+    // Check system audio permission when settings drawer opens
+    useEffect(() => {
+        if (!settingsOpen) return
+        window.electronAPI?.checkSystemAudioPermission().then((status) => setSystemAudioStatus(status))
+    }, [settingsOpen])
+
     // Event listeners
     useEffect(() => {
         if (!window.electronAPI) return
@@ -78,10 +83,6 @@ export default function OverlayApp() {
         const offDone = window.electronAPI.onResponseDone(() => setGenerating(false))
         return () => { offQ(); offChunk(); offDone() }
     }, [])
-
-    useEffect(() => {
-        window.electronAPI?.setDetectionSettings(detection.gemini, detection.regex)
-    }, [detection])
 
     const stopMicCapture = useCallback(() => {
         processorRef.current?.disconnect()
@@ -97,6 +98,7 @@ export default function OverlayApp() {
         streamRef.current = stream
         const ctx = new AudioContext({ sampleRate: 16000 })
         audioCtxRef.current = ctx
+        console.log('[MicCapture] AudioContext actual sampleRate:', ctx.sampleRate)
         const source = ctx.createMediaStreamSource(stream)
         const processor = ctx.createScriptProcessor(4096, 1, 1)
         processorRef.current = processor
@@ -112,13 +114,12 @@ export default function OverlayApp() {
         if (!listening) {
             try {
                 const res = await window.electronAPI.startListening()
-                if (!res.success) { setError(res.error || 'Failed to start'); return }
+                if (!res.success) { setError(res.error || t.common.loading); return }
                 await startMicCapture()
                 setListening(true)
-                setPanelOpen(true)
                 setSettingsOpen(false)
             } catch (e: any) {
-                setError(e.message || 'Failed to start listening')
+                setError(e.message || t.common.loading)
             }
         } else {
             stopMicCapture()
@@ -132,8 +133,13 @@ export default function OverlayApp() {
         setSelectedId(q.id)
         setResponse('')
         responseRef.current = ''
+        setViewMode('detail')
         setGenerating(true)
         await window.electronAPI.generateResponse(q.text, selectedCollectionId ?? undefined)
+    }
+
+    const goBack = () => {
+        setViewMode('list')
     }
 
     const clearAll = () => {
@@ -145,13 +151,12 @@ export default function OverlayApp() {
     }
 
     const selectedQuestion = questions.find((q) => q.id === selectedId)
-    const bothOff = !detection.gemini && !detection.regex
 
     // Loading state
     if (session === undefined) {
         return (
-            <div className="flex items-center justify-center h-full w-full rounded-2xl bg-[#111113]/90 backdrop-blur-xl border border-white/10">
-                <Loader2 size={20} className="animate-spin text-white/30" />
+            <div className="flex items-center justify-center h-full w-full rounded-2xl bg-zinc-950/90 backdrop-blur-xl border border-zinc-800">
+                <Loader2 size={20} className="animate-spin text-zinc-400" />
             </div>
         )
     }
@@ -159,27 +164,27 @@ export default function OverlayApp() {
     // Not logged in
     if (!session) {
         return (
-            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-[#111113]/90 backdrop-blur-xl border border-white/10 text-white select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-white/[0.03]">
+            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
+                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                     <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
-                        <span className="text-xs font-semibold text-white/50">FlowNote</span>
+                        <img src="logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors">
+                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <LogIn size={28} strokeWidth={1.5} className="text-white/20" />
+                    <LogIn size={28} strokeWidth={1.5} className="text-zinc-800" />
                     <div>
-                        <p className="text-sm text-white/60 font-medium">Not signed in</p>
-                        <p className="text-xs text-white/30 mt-1">Log in from the main window to use FlowNote</p>
+                        <p className="text-sm text-zinc-400 font-medium">{t.overlay.notSignedIn}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{t.overlay.loginFromMain}</p>
                     </div>
                     <button
                         onClick={() => window.electronAPI.showMainWindow()}
-                        className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl text-xs text-white/70 transition-all"
+                        className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs text-zinc-500 transition-all"
                     >
-                        Open main window
+                        {t.overlay.openMainWindow}
                     </button>
                 </div>
             </div>
@@ -187,44 +192,47 @@ export default function OverlayApp() {
     }
 
     return (
-        <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-[#111113]/90 backdrop-blur-xl border border-white/10 text-white select-none">
+        <div className="dark flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-200 select-none">
             {/* Header */}
-            <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-white/[0.03]">
+            <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
-                        <span className="text-xs font-semibold text-white/50">FlowNote</span>
-                    </div>
-                    {listening && (
+                    {viewMode === 'detail' ? (
+                        <button onClick={goBack} className="no-drag p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors">
+                            <ArrowLeft size={13} />
+                        </button>
+                    ) : (
+                        <div className="flex items-center gap-1.5">
+                            <img src="logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                            <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
+                        </div>
+                    )}
+                    {listening && viewMode === 'list' && (
                         <span className="flex items-center gap-1 text-[10px] text-red-400">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                            Live
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                            {t.overlay.live}
                         </span>
                     )}
                 </div>
                 <div className="no-drag flex items-center gap-1.5">
-                    {questions.length > 0 && (
-                        <button onClick={() => setPanelOpen((o) => !o)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors">
-                            {panelOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {viewMode === 'list' && (
+                        <button
+                            onClick={() => setSettingsOpen((o) => !o)}
+                            className={`p-1.5 rounded-lg transition-colors ${settingsOpen ? 'bg-zinc-800 text-zinc-300' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400'}`}
+                        >
+                            <Settings size={13} />
                         </button>
                     )}
                     <button
-                        onClick={() => setSettingsOpen((o) => !o)}
-                        className={`p-1.5 rounded-lg transition-colors ${settingsOpen ? 'bg-white/15 text-white/80' : 'hover:bg-white/10 text-white/30 hover:text-white/60'}`}
-                    >
-                        <Settings size={13} />
-                    </button>
-                    <button
                         onClick={toggleListening}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${listening
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                            : 'bg-white/10 text-white/70 hover:bg-white/15 border border-white/10'
+                            ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                            : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800 border border-zinc-800'
                             }`}
                     >
                         {listening ? <MicOff size={12} /> : <Mic size={12} />}
-                        {listening ? 'Stop' : 'Listen'}
+                        {listening ? t.overlay.stop : t.overlay.listen}
                     </button>
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors">
+                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
@@ -232,93 +240,100 @@ export default function OverlayApp() {
 
             {/* Settings panel */}
             {settingsOpen && (
-                <div className="border-b border-white/[0.06] px-4 py-3 bg-white/[0.02] space-y-3">
-                    <p className="text-[10px] uppercase tracking-widest text-white/25 font-medium">Detection layers</p>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <span className="text-xs text-white/70">Gemini</span>
-                            <p className="text-[10px] text-white/30 mt-0.5">AI understands context &amp; informal phrasing</p>
-                        </div>
-                        <Toggle on={detection.gemini} onChange={(v) => setDetection((d) => ({ ...d, gemini: v }))} />
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <span className="text-xs text-white/70">Regex</span>
-                            <p className="text-[10px] text-white/30 mt-0.5">Pattern matching for Japanese &amp; English</p>
-                        </div>
-                        <Toggle on={detection.regex} onChange={(v) => setDetection((d) => ({ ...d, regex: v }))} />
-                    </div>
+                <div className="border-b border-zinc-800 px-4 py-3 bg-zinc-900/5 space-y-4">
                     {collections.length > 0 && (
-                        <div>
-                            <p className="text-[10px] uppercase tracking-widest text-white/25 font-medium mb-1.5">RAG Collection</p>
-                            <select
-                                value={selectedCollectionId ?? ''}
-                                onChange={(e) => setSelectedCollectionId(e.target.value || null)}
-                                className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 outline-none"
+                        <div className="space-y-2">
+                            <p className="text-[10px] tracking-tight text-zinc-500 font-medium">{t.overlay.context}</p>
+                            <Select
+                                value={selectedCollectionId ?? "none"}
+                                onValueChange={(val) => setSelectedCollectionId(val === "none" ? null : val)}
                             >
-                                <option value="">No collection (no RAG)</option>
-                                {collections.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
+                                <SelectTrigger className="w-full bg-zinc-900/50 border-zinc-800 text-zinc-500 h-8 text-xs focus:ring-0 focus:ring-offset-0 hover:bg-zinc-900/80 transition-colors">
+                                    <SelectValue placeholder={t.overlay.selectCollection} />
+                                </SelectTrigger>
+                                <SelectContent className="bg-zinc-950 border-zinc-800 text-zinc-400">
+                                    <SelectItem value="none" className="text-xs focus:bg-zinc-800 focus:text-zinc-100 transition-colors">{t.overlay.noProjectContext}</SelectItem>
+                                    {collections.map((c) => (
+                                        <SelectItem key={c.id} value={c.id} className="text-xs focus:bg-zinc-800 focus:text-zinc-100 transition-colors">{c.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     )}
-                    {bothOff && (
-                        <p className="text-[10px] text-amber-400/80 bg-amber-500/10 rounded-lg px-2.5 py-1.5">Both layers are off — no questions will be detected.</p>
+
+                    {!collections.length && (
+                        <p className="text-[10px] text-zinc-500 py-1 italic">{t.overlay.noProjectContext}</p>
+                    )}
+
+                    {systemAudioStatus && systemAudioStatus !== 'granted' && (
+                        <div className="flex items-center justify-between pt-1">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+                                <span className="text-[10px] text-zinc-500">{t.overlay.systemAudioOff}</span>
+                            </div>
+                            <button
+                                onClick={() => window.electronAPI?.showMainWindow()}
+                                className="text-[10px] text-zinc-500 hover:text-zinc-400 transition-colors"
+                            >
+                                {t.overlay.fixPermission}
+                            </button>
+                        </div>
                     )}
                 </div>
             )}
 
             {/* Error */}
-            {error && <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-xs">{error}</div>}
+            {error && <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-600 text-xs">{error}</div>}
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto min-h-0">
-                {!listening && questions.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 text-white/20 py-12">
-                        <Mic size={32} strokeWidth={1} />
-                        <p className="text-sm text-center px-8">Press <span className="text-white/40 font-medium">Listen</span> to start detecting questions</p>
-                    </div>
-                )}
-                {listening && questions.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 text-white/20 py-12">
-                        <Loader2 size={24} strokeWidth={1.5} className="animate-spin text-red-400/60" />
-                        <p className="text-xs">Listening for questions…</p>
-                    </div>
-                )}
-                {questions.length > 0 && panelOpen && (
-                    <div className="p-3 space-y-1.5">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-medium">Questions ({questions.length})</span>
-                            <button onClick={clearAll} className="text-[10px] text-white/30 hover:text-white/60 transition-colors">Clear</button>
+                {viewMode === 'detail' ? (
+                    <div className="p-4 space-y-3">
+                        <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
+                            {questions.find((q) => q.id === selectedId)?.text}
+                        </p>
+                        <div className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                            {response || (generating
+                                ? <span className="text-zinc-500 italic">{t.overlay.thinking}</span>
+                                : null)}
                         </div>
-                        {questions.map((q) => (
-                            <button
-                                key={q.id}
-                                onClick={() => selectQuestion(q)}
-                                className={`w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${selectedId === q.id
-                                    ? 'bg-white/15 text-white border border-white/20'
-                                    : 'bg-white/[0.04] text-white/70 hover:bg-white/10 hover:text-white border border-transparent'
-                                    }`}
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <span className="flex-1">{q.text}</span>
-                                    <SourceBadge source={q.source} />
+                        {generating && <Loader2 size={12} className="animate-spin text-zinc-500 mt-1" />}
+                    </div>
+                ) : (
+                    <>
+                        {!listening && questions.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
+                                <Mic size={32} strokeWidth={1} />
+                                <p className="text-sm text-center px-8 text-zinc-400">{t.overlay.pressListenToBegin}</p>
+                            </div>
+                        )}
+                        {listening && questions.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
+                                <Loader2 size={24} strokeWidth={1.5} className="animate-spin text-zinc-500" />
+                                <p className="text-xs text-zinc-400">{t.overlay.waitingForQuestions}</p>
+                            </div>
+                        )}
+                        {questions.length > 0 && (
+                            <div className="p-3 space-y-2">
+                                <div className="flex items-center justify-between mb-1 px-1">
+                                    <span className="text-[10px] tracking-tight text-zinc-500 font-medium">{t.overlay.captured} ({questions.length})</span>
+                                    <button onClick={clearAll} className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors">{t.overlay.clear}</button>
                                 </div>
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {selectedQuestion && (
-                    <div className="border-t border-white/[0.06] p-3 space-y-2">
-                        <div className="text-[10px] uppercase tracking-widest text-white/30 font-medium flex items-center gap-2">
-                            Answer
-                            {generating && <Loader2 size={10} className="animate-spin text-blue-400" />}
-                        </div>
-                        <div className="text-xs text-white/80 leading-relaxed whitespace-pre-wrap">
-                            {response || (generating ? <span className="text-white/20">Generating…</span> : null)}
-                        </div>
-                    </div>
+                                {questions.map((q) => (
+                                    <button
+                                        key={q.id}
+                                        onClick={() => selectQuestion(q)}
+                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${selectedId === q.id
+                                            ? 'bg-zinc-900 text-zinc-100 border border-zinc-800'
+                                            : 'bg-zinc-900/30 text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200 border border-transparent'
+                                            }`}
+                                    >
+                                        <span>{q.text}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>

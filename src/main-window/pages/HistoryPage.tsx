@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import { MessageSquare, Loader2, Clock } from 'lucide-react'
+import { ja } from '@/i18n/ja'
+
+const t = ja
 
 interface Question {
     id: string
@@ -38,13 +41,13 @@ export default function HistoryPage() {
     return (
         <div className="max-w-2xl mx-auto px-8 py-8">
             <div className="flex items-center justify-between mb-6">
-                <h1 className="text-lg font-semibold text-white">History</h1>
+                <h1 className="text-lg font-semibold text-white">{t.history.title}</h1>
                 {questions.length > 0 && (
                     <button
                         onClick={() => { window.electronAPI?.clearQuestions(); setQuestions([]) }}
                         className="text-xs text-white/30 hover:text-white/60 transition-colors"
                     >
-                        Clear all
+                        {t.history.clearAll}
                     </button>
                 )}
             </div>
@@ -52,8 +55,8 @@ export default function HistoryPage() {
             {questions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-4 text-white/20 py-20">
                     <MessageSquare size={36} strokeWidth={1} />
-                    <p className="text-sm">No questions detected yet</p>
-                    <p className="text-xs text-white/15">Start listening in the overlay to capture questions</p>
+                    <p className="text-sm">{t.history.noQuestionsYet}</p>
+                    <p className="text-xs text-white/15">{t.history.startListeningHint}</p>
                 </div>
             ) : (
                 <div className="space-y-2">

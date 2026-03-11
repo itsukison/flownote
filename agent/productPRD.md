@@ -1,11 +1,11 @@
-# CueMe — Product Requirements Document
+# Flownote — Product Requirements Document
 > **Version**: 1.1 | **Updated**: March 2026 | **Status**: Draft
 
 ---
 
 ## 1. Executive Summary
 
-CueMe is a desktop AI interview assistant that provides real-time assistance during interviews by:
+Flownote is a desktop AI interview assistant that provides real-time assistance during interviews by:
 
 1. **Listening** — Continuously capturing microphone AND system audio to detect questions
 2. **Displaying** — Showing detected questions in a floating overlay UI
@@ -59,11 +59,11 @@ Following **promptOS** design principles:
 ### 3.4 AI/ML
 | Function | Provider | Model |
 |---|---|---|
-| Audio Transcription + Question Detection | Google Gemini | **gemini-2.5-flash-native-audio-preview-12-2025** (Live API) |
+| Audio Transcription + Question Detection | OpenAI | **OpenAI Realtime (text-only)** |
 | Response Generation | Google Gemini | gemini-2.5-flash |
 | Text Embeddings | OpenAI | text-embedding-3-large (1536d) |
 
-> ⚠️ **Model Update (v1.1)**: The original PRD referenced `gemini-2.0-flash` for Live API usage. The correct and current model for real-time audio transcription is `gemini-2.5-flash-native-audio-preview-12-2025`. See [`ai-agent-design.md`](./ai-agent-design.md) for full details on model selection rationale and session management requirements.
+> ⚠️ **Note**: Real-time question detection uses OpenAI Realtime with text-only output to avoid transcription overhead.
 
 ### 3.5 Native Dependencies
 - **System Audio (macOS)**: Custom native module `audiotee`, built via `npm run build:native`
@@ -91,16 +91,16 @@ Continuously captures audio from BOTH microphone AND system audio to detect ques
 1. User clicks "Start Listening" in overlay
 2. App requests microphone permission (first launch)
 3. App requests screen recording permission for system audio (first launch)
-4. Audio streams (mic + system) to Gemini Live API
-5. Gemini analyzes transcription for question patterns
+4. Audio streams (mic + system) to OpenAI Realtime (text-only output)
+5. OpenAI Realtime extracts questions from audio
 6. Detected questions appear in overlay UI
 
 **Edge Cases**:
 - No mic → show error with setup instructions
 - Permission denied → show permission guide
-- Network disconnection → auto-reconnect with retry; on Live API `GoAway` message, trigger session resumption
+- Network disconnection → auto-reconnect with retry
 - System audio unavailable → fallback to mic-only mode
-- **Session expiry (10-min connection limit)** → transparent session resumption using session handle (see `ai-agent-design.md`)
+- **Session expiry (60-min connection limit)** → reconnect sessions automatically
 
 ### 5.2 Question Display (Core)
 Floating overlay window shows detected questions with one-click response generation.
@@ -179,8 +179,8 @@ See [`architecture.md`](./architecture.md) for full IPC channel reference (audio
 
 ## 10. Environment Variables
 ```bash
-GEMINI_API_KEY=       # Gemini Live API + response generation
-OPENAI_API_KEY=       # Text embeddings (text-embedding-3-large)
+GEMINI_API_KEY=       # Response generation
+OPENAI_API_KEY=       # Realtime detection + embeddings (text-embedding-3-large)
 SUPABASE_URL=         # Supabase project URL
 SUPABASE_ANON_KEY=    # Supabase anonymous key
 
@@ -211,7 +211,7 @@ npm run app:build:linux
 
 ## 12. Milestones
 - **Phase 1**: Foundation (Electron + React, windows, IPC, Supabase)
-- **Phase 2**: Audio (mic capture, system audio, dual merge, Gemini Live, question detection)
+- **Phase 2**: Audio (mic capture, system audio, dual merge, OpenAI Realtime, question detection)
 - **Phase 3**: Response Generation (Gemini API, streaming UI, clipboard)
 - **Phase 4**: RAG (document upload, extraction, embedding, vector search, context-aware responses)
 - **Phase 5**: Polish (settings persistence, themes, error handling, shortcuts, distribution)

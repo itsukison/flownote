@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
-import { FileText, History, Settings, LogOut, ChevronRight } from 'lucide-react'
+import { FileText, History, Settings, LogOut, MessageSquare } from 'lucide-react'
+import { ja } from '@/i18n/ja'
+
+const t = ja
 import AuthPage from './pages/AuthPage'
 import DocumentsPage from './pages/DocumentsPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
+import PromptsPage from './pages/PromptsPage'
+import SetupPage from './pages/SetupPage'
+import { UpdateToast } from '@/components/UpdateToast'
 
 function Sidebar({ user }: { user: any }) {
     const navigate = useNavigate()
     const navItems = [
-        { to: '/documents', icon: FileText, label: 'Documents' },
-        { to: '/history', icon: History, label: 'History' },
-        { to: '/settings', icon: Settings, label: 'Settings' },
+        { to: '/documents', icon: FileText, label: t.sidebar.documents },
+        { to: '/prompts', icon: MessageSquare, label: t.sidebar.prompts },
+        { to: '/history', icon: History, label: t.sidebar.history },
+        { to: '/settings', icon: Settings, label: t.sidebar.settings },
     ]
 
     const handleSignOut = async () => {
@@ -22,9 +29,9 @@ function Sidebar({ user }: { user: any }) {
     return (
         <aside className="w-52 flex-none flex flex-col bg-[#111113] border-r border-white/[0.06]">
             {/* Brand */}
-            <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-2">
-                <img src="/logo.png" alt="Logo" className="w-5 h-5 object-contain" />
-                <span className="text-xs font-semibold text-white/60">FlowNote</span>
+            <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-0.5">
+                <img src="logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                <span className="text-xs font-semibold text-white/60">Flownote</span>
             </div>
 
             {/* Nav */}
@@ -53,9 +60,9 @@ function Sidebar({ user }: { user: any }) {
                         {user?.email?.[0]?.toUpperCase() ?? '?'}
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white/70 truncate">{user?.email ?? 'Unknown'}</p>
+                        <p className="text-xs text-white/70 truncate">{user?.email ?? t.common.unknown}</p>
                     </div>
-                    <button onClick={handleSignOut} className="text-white/25 hover:text-white/60 transition-colors" title="Sign out">
+                    <button onClick={handleSignOut} className="text-white/25 hover:text-white/60 transition-colors" title={t.settings.signOut}>
                         <LogOut size={13} />
                     </button>
                 </div>
@@ -106,7 +113,15 @@ export default function MainApp() {
     return (
         <div className="flex h-screen bg-[#0e0e10] text-white overflow-hidden">
             <Routes>
-                <Route path="/auth" element={<AuthPage onAuth={(s) => { setSession(s); navigate('/documents') }} />} />
+                <Route path="/auth" element={<AuthPage onAuth={async (s) => {
+                    setSession(s)
+                    const completed = await window.electronAPI?.getSetupCompleted()
+                    navigate(completed ? '/documents' : '/setup')
+                }} />} />
+                <Route
+                    path="/setup"
+                    element={session ? <SetupPage onComplete={() => navigate('/documents')} /> : <Navigate to="/auth" replace />}
+                />
                 <Route
                     path="/*"
                     element={
@@ -117,6 +132,7 @@ export default function MainApp() {
                                     <Routes>
                                         <Route path="/" element={<Navigate to="/documents" replace />} />
                                         <Route path="/documents" element={<DocumentsPage />} />
+                                        <Route path="/prompts" element={<PromptsPage />} />
                                         <Route path="/history" element={<HistoryPage />} />
                                         <Route path="/settings" element={<SettingsPage user={user} />} />
                                     </Routes>
@@ -128,6 +144,7 @@ export default function MainApp() {
                     }
                 />
             </Routes>
+            <UpdateToast />
         </div>
     )
 }

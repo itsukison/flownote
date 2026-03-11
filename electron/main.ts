@@ -5,6 +5,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
 import { registerAuthHandlers, registerAuthStateListener } from './ipc/auth'
 import { registerDocumentHandlers } from './ipc/documents'
+import { getStoredSession } from './services/tokenStorage'
+import { initUpdater, flushPendingUpdate } from './services/updater'
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
@@ -32,6 +34,7 @@ function createOverlayWindow() {
     hasShadow: true,
     skipTaskbar: true,
     show: false,
+    fullscreenable: false,
     icon: path.join(__dirname, '../public/app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -63,9 +66,13 @@ function createOverlayWindow() {
 }
 
 async function createMainWindow() {
+  const { workAreaSize } = screen.getPrimaryDisplay()
+
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
+    x: Math.round((workAreaSize.width - 1000) / 2),
+    y: Math.round((workAreaSize.height - 700) / 2),
     minWidth: 800,
     minHeight: 600,
     frame: true,
@@ -88,6 +95,10 @@ async function createMainWindow() {
 
   mainWindow.loadURL(devUrl(startPath))
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (mainWindow) flushPendingUpdate(mainWindow)
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -105,11 +116,24 @@ function toggleOverlay() {
   } else {
     overlayWindow.show()
     overlayWindow.focus()
+    if (mainWindow?.isFullScreen()) {
+      mainWindow.setFullScreen(false)
+    }
+  }
+}
+
+function toggleMainWindow() {
+  if (!mainWindow) return
+  if (mainWindow.isVisible()) {
+    mainWindow.hide()
+  } else {
+    mainWindow.show()
+    mainWindow.focus()
   }
 }
 
 async function init() {
-  app.setName('CueMe')
+  app.setName('Flownote')
 
   const gotLock = app.requestSingleInstanceLock()
   if (!gotLock) { app.quit(); return }
@@ -120,6 +144,19 @@ async function init() {
 
   if (supabaseKey) {
     supabase = createClient(supabaseUrl, supabaseKey)
+
+    const storedSession = getStoredSession()
+    if (storedSession?.refresh_token) {
+      const { error } = await supabase.auth.setSession({
+        access_token: storedSession.access_token,
+        refresh_token: storedSession.refresh_token,
+      })
+      if (error) {
+        console.log('[Auth] Stored session invalid or expired:', error.message)
+      } else {
+        console.log('[Auth] Session restored from storage')
+      }
+    }
   } else {
     console.warn('[Main] SUPABASE_ANON_KEY not set')
   }
@@ -138,9 +175,14 @@ async function init() {
   app.whenReady().then(async () => {
     await createMainWindow()
     createOverlayWindow()
+    mainWindow?.show()
+    mainWindow?.focus()
+
+    // Initialize auto-updater (packaged builds only)
+    if (app.isPackaged) initUpdater(getMainWindow)
 
     // Global shortcut: toggle overlay (only when logged in)
-    globalShortcut.register('CommandOrControl+Shift+C', () => {
+    globalShortcut.register('CommandOrControl+/', () => {
       if (!supabase) {
         mainWindow?.webContents.send('toast:show', { type: 'error', message: 'Supabase not configured' })
         return
@@ -154,6 +196,11 @@ async function init() {
           mainWindow?.focus()
         }
       })
+    })
+
+    // Global shortcut: toggle main window
+    globalShortcut.register('CommandOrControl+Shift+/', () => {
+      toggleMainWindow()
     })
   })
 

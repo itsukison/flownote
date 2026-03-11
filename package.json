@@ -7,7 +7,45 @@
     "electron:dev": "tsc -p electron/tsconfig.json && electron .",
     "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5182 && npm run electron:dev\"",
     "build": "tsc -p electron/tsconfig.json && vite build",
-    "clean": "rimraf dist dist-electron"
+    "clean": "rimraf dist dist-electron",
+    "build:native": "bash scripts/build-native-binary.sh",
+    "app:build": "npm run build && electron-builder",
+    "app:build:mac": "npm run build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.flownote.app",
+    "productName": "Flownote",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      ".env",
+      {
+        "from": "custom-binaries/audiotee",
+        "to": "audiotee"
+      }
+    ],
+    "asarUnpack": [
+      "custom-binaries/**"
+    ],
+    "mac": {
+      "hardenedRuntime": true,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Flownote needs microphone access to detect questions in real time.",
+        "NSAudioCaptureUsageDescription": "Flownote needs system audio access to detect interview questions from other participants.",
+        "NSScreenCaptureDescription": "Flownote needs Screen & System Audio Recording permission to capture system audio."
+      }
+    },
+    "afterPack": "./scripts/afterPack.js",
+    "publish": {
+      "provider": "github",
+      "owner": "itsukison",
+      "repo": "flownote"
+    }
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -18,6 +56,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",
     "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "postcss": "^8.4.49",
     "rimraf": "^6.0.1",
     "tailwindcss": "^3.4.15",
@@ -31,16 +70,24 @@
     "@fontsource/geist-sans": "^5.2.5",
     "@google/genai": "^1.25.0",
     "@google/generative-ai": "^0.24.1",
+    "@radix-ui/react-select": "^2.2.6",
     "@supabase/supabase-js": "^2.98.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^0.460.0",
     "mammoth": "^1.11.0",
     "openai": "^6.25.0",
-    "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.13.1",
-    "uuid": "^11.0.3"
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss-animate": "^1.0.7",
+    "unpdf": "^1.4.0",
+    "uuid": "^11.0.3",
+    "ws": "^8.17.1"
   }
 }

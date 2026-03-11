@@ -19,12 +19,11 @@
 - Auth, LLM, UI
 
 ### Phase 2: Audio Pipeline ✅
-- **Microphone capture**: `src/hooks/useMicrophoneCapture.ts` - React hook using Web Audio API
-- **Gemini Live API**: `electron/services/audio/gemini-live.ts` - WebSocket connection to `gemini-2.5-flash-native-audio-preview-12-2025`
-- **Audio IPC**: Renderer → Main → Gemini Live
-- **Question detection**: Via system prompt + regex patterns
-- **Session resumption**: Handles 10-min limit with session handles
-- **Context window compression**: Enabled for long interviews
+- **Microphone capture**: Web Audio API → IPC → main process
+- **OpenAI Realtime**: WebSocket connection with text-only output
+- **Audio IPC**: Renderer → Main → OpenAI Realtime
+- **Question detection**: JSON-only prompt (Japanese-first), no regex fallback
+- **Session rotation**: Reconnect around 60 minutes
 
 ### Phase 3: Two-Window Architecture ✅
 Implemented the PRD two-window model:

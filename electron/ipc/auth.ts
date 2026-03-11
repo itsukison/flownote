@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { saveSession, clearSession } from '../services/tokenStorage'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -14,6 +15,14 @@ export function registerAuthHandlers(
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) return { success: false, error: error.message }
+      if (data.session) {
+        saveSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+          expires_at: data.session.expires_at,
+          expires_in: data.session.expires_in,
+        })
+      }
       return { success: true, session: data.session }
     } catch (err: any) {
       return { success: false, error: err.message }
@@ -26,6 +35,14 @@ export function registerAuthHandlers(
     try {
       const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) return { success: false, error: error.message }
+      if (data.session) {
+        saveSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+          expires_at: data.session.expires_at,
+          expires_in: data.session.expires_in,
+        })
+      }
       return { success: true, session: data.session }
     } catch (err: any) {
       return { success: false, error: err.message }
@@ -38,6 +55,7 @@ export function registerAuthHandlers(
     try {
       const { error } = await supabase.auth.signOut()
       if (error) return { success: false, error: error.message }
+      clearSession()
       getOverlayWindow()?.hide()
       return { success: true }
     } catch (err: any) {

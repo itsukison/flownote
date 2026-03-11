@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { ja } from '@/i18n/ja'
+
+const t = ja
 
 interface Props {
     onAuth: (session: any) => void
@@ -18,26 +21,26 @@ export default function AuthPage({ onAuth }: Props) {
         e.preventDefault()
         setError(null)
         setInfo(null)
-        if (!email || !password) { setError('Please fill in all fields'); return }
+        if (!email || !password) { setError(t.auth.pleaseFillAll); return }
         setLoading(true)
         try {
             if (mode === 'signin') {
                 const res = await window.electronAPI.signIn(email, password)
-                if (!res.success) { setError(res.error || 'Sign in failed'); return }
+                if (!res.success) { setError(res.error || t.auth.signInFailed); return }
                 const { session } = await window.electronAPI.getSession()
                 onAuth(session)
             } else {
                 const res = await window.electronAPI.signUp(email, password)
-                if (!res.success) { setError(res.error || 'Sign up failed'); return }
+                if (!res.success) { setError(res.error || t.auth.signUpFailed); return }
                 if (res.session) {
                     onAuth(res.session)
                 } else {
-                    setInfo('Check your email for a confirmation link, then sign in.')
+                    setInfo(t.auth.checkEmail)
                     setMode('signin')
                 }
             }
         } catch (e: any) {
-            setError(e.message || 'Something went wrong')
+            setError(e.message || t.auth.somethingWrong)
         } finally {
             setLoading(false)
         }
@@ -49,10 +52,10 @@ export default function AuthPage({ onAuth }: Props) {
                 {/* Logo */}
                 <div className="mb-8 text-center">
                     <div className="mb-4 flex justify-center">
-                        <img src="/logo.png" alt="FlowNote" className="w-12 h-12 object-contain" />
+                        <img src="logo.png" alt="FlowNote" className="w-12 h-12 object-contain" />
                     </div>
                     <h1 className="text-xl font-semibold text-white">FlowNote</h1>
-                    <p className="text-sm text-white/40 mt-1">AI-powered meeting assistant</p>
+                    <p className="text-sm text-white/40 mt-1">{t.auth.aiPoweredAssistant}</p>
                 </div>
 
                 {/* Tabs */}
@@ -64,7 +67,7 @@ export default function AuthPage({ onAuth }: Props) {
                             className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${mode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
                                 }`}
                         >
-                            {m === 'signin' ? 'Sign in' : 'Sign up'}
+                            {m === 'signin' ? t.auth.signIn : t.auth.signUp}
                         </button>
                     ))}
                 </div>
@@ -84,7 +87,7 @@ export default function AuthPage({ onAuth }: Props) {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div>
-                        <label className="block text-xs text-white/50 mb-1.5">Email</label>
+                        <label className="block text-xs text-white/50 mb-1.5">{t.auth.email}</label>
                         <input
                             type="email"
                             value={email}
@@ -96,7 +99,7 @@ export default function AuthPage({ onAuth }: Props) {
                     </div>
 
                     <div>
-                        <label className="block text-xs text-white/50 mb-1.5">Password</label>
+                        <label className="block text-xs text-white/50 mb-1.5">{t.auth.password}</label>
                         <div className="relative">
                             <input
                                 type={showPw ? 'text' : 'password'}
@@ -122,12 +125,12 @@ export default function AuthPage({ onAuth }: Props) {
                         className="w-full mt-2 py-3 px-4 bg-white/10 hover:bg-white/15 border border-white/10 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {loading && <Loader2 size={14} className="animate-spin" />}
-                        {mode === 'signin' ? 'Sign in' : 'Create account'}
+                        {mode === 'signin' ? t.auth.signIn : t.auth.createAccount}
                     </button>
                 </form>
 
                 <p className="mt-6 text-center text-[11px] text-white/25">
-                    Press <kbd className="px-1.5 py-0.5 bg-white/[0.08] rounded text-white/40">⌘⇧C</kbd> to toggle the floating overlay
+                    {t.auth.toggleOverlayHint}
                 </p>
             </div>
         </div>

@@ -38,8 +38,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearQuestions: () => ipcRenderer.invoke('clear-questions'),
   generateResponse: (question: string, collectionId?: string) =>
     ipcRenderer.invoke('generate-response', question, collectionId),
-  setDetectionSettings: (gemini: boolean, regex: boolean) =>
-    ipcRenderer.invoke('set-detection-settings', gemini, regex),
 
   onQuestionDetected: (cb: (q: { id: string; text: string; timestamp: number }) => void) => {
     const fn = (_: any, q: any) => cb(q)
@@ -76,4 +74,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Usage ─────────────────────────────────────────────────────────────────
   getTokenUsage: () => ipcRenderer.invoke('token:get-usage'),
+
+  // ── Prompts ────────────────────────────────────────────────────────────────
+  getPrompts: () => ipcRenderer.invoke('prompts:list'),
+  createPrompt: (name: string, content: string, promptType: string) =>
+    ipcRenderer.invoke('prompts:create', name, content, promptType),
+  updatePrompt: (id: string, name: string, content: string) =>
+    ipcRenderer.invoke('prompts:update', id, name, content),
+  deletePrompt: (id: string) => ipcRenderer.invoke('prompts:delete', id),
+  selectPrompt: (id: string) => ipcRenderer.invoke('prompts:select', id),
+
+  // ── Permissions ────────────────────────────────────────────────────────────
+  checkSystemAudioPermission: () => ipcRenderer.invoke('permissions:check-system-audio'),
+  openSystemAudioSettings: () => ipcRenderer.invoke('permissions:open-system-audio-settings'),
+
+  // ── Setup ──────────────────────────────────────────────────────────────────
+  getSetupCompleted: () => ipcRenderer.invoke('setup:get-completed'),
+  setSetupCompleted: () => ipcRenderer.invoke('setup:set-completed'),
+
+  // ── Auto-update ────────────────────────────────────────────────────────────
+  update: {
+    onAvailable: (cb: (info: { version: string }) => void) => {
+      ipcRenderer.on('update:available', (_, info) => cb(info))
+      return () => ipcRenderer.removeAllListeners('update:available')
+    },
+    onProgress: (cb: (data: { percent: number; version?: string }) => void) => {
+      ipcRenderer.on('update:progress', (_, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('update:progress')
+    },
+    onReady: (cb: (info: { version: string }) => void) => {
+      ipcRenderer.on('update:ready', (_, info) => cb(info))
+      return () => ipcRenderer.removeAllListeners('update:ready')
+    },
+    onError: (cb: (data: { message: string }) => void) => {
+      ipcRenderer.on('update:error', (_, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('update:error')
+    },
+    install: () => ipcRenderer.invoke('update:install'),
+  },
 })

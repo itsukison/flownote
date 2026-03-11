@@ -71,18 +71,18 @@
                      │ sendRealtimeInput(audio)
                      ▼
 ┌────────────────────────────────────────────┐
-│   Gemini Live API (WebSocket, server-side) │
-│   Model: gemini-2.5-flash-native-audio-*  │
-│   - Voice Activity Detection (built-in)   │
-│   - input_audio_transcription enabled     │
-│   - System prompt: question detector      │
-│   - Session resumption for >10min         │
+│   OpenAI Realtime API (WebSocket)          │
+│   Model: gpt-realtime (text-only output)   │
+│   - semantic VAD turn detection            │
+│   - JSON-only question extraction          │
+│   - 24kHz PCM16 input                      │
+│   - Session rotation (~60 min)             │
 └────────────────────┬───────────────────────┘
-                     │ input_transcription / question JSON
+                     │ JSON question output
                      ▼
 ┌────────────────────────────────────────────┐
-│  GeminiLiveQuestionDetector.ts             │
-│  Parses transcript / question JSON         │
+│  OpenAIRealtimeQuestionDetector.ts         │
+│  Parses JSON question output               │
 │  Emits: question-detected event            │
 └────────────────────┬───────────────────────┘
                      │ IPC: audio:question-detected
