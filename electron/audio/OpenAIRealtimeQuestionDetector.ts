@@ -20,8 +20,8 @@ function logFirstTime(tag: string, msg: string) {
 
 export class OpenAIRealtimeQuestionDetector {
   private apiKey: string
-  // Correct model name for OpenAI Realtime API
-  private readonly modelName = 'gpt-4o-realtime-preview'
+  // Cost-efficient Realtime model for question detection
+  private readonly modelName = 'gpt-realtime-mini'
 
   private userSocket: WebSocket | null = null
   private opponentSocket: WebSocket | null = null

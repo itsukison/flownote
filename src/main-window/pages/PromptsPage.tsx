@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Loader2, Plus, Trash2, Edit2, Check, X, FileText, BookOpen } from 'lucide-react'
+import { Loader2, Plus, Trash2, Edit2, Check, X, FileText, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 
 const t = ja
@@ -156,6 +156,8 @@ function PromptCard({
     onEdit: () => void
     onDelete: () => void
 }) {
+    const [isExpanded, setIsExpanded] = useState(false)
+
     return (
         <div
             className={`group relative p-4 border rounded-xl transition-all cursor-pointer ${isSelected
@@ -180,14 +182,29 @@ function PromptCard({
                             {prompt.prompt_type === 'rag' ? 'RAG' : 'Base'}
                         </span>
                     </div>
-                    <p className="text-xs text-zinc-500 line-clamp-2 font-mono">{prompt.content}</p>
+                    <p className={`text-xs text-zinc-500 font-mono whitespace-pre-wrap ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                        {prompt.content}
+                    </p>
                 </div>
 
-                {isSelected && (
-                    <div className="flex-none">
-                        <Check size={16} className="text-emerald-400" />
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    {prompt.is_default && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setIsExpanded(!isExpanded)
+                            }}
+                            className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                        >
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                    )}
+                    {isSelected && (
+                        <div className="flex-none">
+                            <Check size={16} className="text-emerald-400" />
+                        </div>
+                    )}
+                </div>
             </div>
 
             {!prompt.is_default && (

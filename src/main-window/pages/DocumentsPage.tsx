@@ -709,9 +709,9 @@ export default function DocumentsPage({
 
             {/* Write Text Modal */}
             {isWriteModalOpen && (
-                <div className="absolute inset-0 z-[100] flex flex-col bg-[#111113]">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.05] bg-[#151518]">
-                        <h2 className="text-lg font-medium">{editingDocId ? t.documents.editDocument : t.documents.writeDocument}</h2>
+                <div className="absolute inset-0 z-[100] flex flex-col bg-[#0e0e10]">
+                    <div className="flex items-center justify-between px-8 py-8 max-w-5xl mx-auto w-full">
+                        <h2 className="text-lg font-semibold text-zinc-100">{editingDocId ? t.documents.editDocument : t.documents.writeDocument}</h2>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setIsWriteModalOpen(false)}
@@ -729,7 +729,7 @@ export default function DocumentsPage({
                             </button>
                         </div>
                     </div>
-                    <div className="flex-1 flex flex-col p-6 gap-4 max-w-4xl mx-auto w-full">
+                    <div className="flex-1 flex flex-col px-8 pb-8 max-w-5xl mx-auto w-full gap-4">
                         <input
                             autoFocus
                             value={writeTitle}
