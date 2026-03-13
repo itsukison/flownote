@@ -21,12 +21,13 @@ declare global {
             quitApp: () => void
             setWindowSize: (w: number, h: number) => void
             // ── Audio / question detection ────────────────────────────────────────────
-            startListening: () => Promise<{ success: boolean; error?: string }>
+            startListening: () => Promise<{ success: boolean; error?: string; systemAudioPermission?: string }>
             stopListening: () => Promise<{ success: boolean; error?: string }>
             processMicChunk: (data: Float32Array) => void
             getQuestions: () => Promise<Question[]>
             clearQuestions: () => Promise<void>
             generateResponse: (question: string, collectionId?: string) => Promise<{ success: boolean; error?: string }>
+            onSystemAudioSilent: (cb: () => void) => () => void
             onQuestionDetected: (cb: (q: Question) => void) => () => void
             onResponseChunk: (cb: (chunk: string) => void) => () => void
             onResponseDone: (cb: () => void) => () => void

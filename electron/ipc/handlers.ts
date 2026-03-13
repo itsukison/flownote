@@ -14,7 +14,6 @@ let detector: OpenAIRealtimeQuestionDetector | null = null
 let systemAudio: SystemAudioCapture | null = null
 let genAI: GoogleGenerativeAI | null = null
 let getSupabaseFn: (() => SupabaseClient | null) | undefined = undefined
-let systemAudioFormat: 'int16' | 'float32' | null = null
 
 async function getPrompts(): Promise<any[]> {
   if (!getSupabaseFn) return []
@@ -136,27 +135,6 @@ async function trackQuestionCount() {
   }
 }
 
-function float32BufferToPcm16(buf: Buffer): Buffer {
-  const float32 = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4))
-  const out = Buffer.alloc(float32.length * 2)
-  for (let i = 0; i < float32.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]))
-    out.writeInt16LE(Math.round(s * 32767), i * 2)
-  }
-  return out
-}
-
-function detectSystemAudioFormat(buf: Buffer): 'int16' | 'float32' {
-  if (buf.length < 16) return 'int16'
-  let okFloat = 0
-  let total = 0
-  for (let i = 0; i + 3 < Math.min(buf.length, 32); i += 4) {
-    const v = buf.readFloatLE(i)
-    if (Number.isFinite(v) && Math.abs(v) <= 1.5) okFloat++
-    total++
-  }
-  return okFloat >= Math.max(2, Math.floor(total * 0.75)) ? 'float32' : 'int16'
-}
 
 export function registerHandlers(
   getOverlayWindow: GetWindowFn,
@@ -195,28 +173,29 @@ export function registerHandlers(
       })
       await detector.start()
 
+      // Check Screen Recording permission before attempting system audio capture
+      const screenPermission = systemPreferences.getMediaAccessStatus('screen')
+      let systemAudioPermission: string | undefined
+      if (screenPermission !== 'granted') {
+        systemAudioPermission = screenPermission
+        console.warn(`[Handlers] Screen Recording permission is '${screenPermission}' — system audio will emit silence`)
+      }
+
       // Start system audio capture (macOS only) — fail gracefully
       systemAudio = new SystemAudioCapture()
-      systemAudioFormat = null
       let sysAudioChunkCount = 0
       systemAudio.on('audio-data', (buf: Buffer) => {
         sysAudioChunkCount++
-
-        if (sysAudioChunkCount === 1) {
-          systemAudioFormat = detectSystemAudioFormat(buf)
-          console.log('[Handlers] First system audio chunk', {
-            bytes: buf.length,
-            detectedFormat: systemAudioFormat,
-          })
-        }
         if (sysAudioChunkCount % 100 === 0) {
           console.log(`[Handlers] System audio forwarded ${sysAudioChunkCount} chunks to Realtime`)
         }
-
-        const format = systemAudioFormat || 'int16'
-        const pcm16 = format === 'float32' ? float32BufferToPcm16(buf) : buf
-        const resampled = resamplePcm16To24k(pcm16)
+        // audiotee always outputs PCM16 int16 when --sample-rate is specified
+        const resampled = resamplePcm16To24k(buf)
         detector?.sendAudio(resampled, 'opponent').catch(console.error)
+      })
+      systemAudio.on('system-audio-silent', () => {
+        const win = getOverlayWindow()
+        win?.webContents.send('system-audio-silent')
       })
       systemAudio.on('error', (err: Error) => {
         console.warn('[Handlers] System audio error (continuing with mic-only):', err.message)
@@ -227,7 +206,7 @@ export function registerHandlers(
         systemAudio = null
       })
 
-      return { success: true }
+      return { success: true, systemAudioPermission }
     } catch (err: any) {
       console.error('[Handlers] start-listening error:', err)
       return { success: false, error: err.message }
@@ -239,7 +218,6 @@ export function registerHandlers(
       if (systemAudio) {
         await systemAudio.stop()
         systemAudio = null
-        systemAudioFormat = null
       }
       await detector?.stop()
       detector = null

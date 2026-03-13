@@ -82,40 +82,40 @@ export class SystemAudioCapture extends EventEmitter {
     let audioDataCount = 0
     let totalBytesReceived = 0
     let nonZeroChunksSeen = 0
+    let consecutiveZeroChunks = 0
+    let silentEventEmitted = false
+    // 25 chunks × 0.2s = 5 seconds of continuous silence triggers warning
+    const SILENT_THRESHOLD = 25
 
     this.audioTeeProcess.stdout?.on('data', (data: Buffer) => {
       audioDataCount++
       totalBytesReceived += data.length
 
       const isAllZeros = data.every((byte) => byte === 0)
-      if (!isAllZeros) nonZeroChunksSeen++
+      if (isAllZeros) {
+        consecutiveZeroChunks++
+      } else {
+        consecutiveZeroChunks = 0
+        nonZeroChunksSeen++
+        // Reset silent warning if audio recovers (e.g. user starts playing something)
+        silentEventEmitted = false
+      }
 
       if (audioDataCount === 1) {
-        // Probe format: print first 16 bytes as hex and as float32 values
-        // audiotee may output Float32 LE instead of Int16 LE
-        const hexSample = data.slice(0, 16).toString('hex')
-        const asFloat32: number[] = []
-        for (let i = 0; i + 3 < Math.min(data.length, 32); i += 4) {
-          asFloat32.push(data.readFloatLE(i))
-        }
-        const asInt16: number[] = []
-        for (let i = 0; i + 1 < Math.min(data.length, 32); i += 2) {
-          asInt16.push(data.readInt16LE(i))
-        }
         console.log('[SystemAudio] First audio chunk from audiotee', {
           bytes: data.length,
           isAllZeros,
-          hexSample,
-          interpretedAsFloat32: asFloat32,
-          interpretedAsInt16: asInt16,
+          hexSample: data.slice(0, 16).toString('hex'),
         })
-        if (isAllZeros) {
-          console.warn(
-            '[SystemAudio] WARNING: all-zero buffer — Screen & System Audio Recording permission not granted, or no audio is playing'
-          )
-        } else {
-          console.log('[SystemAudio] Non-zero audio data received — audiotee is capturing')
-        }
+      }
+
+      // Emit silent event after sustained silence — likely a permission issue
+      if (consecutiveZeroChunks >= SILENT_THRESHOLD && !silentEventEmitted) {
+        silentEventEmitted = true
+        console.warn(
+          '[SystemAudio] Sustained silence detected — system audio permission may not be granted in "System Audio Recording Only" section'
+        )
+        this.emit('system-audio-silent')
       }
 
       // Periodic health log every 100 chunks

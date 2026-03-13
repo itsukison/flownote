@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateResponse: (question: string, collectionId?: string) =>
     ipcRenderer.invoke('generate-response', question, collectionId),
 
+  onSystemAudioSilent: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('system-audio-silent', fn)
+    return () => ipcRenderer.removeListener('system-audio-silent', fn)
+  },
   onQuestionDetected: (cb: (q: { id: string; text: string; timestamp: number }) => void) => {
     const fn = (_: any, q: any) => cb(q)
     ipcRenderer.on('question-detected', fn)

@@ -37,6 +37,7 @@ export default function OverlayApp() {
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
     const [systemAudioStatus, setSystemAudioStatus] = useState<string | null>(null)
+    const [systemAudioSilent, setSystemAudioSilent] = useState(false)
 
     const audioCtxRef = useRef<AudioContext | null>(null)
     const processorRef = useRef<ScriptProcessorNode | null>(null)
@@ -75,6 +76,7 @@ export default function OverlayApp() {
     // Event listeners
     useEffect(() => {
         if (!window.electronAPI) return
+        const offSilent = window.electronAPI.onSystemAudioSilent(() => setSystemAudioSilent(true))
         const offQ = window.electronAPI.onQuestionDetected((q) =>
             setQuestions((prev) => (prev.find((p) => p.id === q.id) ? prev : [...prev, q]))
         )
@@ -83,8 +85,21 @@ export default function OverlayApp() {
             setResponse(responseRef.current)
         })
         const offDone = window.electronAPI.onResponseDone(() => setGenerating(false))
-        return () => { offQ(); offChunk(); offDone() }
+        return () => { offSilent(); offQ(); offChunk(); offDone() }
     }, [])
+
+    // Global keyboard navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (viewMode === 'detail') {
+                if (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Escape') {
+                    goBack()
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [viewMode])
 
     const stopMicCapture = useCallback(() => {
         processorRef.current?.disconnect()
@@ -117,6 +132,9 @@ export default function OverlayApp() {
             try {
                 const res = await window.electronAPI.startListening()
                 if (!res.success) { setError(res.error || t.common.loading); return }
+                if (res.systemAudioPermission && res.systemAudioPermission !== 'granted') {
+                    setSystemAudioStatus(res.systemAudioPermission)
+                }
                 await startMicCapture()
                 setListening(true)
                 setSettingsOpen(false)
@@ -127,6 +145,7 @@ export default function OverlayApp() {
             stopMicCapture()
             await window.electronAPI.stopListening()
             setListening(false)
+            setSystemAudioSilent(false)
         }
     }
 
@@ -169,7 +188,7 @@ export default function OverlayApp() {
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
                 <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                     <div className="flex items-center gap-1.5">
-                        <img src="logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
                         <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
                     <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
@@ -198,16 +217,15 @@ export default function OverlayApp() {
             {/* Header */}
             <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                 <div className="flex items-center gap-2">
-                    {viewMode === 'detail' ? (
-                        <button onClick={goBack} className="no-drag p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors">
-                            <ArrowLeft size={13} />
-                        </button>
-                    ) : (
-                        <div className="flex items-center gap-1.5">
-                            <img src="logo.png" alt="Logo" className="w-4 h-4 object-contain" />
-                            <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                        {viewMode === 'detail' && (
+                            <button onClick={goBack} className="no-drag p-1 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors -ml-1">
+                                <ArrowLeft size={13} />
+                            </button>
+                        )}
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
+                    </div>
                     {listening && viewMode === 'list' && (
                         <span className="flex items-center gap-1 text-[10px] text-red-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -281,6 +299,19 @@ export default function OverlayApp() {
                             </button>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* System audio silent warning */}
+            {systemAudioSilent && listening && (
+                <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-500 text-[10px] flex items-center justify-between gap-2">
+                    <span>{t.overlay.systemAudioOff}</span>
+                    <button
+                        onClick={() => window.electronAPI?.openSystemAudioSettings()}
+                        className="shrink-0 text-zinc-400 hover:text-zinc-300 transition-colors"
+                    >
+                        {t.overlay.fixPermission}
+                    </button>
                 </div>
             )}
 

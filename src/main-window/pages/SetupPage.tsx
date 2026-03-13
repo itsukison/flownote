@@ -83,7 +83,13 @@ export default function SetupPage({ onComplete }: Props) {
                         </div>
 
                         {/* Path guide */}
-                        <p className="text-xs text-zinc-600 font-mono text-center leading-relaxed">{t.setup.step2Path}</p>
+                        <div className="w-full space-y-2">
+                            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-400 font-mono leading-relaxed">
+                                <p>{t.setup.step2Path}</p>
+                                <p className="text-zinc-500 mt-1">{t.setup.step2PathSub}</p>
+                            </div>
+                            <p className="text-[10px] text-zinc-600 leading-relaxed px-1">{t.setup.step2Note}</p>
+                        </div>
 
                         {/* Permission status */}
                         <div className="flex items-center gap-2 h-5">
