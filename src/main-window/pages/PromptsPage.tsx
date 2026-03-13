@@ -212,7 +212,17 @@ function PromptCard({
     )
 }
 
-export default function PromptsPage() {
+export default function PromptsPage({ 
+    prompts: initialPrompts, 
+    loading: externalLoading,
+    selectedIds,
+    onRefresh
+}: { 
+    prompts?: Prompt[]
+    loading?: boolean
+    selectedIds?: { base?: string; rag?: string }
+    onRefresh?: () => void
+}) {
     const [prompts, setPrompts] = useState<Prompt[]>([])
     const [selectedBaseId, setSelectedBaseId] = useState<string | null>(null)
     const [selectedRagId, setSelectedRagId] = useState<string | null>(null)
@@ -221,8 +231,27 @@ export default function PromptsPage() {
     const [isCreating, setIsCreating] = useState(false)
 
     useEffect(() => {
-        loadPrompts()
+        if (initialPrompts !== undefined) {
+            setPrompts(initialPrompts)
+            setLoading(!!externalLoading)
+            if (selectedIds) {
+                if (selectedIds.base) setSelectedBaseId(selectedIds.base)
+                if (selectedIds.rag) setSelectedRagId(selectedIds.rag)
+            }
+        } else {
+            loadPrompts()
+        }
     }, [])
+
+    useEffect(() => {
+        if (!externalLoading && initialPrompts !== undefined) {
+            setPrompts(initialPrompts)
+            if (selectedIds) {
+                if (selectedIds.base) setSelectedBaseId(selectedIds.base)
+                if (selectedIds.rag) setSelectedRagId(selectedIds.rag)
+            }
+        }
+    }, [initialPrompts, externalLoading, selectedIds])
 
     const loadPrompts = async () => {
         setLoading(true)
@@ -259,6 +288,7 @@ export default function PromptsPage() {
         if (result?.success) {
             setIsCreating(false)
             loadPrompts()
+            onRefresh?.()
         }
     }
 
@@ -267,6 +297,7 @@ export default function PromptsPage() {
         if (result?.success) {
             setEditingPrompt(null)
             loadPrompts()
+            onRefresh?.()
         }
     }
 
@@ -281,6 +312,7 @@ export default function PromptsPage() {
                 if (rag) setSelectedRagId(rag.id)
             }
             loadPrompts()
+            onRefresh?.()
         }
     }
 
@@ -291,14 +323,14 @@ export default function PromptsPage() {
 
     if (loading) {
         return (
-            <div className="flex justify-center items-center h-full">
+            <div className="flex-1 flex justify-center items-center">
                 <Loader2 size={20} className="animate-spin text-white/20" />
             </div>
         )
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-8 py-8">
+        <div className="flex-1 flex flex-col min-h-full max-w-2xl mx-auto px-8 py-8">
             <div className="flex items-center justify-between mb-8">
                 <h1 className="text-lg font-semibold text-zinc-100">{t.prompts.title}</h1>
             </div>

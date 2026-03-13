@@ -61,8 +61,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteCollection: (id: string) => ipcRenderer.invoke('doc:delete-collection', id),
   renameCollection: (id: string, newName: string) => ipcRenderer.invoke('doc:rename-collection', id, newName),
   listDocuments: (collectionId: string) => ipcRenderer.invoke('doc:list-documents', collectionId),
-  uploadDocument: (fileName: string, fileBuffer: ArrayBuffer, collectionId: string) =>
-    ipcRenderer.invoke('doc:upload', fileName, fileBuffer, collectionId),
+  uploadDocument: (
+    fileName: string,
+    fileBuffer: ArrayBuffer,
+    collectionId: string,
+    fileType?: string,
+    sizeBytes?: number
+  ) => ipcRenderer.invoke('doc:upload', fileName, fileBuffer, collectionId, fileType, sizeBytes),
   uploadTextDocument: (title: string, text: string, collectionId: string) =>
     ipcRenderer.invoke('doc:upload-text', title, text, collectionId),
   deleteDocument: (id: string) => ipcRenderer.invoke('doc:delete', id),
@@ -71,6 +76,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateTextDocument: (id: string, text: string) => ipcRenderer.invoke('doc:update-text-document', id, text),
   searchDocuments: (query: string, collectionId: string) =>
     ipcRenderer.invoke('doc:search', query, collectionId),
+  getDocumentFileUrl: (filePath: string, fileEtag?: string) =>
+    ipcRenderer.invoke('doc:get-file-url', filePath, fileEtag),
 
   // ── Usage ─────────────────────────────────────────────────────────────────
   getTokenUsage: () => ipcRenderer.invoke('token:get-usage'),
@@ -91,6 +98,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Setup ──────────────────────────────────────────────────────────────────
   getSetupCompleted: () => ipcRenderer.invoke('setup:get-completed'),
   setSetupCompleted: () => ipcRenderer.invoke('setup:set-completed'),
+
+  // ── Tutorial ──────────────────────────────────────────────────────────────
+  getTutorialCompleted: () => ipcRenderer.invoke('tutorial:get-completed'),
+  setTutorialCompleted: () => ipcRenderer.invoke('tutorial:set-completed'),
 
   // ── Auto-update ────────────────────────────────────────────────────────────
   update: {

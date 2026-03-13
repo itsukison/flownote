@@ -16,6 +16,7 @@ import {
 import toast, { Toaster } from 'react-hot-toast'
 import Folder from '../../components/Folder'
 import { ja } from '@/i18n/ja'
+import { PDFThumbnail } from '@/components/documents/PDFThumbnail'
 
 const t = ja
 
@@ -30,6 +31,9 @@ interface Doc {
     name: string
     created_at: string
     size_bytes?: number
+    file_path?: string
+    file_type?: string
+    file_etag?: string
 }
 
 // Custom Context Menu Component
@@ -81,9 +85,19 @@ function ContextMenu({
     )
 }
 
-export default function DocumentsPage() {
+export default function DocumentsPage({ 
+    collections: initialCollections, 
+    loading: externalLoading, 
+    onRefresh 
+}: { 
+    collections?: Collection[]
+    loading?: boolean
+    onRefresh?: () => void
+}) {
     const [collections, setCollections] = useState<Collection[]>([])
+    const [loading, setLoading] = useState(true)
     const [documents, setDocuments] = useState<Doc[]>([])
+    const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
     // null = root (showing collections), else showing docs inside that collection
     const [selectedCol, setSelectedCol] = useState<Collection | null>(null)
 
@@ -95,6 +109,9 @@ export default function DocumentsPage() {
     // Track if we're editing an existing doc or creating a new one (for text modal)
     const [editingDocId, setEditingDocId] = useState<string | null>(null)
     const [uploadingText, setUploadingText] = useState(false)
+
+    // Preview modal
+    const [previewDoc, setPreviewDoc] = useState<Doc | null>(null)
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -112,14 +129,66 @@ export default function DocumentsPage() {
     const editInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        loadCollections()
+        if (initialCollections !== undefined) {
+            setCollections(initialCollections)
+            setLoading(!!externalLoading)
+        } else {
+            loadCollections()
+        }
     }, [])
+
+    useEffect(() => {
+        if (initialCollections !== undefined) {
+            setCollections(initialCollections)
+            setLoading(!!externalLoading)
+        }
+    }, [initialCollections, externalLoading])
 
     useEffect(() => {
         if (selectedCol) {
             loadDocuments(selectedCol.id)
         }
     }, [selectedCol])
+
+    useEffect(() => {
+        let cancelled = false
+
+        async function loadPreviews() {
+            const docsWithFiles = documents.filter(d => !!d.file_path)
+            if (docsWithFiles.length === 0) {
+                if (!cancelled) setPreviewUrls({})
+                return
+            }
+
+            const entries = await Promise.all(
+                docsWithFiles.map(async (doc) => {
+                    try {
+                        const res = await window.electronAPI.getDocumentFileUrl(doc.file_path!, doc.file_etag)
+                        if (res?.success && res.url) {
+                            return [doc.id, res.url] as const
+                        }
+                    } catch (err) {
+                        console.warn('Failed to load preview URL:', err)
+                    }
+                    return [doc.id, ''] as const
+                })
+            )
+
+            if (cancelled) return
+
+            const next: Record<string, string> = {}
+            for (const [id, url] of entries) {
+                if (url) next[id] = url
+            }
+            setPreviewUrls(next)
+        }
+
+        loadPreviews()
+
+        return () => {
+            cancelled = true
+        }
+    }, [documents])
 
     useEffect(() => {
         if (editingId && editInputRef.current) {
@@ -135,6 +204,8 @@ export default function DocumentsPage() {
         } catch (err: any) {
             console.error(err)
             toast.error(t.documents.failedToLoadFolders)
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -155,6 +226,7 @@ export default function DocumentsPage() {
             const col = await window.electronAPI.createCollection('New Folder')
             if (col) {
                 setCollections(prev => [...prev, col])
+                onRefresh?.()
                 // Instantly edit the new folder
                 startInlineEditing(col.id, 'New Folder')
             }
@@ -169,6 +241,7 @@ export default function DocumentsPage() {
             const res = await window.electronAPI.deleteCollection(id)
             if (res?.success) {
                 setCollections(prev => prev.filter(c => c.id !== id))
+                onRefresh?.()
                 if (selectedCol?.id === id) setSelectedCol(null)
                 toast.success(t.documents.folderDeleted)
             } else {
@@ -208,7 +281,7 @@ export default function DocumentsPage() {
             try {
                 for (const file of files) {
                     const buf = await file.arrayBuffer()
-                    const res = await window.electronAPI.uploadDocument(file.name, buf, selectedCol.id)
+                    const res = await window.electronAPI.uploadDocument(file.name, buf, selectedCol.id, file.type, file.size)
                     if (!res?.success) throw new Error(res?.error || `Failed to upload ${file.name}`)
                 }
                 toast.success(t.documents.uploadedFiles.replace('{count}', String(files.length)), { id: toastId })
@@ -324,12 +397,13 @@ export default function DocumentsPage() {
             const orig = collections.find(c => c.id === id)?.name
             if (orig === newName) return
             setCollections(cols => cols.map(c => c.id === id ? { ...c, name: newName } : c))
+            onRefresh?.()
             try {
                 const res = await window.electronAPI.renameCollection(id, newName)
                 if (!res?.success) throw new Error(res?.error)
             } catch (e) {
                 toast.error(t.documents.failedToDeleteFolder)
-                loadCollections() // revert
+                onRefresh?.()
             }
         } else {
             const orig = documents.find(d => d.id === id)?.name
@@ -366,78 +440,86 @@ export default function DocumentsPage() {
         }
     }
 
+    const getFileExt = (name: string) => name.split('.').pop()?.toLowerCase() || ''
+    const isTextDoc = (name: string) => /\.(md|txt)$/i.test(name)
+    const isPdfDoc = (doc: Doc) => doc.file_type === 'application/pdf' || getFileExt(doc.name) === 'pdf'
+    const isImageDoc = (doc: Doc) =>
+        (doc.file_type?.startsWith('image/') ?? false) ||
+        ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(getFileExt(doc.name))
+
     const filteredItems = selectedCol
         ? documents.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()))
         : collections.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
     return (
-        <div className="flex-1 flex flex-col bg-[#111113] text-white overflow-hidden h-screen relative" onClick={closeContextMenu}>
+        <div className="flex-1 flex flex-col bg-[#111113] text-white overflow-hidden min-h-full relative" onClick={closeContextMenu}>
             <Toaster position="bottom-center" toastOptions={{ style: { background: '#222', color: '#fff', fontSize: '14px' } }} />
 
-            {/* Header */}
-            <div className="h-16 flex items-center justify-between px-6 border-b border-white/[0.05] shrink-0 bg-[#151518]/80 backdrop-blur-md">
-                <div className="flex items-center gap-4">
-                    {selectedCol ? (
-                        <>
-                            <button
-                                onClick={() => setSelectedCol(null)}
-                                className="w-8 h-8 rounded-md bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors text-white/70"
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <h1 className="text-xl font-semibold tracking-tight">{selectedCol.name}</h1>
-                        </>
-                    ) : (
-                        <h1 className="text-xl font-semibold tracking-tight">{t.documents.title}</h1>
-                    )}
-                </div>
+            <div className="flex-1 flex flex-col overflow-y-auto" onClick={() => cancelInlineEdit()}>
+                <div className="max-w-5xl mx-auto px-8 py-8 w-full flex-1 flex flex-col">
+                    {/* Header Inline */}
+                    <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center gap-3">
+                            {selectedCol && (
+                                <button
+                                    onClick={() => setSelectedCol(null)}
+                                    className="p-1 -ml-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white transition-all"
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                            )}
+                            <h1 className="text-lg font-semibold text-zinc-100">
+                                {selectedCol ? selectedCol.name : t.documents.title}
+                            </h1>
+                        </div>
 
-                <div className="flex items-center gap-3">
-                    {/* Search */}
-                    <div className="relative group mr-2">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 group-focus-within:text-white/80 transition-colors" />
-                        <input
-                            type="text"
-                            placeholder={t.common.search}
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            className="w-48 bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-white/20 focus:bg-white/10 transition-all placeholder-white/30"
-                        />
+                        <div className="flex items-center gap-3">
+                            {/* Search */}
+                            <div className="relative group mr-2">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/20 group-focus-within:text-white/40 transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder={t.common.search}
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-40 bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-white/10 focus:bg-white/10 transition-all placeholder-white/20"
+                                />
+                            </div>
+
+                            {selectedCol ? (
+                                <>
+                                    <button
+                                        onClick={handleUploadFiles}
+                                        className="flex items-center gap-2 px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/5 text-zinc-400"
+                                    >
+                                        <Upload className="w-3.5 h-3.5" />
+                                        {t.documents.uploadFiles}
+                                    </button>
+                                    <button
+                                        onClick={openNewTextModal}
+                                        className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-white font-medium rounded-lg transition-colors"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        {t.documents.newTextDoc}
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    onClick={handleCreateFolder}
+                                    className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-white font-medium rounded-lg transition-colors"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    {t.documents.newFolder}
+                                </button>
+                            )}
+                        </div>
                     </div>
-
-                    {selectedCol ? (
-                        <>
-                            <button
-                                onClick={handleUploadFiles}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white/10 hover:bg-white/20 rounded-lg transition-colors border border-white/5"
-                            >
-                                <Upload className="w-4 h-4" />
-                                {t.documents.uploadFiles}
-                            </button>
-                            <button
-                                onClick={openNewTextModal}
-                                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-black hover:bg-gray-200 font-medium rounded-lg transition-colors shadow-sm"
-                            >
-                                <Plus className="w-4 h-4" />
-                                {t.documents.newTextDoc}
-                            </button>
-                        </>
-                    ) : (
-                        <button
-                            onClick={handleCreateFolder}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-black hover:bg-gray-200 font-medium rounded-lg transition-colors shadow-sm"
-                        >
-                            <Plus className="w-4 h-4" />
-                            {t.documents.newFolder}
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            {/* Main Grid Area */}
-            <div className="flex-1 overflow-y-auto p-6" onClick={() => cancelInlineEdit()}>
-                {filteredItems.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-white/40">
+                {loading ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <Loader2 className="w-10 h-10 text-white/20 animate-spin" />
+                    </div>
+                ) : filteredItems.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-white/40">
                         {selectedCol ? (
                             <>
                                 <FileText className="w-12 h-12 mb-4 opacity-50" />
@@ -446,7 +528,7 @@ export default function DocumentsPage() {
                             </>
                         ) : (
                             <>
-                                <FolderIcon className="w-12 h-12 mb-4 opacity-50 text-[#4cb0d8]" />
+                                <FolderIcon className="w-12 h-12 mb-4 text-white/10" />
                                 <p>{t.documents.noFoldersYet}</p>
                                 <p className="text-sm mt-1">{t.documents.createFolderToStart}</p>
                             </>
@@ -491,18 +573,26 @@ export default function DocumentsPage() {
                                 </div>
                             ))
                             : (filteredItems as Doc[]).map(doc => (
+                                (() => {
+                                    const hasVisualPreview = !!previewUrls[doc.id] && (isPdfDoc(doc) || isImageDoc(doc))
+                                    return (
                                 <div
                                     key={doc.id}
                                     onContextMenu={(e) => handleContextMenu(e, 'document', doc)}
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        if (editingId !== doc.id) openDocumentForEditing(doc)
+                                        if (editingId === doc.id) return
+                                        if (isPdfDoc(doc) || isImageDoc(doc)) {
+                                            setPreviewDoc(doc)
+                                        } else {
+                                            openDocumentForEditing(doc)
+                                        }
                                     }}
                                     className="group flex flex-col items-center justify-start w-[110px] gap-2 p-2 cursor-pointer transition-all border-transparent relative"
                                 >
                                     <div className="w-full aspect-[3/4] bg-[#1a1a1d] border border-white/10 rounded-lg flex flex-col shadow-sm overflow-hidden relative transition-all group-hover:bg-[#222225] group-hover:border-white/20">
-                                        <div className="flex-1 w-full relative overflow-hidden p-3 flex flex-col gap-1.5 mt-1">
-                                            {/\.(md|txt)$/i.test(doc.name) ? (
+                                        <div className={`flex-1 w-full relative overflow-hidden flex flex-col gap-1.5 mt-1 ${hasVisualPreview ? 'p-0' : 'p-3'}`}>
+                                            {isTextDoc(doc.name) ? (
                                                 <>
                                                     <div className="h-1.5 w-3/4 bg-white/20 rounded-sm mb-1"></div>
                                                     <div className="h-1 w-full bg-white/10 rounded-sm"></div>
@@ -511,6 +601,14 @@ export default function DocumentsPage() {
                                                     <div className="h-1 w-full bg-white/10 rounded-sm"></div>
                                                     <div className="h-1 w-2/3 bg-white/10 rounded-sm"></div>
                                                 </>
+                                            ) : previewUrls[doc.id] && isPdfDoc(doc) ? (
+                                                <PDFThumbnail url={previewUrls[doc.id]} className="absolute inset-0" />
+                                            ) : previewUrls[doc.id] && isImageDoc(doc) ? (
+                                                <img
+                                                    src={previewUrls[doc.id]}
+                                                    alt={doc.name}
+                                                    className="absolute inset-0 w-full h-full object-cover"
+                                                />
                                             ) : (
                                                 <div className="absolute inset-0 flex items-center justify-center">
                                                     {renderIconForType(doc.name)}
@@ -519,7 +617,7 @@ export default function DocumentsPage() {
                                         </div>
                                         <div className="h-6 w-full border-t border-white/5 bg-black/20 flex items-center pl-2 shrink-0">
                                             <div className="flex items-center gap-1.5 text-[9px] font-semibold text-white/50 tracking-wider">
-                                                <span className={`w-1.5 h-1.5 rounded-full ${/\.(md|txt)$/i.test(doc.name) ? 'bg-blue-500' : 'bg-gray-500'}`}></span>
+                                                <span className={`w-1.5 h-1.5 rounded-full ${isTextDoc(doc.name) ? 'bg-blue-500' : 'bg-gray-500'}`}></span>
                                                 {doc.name.split('.').pop()?.toUpperCase() || 'FILE'}
                                             </div>
                                         </div>
@@ -545,9 +643,12 @@ export default function DocumentsPage() {
                                         )}
                                     </div>
                                 </div>
+                                    )
+                                })()
                             ))}
                     </div>
                 )}
+                </div>
             </div>
 
             {/* Context Menu */}
@@ -565,6 +666,45 @@ export default function DocumentsPage() {
                     }}
                     onClose={closeContextMenu}
                 />
+            )}
+
+            {/* PDF / Image Preview Modal */}
+            {previewDoc && (
+                <div
+                    className="absolute inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+                    onClick={() => setPreviewDoc(null)}
+                >
+                    <div
+                        className="relative max-w-3xl w-full max-h-[90vh] flex items-center justify-center p-4"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setPreviewDoc(null)}
+                            className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-black/50 hover:bg-black/80 text-white/70 hover:text-white transition-colors"
+                        >
+                            <X size={18} />
+                        </button>
+                        {previewUrls[previewDoc.id] ? (
+                            isPdfDoc(previewDoc) ? (
+                                <PDFThumbnail
+                                    url={previewUrls[previewDoc.id]}
+                                    targetHeight={600}
+                                    className="w-full max-h-[80vh]"
+                                />
+                            ) : (
+                                <img
+                                    src={previewUrls[previewDoc.id]}
+                                    alt={previewDoc.name}
+                                    className="max-h-[80vh] max-w-full object-contain rounded-lg"
+                                />
+                            )
+                        ) : (
+                            <div className="flex items-center justify-center h-64">
+                                <Loader2 className="w-10 h-10 text-white/40 animate-spin" />
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
 
             {/* Write Text Modal */}

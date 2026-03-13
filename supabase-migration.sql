@@ -29,6 +29,10 @@ create table documents (
   user_id       uuid        not null references auth.users(id) on delete cascade,
   name          text        not null,
   content       text,
+  file_path     text,
+  file_type     text,
+  size_bytes    bigint,
+  file_etag     text,
   created_at    timestamptz not null default now()
 );
 alter table documents enable row level security;
@@ -78,12 +82,15 @@ $$;
 
 -- ── Daily usage tracking per user ─────────────────────────────────────────────
 create table user_usage (
-  id              uuid    primary key default gen_random_uuid(),
-  user_id         uuid    not null references auth.users(id) on delete cascade,
-  date            date    not null default current_date,
-  questions_count int     not null default 0,
-  documents_count int     not null default 0,
-  tokens_used     int     not null default 0,
+  id               uuid    primary key default gen_random_uuid(),
+  user_id          uuid    not null references auth.users(id) on delete cascade,
+  date             date    not null default current_date,
+  questions_count  int     not null default 0,
+  documents_count  int     not null default 0,
+  tokens_used      int     not null default 0,
+  realtime_tokens  int     not null default 0,
+  embedding_tokens int     not null default 0,
+  gemini_tokens    int     not null default 0,
   unique(user_id, date)
 );
 alter table user_usage enable row level security;

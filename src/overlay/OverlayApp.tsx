@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft } from 'lucide-react'
+import { Loader } from '../components/ui/loader'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
 import {
     Select,
@@ -292,25 +294,32 @@ export default function OverlayApp() {
                         <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
                             {questions.find((q) => q.id === selectedId)?.text}
                         </p>
-                        <div className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                            {response || (generating
-                                ? <span className="text-zinc-500 italic">{t.overlay.thinking}</span>
-                                : null)}
+                        <div className="text-sm text-zinc-300 leading-relaxed">
+                            {response ? (
+                                <MarkdownRenderer content={response} />
+                            ) : generating ? (
+                                <Loader variant="loading-dots" text={t.overlay.thinking} className="text-zinc-500" />
+                            ) : null}
                         </div>
-                        {generating && <Loader2 size={12} className="animate-spin text-zinc-500 mt-1" />}
                     </div>
                 ) : (
                     <>
                         {!listening && questions.length === 0 && (
                             <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
                                 <Mic size={32} strokeWidth={1} />
-                                <p className="text-sm text-center px-8 text-zinc-400">{t.overlay.pressListenToBegin}</p>
+                                <p className="text-xs text-center px-10 text-zinc-500 leading-relaxed">
+                                    {t.overlay.pressListenToBegin}
+                                </p>
                             </div>
                         )}
                         {listening && questions.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
-                                <Loader2 size={24} strokeWidth={1.5} className="animate-spin text-zinc-500" />
-                                <p className="text-xs text-zinc-400">{t.overlay.waitingForQuestions}</p>
+                            <div className="flex flex-col items-center justify-center h-full gap-4 text-zinc-700 py-12">
+                                <div className="h-8 flex items-center justify-center">
+                                    <Loader variant="dots" className="text-zinc-500" />
+                                </div>
+                                <p className="text-xs text-zinc-500 font-medium tracking-wide">
+                                    {t.overlay.waitingForQuestions}
+                                </p>
                             </div>
                         )}
                         {questions.length > 0 && (

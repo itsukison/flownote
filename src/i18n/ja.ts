@@ -20,13 +20,15 @@ export const ja = {
     somethingWrong: '問題が発生しました',
     checkEmail: '確認メールを送信しました。メール内のリンクをクリックしてログインしてください。',
     aiPoweredAssistant: 'AI搭載ミーティングアシスタント',
-    toggleOverlayHint: '⌘/ でフローティングオーバーレイを表示/非表示',
+    toggleOverlayHint: '⌘/ でフローティングウィンドウを表示/非表示',
   },
   sidebar: {
     documents: 'ドキュメント',
     prompts: 'プロンプト',
     history: '履歴',
     settings: '設定',
+    tutorial: 'チュートリアル',
+    help: '使い方',
   },
   documents: {
     title: 'ドキュメント',
@@ -65,7 +67,7 @@ export const ja = {
     title: '履歴',
     clearAll: 'すべてクリア',
     noQuestionsYet: 'まだ質問が検出されていません',
-    startListeningHint: 'オーバーレイでリスニングを開始して質問をキャプチャ',
+    startListeningHint: 'フローティングウィンドウでリスニングを開始して質問をキャプチャ',
   },
   settings: {
     title: '設定',
@@ -80,6 +82,10 @@ export const ja = {
     documents: 'ドキュメント',
     tokensUsed: '使用トークン数',
     noUsageDataYet: 'まだ使用データがありません',
+    tokenBreakdown: 'トークン内訳',
+    realtimeTokens: 'リアルタイム検出',
+    embeddingTokens: 'エンベディング',
+    geminiTokens: 'AI回答生成',
   },
   overlay: {
     notSignedIn: '未ログイン',
@@ -96,7 +102,7 @@ export const ja = {
     captured: 'キャプチャ済み',
     clear: 'クリア',
     analysis: '分析',
-    thinking: '思考中...',
+    thinking: '思考中',
     systemAudioOff: 'システム音声: オフ',
     fixPermission: '設定する →',
   },
@@ -142,5 +148,74 @@ export const ja = {
     skip: '後で設定する',
     continue: '始める',
     next: '次へ',
+  },
+  tutorial: {
+    welcome: {
+      title: 'Flownoteへようこそ',
+      subtitle: '最高の面接パフォーマンスを、AIと共に。',
+      body: 'Flownoteは、あなたの会話をリアルタイムで分析し、最適な回答を提案するためのパーソナルアシスタントです。',
+    },
+    audio: {
+      title: 'ドキュメントのアップロード',
+      subtitle: 'あなたの経験をAIに共有。',
+      body: '.txtや.mdファイルをアップロードして、自分専用のナレッジベースを作成しましょう。これらがAI回答の元になります。',
+    },
+    live: {
+      title: 'ウィンドウとリスニング',
+      subtitle: '必要な時だけ、ボタンをオンに。',
+      body: 'フローティングウィンドウでコレクションを選択し、「リスニング」を開始して質問を検出します。不要な時はオフにしてトークン消費を節約しましょう。',
+    },
+    finish: {
+      title: '準備はいいですか？',
+      subtitle: 'さあ、最高の面接体験を。',
+      body: '⌘/ でいつでもフローティングウィンドウを呼び出せます。自分専用のプロンプトを設定して、自信を持って面接に臨みましょう。',
+      start: 'Flownoteを始める',
+    },
+    back: '戻る',
+    next: '次へ',
+  },
+  help: {
+    title: '使い方',
+    shortcuts: {
+      title: 'キーボードショートカット',
+      overlay: 'フローティング表示の切り替え',
+      palette: 'コマンドパレット',
+      settings: 'アプリ本体の設定を表示',
+    },
+    tips: {
+      title: '使い方のコツ',
+      tip1: {
+        title: 'リスニングの効率的な運用',
+        description: '「リスニング」を有効にすると、AIがリアルタイムで質問の検出を開始します。面接中の重要なやり取りが終わったら、こまめにオフにしましょう。これにより、不要な解析を避け、APIトークンの消費を最小限に抑えることができます。',
+      },
+      tip2: {
+        title: '回答精度を高めるコンテキスト選択',
+        description: 'フローティング表示内の「コンテキスト」メニューから、特定のドキュメントコレクションを選択可能です。応募先企業に関連するメモや、自分の過去の回答集を指定することで、AIがより具体的かつ的確な回答を生成できるようになります。',
+      },
+      tip3: {
+        title: 'プロンプトによる回答スタイルの最適化',
+        description: '「プロンプト」画面では、AIの回答トーンや構成を自由にカスタマイズできます。「簡潔に3つのポイントで答えて」や「STAR法に基づいて回答して」といった指示を事前に設定しておくことで、本番中により把握しやすい情報が得られます。',
+      },
+    },
+    tutorial: {
+      title: 'チュートリアル',
+      restart: 'チュートリアルをもう一度見る',
+    },
+  },
+  commandPalette: {
+    placeholder: 'コマンドを検索...',
+    empty: '結果が見つかりません',
+    categories: {
+      navigation: 'ナビゲーション',
+      actions: 'アクション',
+    },
+    commands: {
+      documents: 'ドキュメントへ移動',
+      prompts: 'プロンプト管理へ移動',
+      history: '履歴へ移動',
+      settings: '設定へ移動',
+      help: '使い方ページへ移動',
+      tutorial: 'チュートリアルを開始',
+    },
   },
 }

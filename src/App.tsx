@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Mic, MicOff, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import MarkdownRenderer from './components/MarkdownRenderer'
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
@@ -204,8 +205,12 @@ export default function App() {
               Answer
               {generating && <Loader2 size={10} className="animate-spin text-blue-400" />}
             </div>
-            <div className="text-xs text-white/80 leading-relaxed whitespace-pre-wrap">
-              {response || (generating ? <span className="text-white/20">Generating…</span> : null)}
+            <div className="text-xs text-white/80 leading-relaxed">
+              {response ? (
+                <MarkdownRenderer content={response} />
+              ) : generating ? (
+                <span className="text-white/20">Generating…</span>
+              ) : null}
             </div>
           </div>
         )}

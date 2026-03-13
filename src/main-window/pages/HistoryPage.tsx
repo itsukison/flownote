@@ -8,7 +8,7 @@ interface Question {
     id: string
     text: string
     timestamp: number
-    source?: 'gemini' | 'regex'
+    source?: string
 }
 
 function timeAgo(ts: number) {
@@ -19,16 +19,37 @@ function timeAgo(ts: number) {
     return new Date(ts).toLocaleDateString()
 }
 
-export default function HistoryPage() {
+export default function HistoryPage({ 
+    questions: initialQuestions, 
+    loading: externalLoading,
+    onRefresh,
+    onClear
+}: { 
+    questions?: Question[]
+    loading?: boolean
+    onRefresh?: () => void
+    onClear?: () => void
+}) {
     const [questions, setQuestions] = useState<Question[]>([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        window.electronAPI?.getQuestions().then((qs) => {
-            setQuestions(qs.slice().reverse()) // most recent first
-            setLoading(false)
-        }) ?? setLoading(false)
+        if (initialQuestions !== undefined) {
+            setQuestions(initialQuestions)
+            setLoading(!!externalLoading)
+        } else {
+            window.electronAPI?.getQuestions().then((qs) => {
+                setQuestions(qs.slice().reverse())
+                setLoading(false)
+            }) ?? setLoading(false)
+        }
     }, [])
+
+    useEffect(() => {
+        if (!externalLoading && initialQuestions !== undefined) {
+            setQuestions(initialQuestions)
+        }
+    }, [initialQuestions, externalLoading])
 
     if (loading) {
         return (
@@ -39,12 +60,12 @@ export default function HistoryPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto px-8 py-8">
-            <div className="flex items-center justify-between mb-6">
-                <h1 className="text-lg font-semibold text-white">{t.history.title}</h1>
+        <div className="flex-1 flex flex-col min-h-full max-w-2xl mx-auto px-8 py-8">
+            <div className="flex items-center justify-between mb-8">
+                <h1 className="text-lg font-semibold text-zinc-100">{t.history.title}</h1>
                 {questions.length > 0 && (
                     <button
-                        onClick={() => { window.electronAPI?.clearQuestions(); setQuestions([]) }}
+                        onClick={() => onClear?.()}
                         className="text-xs text-white/30 hover:text-white/60 transition-colors"
                     >
                         {t.history.clearAll}
@@ -53,7 +74,7 @@ export default function HistoryPage() {
             </div>
 
             {questions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-4 text-white/20 py-20">
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white/20">
                     <MessageSquare size={36} strokeWidth={1} />
                     <p className="text-sm">{t.history.noQuestionsYet}</p>
                     <p className="text-xs text-white/15">{t.history.startListeningHint}</p>

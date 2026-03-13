@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol } from 'electron'
 import * as path from 'path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
@@ -7,6 +7,7 @@ import { registerAuthHandlers, registerAuthStateListener } from './ipc/auth'
 import { registerDocumentHandlers } from './ipc/documents'
 import { getStoredSession } from './services/tokenStorage'
 import { initUpdater, flushPendingUpdate } from './services/updater'
+import { getCacheRoot } from './services/documentCache'
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
@@ -14,6 +15,18 @@ let supabase: SupabaseClient | null = null
 
 const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
 const BASE_URL = 'http://localhost:5182'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'flownote-file',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+])
 
 function devUrl(path: string) {
   return DEV ? `${BASE_URL}${path}` : `file://${__dirname}/../dist/index.html#${path}`
@@ -41,6 +54,7 @@ function createOverlayWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    backgroundColor: '#00000000',
   })
 
   if (process.platform === 'darwin') {
@@ -82,6 +96,7 @@ async function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    backgroundColor: '#0e0e10',
   })
 
   // Check session to decide landing page
@@ -173,6 +188,29 @@ async function init() {
   }
 
   app.whenReady().then(async () => {
+    protocol.registerFileProtocol('flownote-file', (request, callback) => {
+      try {
+        const url = new URL(request.url)
+        let decodedPath = decodeURIComponent(url.pathname)
+        if (decodedPath.startsWith('//')) {
+          decodedPath = decodedPath.slice(1)
+        }
+
+        const cacheRoot = path.normalize(getCacheRoot()) + path.sep
+        const normalized = path.normalize(decodedPath)
+
+        if (!normalized.startsWith(cacheRoot)) {
+          callback({ error: -6 })
+          return
+        }
+
+        callback({ path: normalized })
+      } catch (err) {
+        console.error('[Protocol] flownote-file error:', err)
+        callback({ error: -2 })
+      }
+    })
+
     await createMainWindow()
     createOverlayWindow()
     mainWindow?.show()

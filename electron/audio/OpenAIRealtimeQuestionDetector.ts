@@ -46,17 +46,20 @@ export class OpenAIRealtimeQuestionDetector {
 
   private onQuestion?: (q: Question) => void
   private onError?: (err: any) => void
+  private onTokenUsage?: (tokens: number) => void
 
   constructor(
     apiKey: string,
     callbacks?: {
       onQuestion?: (q: Question) => void
       onError?: (err: any) => void
+      onTokenUsage?: (tokens: number) => void
     }
   ) {
     this.apiKey = apiKey
     this.onQuestion = callbacks?.onQuestion
     this.onError = callbacks?.onError
+    this.onTokenUsage = callbacks?.onTokenUsage
     console.log(`[OpenAIRealtimeDetector] Initialized — model: ${this.modelName}`)
   }
 
@@ -375,6 +378,15 @@ export class OpenAIRealtimeQuestionDetector {
         const alreadyProcessed = source === 'user' ? this.userResponseProcessed : this.opponentResponseProcessed
         const output: any[] = msg.response?.output ?? []
         console.log(`[OpenAIRealtimeDetector] ${source} — response.done output items: ${output.length}, alreadyProcessed: ${alreadyProcessed}`)
+
+        // Capture token usage from every response.done regardless of text processing state
+        const usage = msg.response?.usage
+        if (usage) {
+          const total = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
+          console.log(`[OpenAIRealtimeDetector] ${source} — token usage: input=${usage.input_tokens}, output=${usage.output_tokens}, total=${total}`)
+          if (total > 0) this.onTokenUsage?.(total)
+        }
+
         if (alreadyProcessed) {
           console.log(`[OpenAIRealtimeDetector] ${source} — response.done: skipping fallback, response already processed this turn`)
           break

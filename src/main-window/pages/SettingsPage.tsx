@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function SettingsPage({ user }: Props) {
-    const [usage, setUsage] = useState<{ questions_count: number; documents_count: number; tokens_used: number } | null>(null)
+    const [usage, setUsage] = useState<{ questions_count: number; documents_count: number; tokens_used: number; realtime_tokens: number; embedding_tokens: number; gemini_tokens: number } | null>(null)
     const [loadingUsage, setLoadingUsage] = useState(true)
     const [audioPermStatus, setAudioPermStatus] = useState<'granted' | 'denied' | 'not-determined' | 'unknown' | null>(null)
 
@@ -88,13 +88,13 @@ export default function SettingsPage({ user }: Props) {
             </section>
 
             {/* Usage Section */}
-            <section className="space-y-1">
+            <section className="space-y-1 flex-1 flex flex-col min-h-[300px]">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{t.settings.usage}</h2>
                     <span className="text-xs text-zinc-600">{t.settings.today}</span>
                 </div>
                 {loadingUsage ? (
-                    <div className="flex justify-center py-8">
+                    <div className="flex-1 flex items-center justify-center">
                         <Loader2 size={20} className="animate-spin text-zinc-600" />
                     </div>
                 ) : usage ? (
@@ -107,9 +107,54 @@ export default function SettingsPage({ user }: Props) {
                             <span className="text-sm text-zinc-400">{t.settings.documents}</span>
                             <span className="text-sm text-zinc-300">{usage.documents_count}</span>
                         </div>
-                        <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
-                            <span className="text-sm text-zinc-400">{t.settings.tokensUsed}</span>
-                            <span className="text-sm text-zinc-300">{usage.tokens_used.toLocaleString()}</span>
+
+                        {/* Token breakdown */}
+                        <div className="py-3 -mx-3 px-3">
+                            <div className="flex justify-between items-center mb-3">
+                                <span className="text-sm text-zinc-400">{t.settings.tokenBreakdown}</span>
+                                <span className="text-sm text-zinc-300">{usage.tokens_used.toLocaleString()}</span>
+                            </div>
+                            {(() => {
+                                const total = usage.realtime_tokens + usage.embedding_tokens + usage.gemini_tokens
+                                const segments = [
+                                    { key: 'realtime', value: usage.realtime_tokens, label: t.settings.realtimeTokens, color: 'bg-amber-500' },
+                                    { key: 'embedding', value: usage.embedding_tokens, label: t.settings.embeddingTokens, color: 'bg-blue-500' },
+                                    { key: 'gemini', value: usage.gemini_tokens, label: t.settings.geminiTokens, color: 'bg-violet-500' },
+                                ]
+                                return (
+                                    <>
+                                        {/* Proportional bar */}
+                                        <div className="h-2 rounded-full overflow-hidden bg-zinc-800 flex mb-3">
+                                            {total === 0 ? (
+                                                <div className="h-full w-full bg-zinc-800" />
+                                            ) : (
+                                                segments.map(seg => seg.value > 0 && (
+                                                    <div
+                                                        key={seg.key}
+                                                        className={`h-full ${seg.color} transition-all`}
+                                                        style={{ width: `${(seg.value / total) * 100}%` }}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                        {/* Legend */}
+                                        <div className="flex flex-col gap-1.5">
+                                            {segments.map(seg => (
+                                                <div key={seg.key} className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`w-2 h-2 rounded-full ${seg.color} shrink-0`} />
+                                                        <span className="text-xs text-zinc-500">{seg.label}</span>
+                                                    </div>
+                                                    <span className="text-xs text-zinc-400">{seg.value.toLocaleString()}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {total === 0 && (
+                                            <p className="text-xs text-zinc-600 text-center mt-2">{t.settings.noUsageDataYet}</p>
+                                        )}
+                                    </>
+                                )
+                            })()}
                         </div>
                     </div>
                 ) : (

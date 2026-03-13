@@ -1,8 +1,9 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { SupabaseClient } from '@supabase/supabase-js'
-import * as fs from 'fs'
 import * as path from 'path'
+import * as crypto from 'crypto'
 import { extractText, chunkText, embedChunks, storeDocument, searchSimilar, getUsage, incrementUsage } from '../services/rag'
+import { ensureCached } from '../services/documentCache'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -85,7 +86,7 @@ export function registerDocumentHandlers(
 
         const { data, error } = await supabase
             .from('documents')
-            .select('id, name, created_at')
+            .select('id, name, created_at, file_path, file_type, size_bytes, file_etag')
             .eq('collection_id', collectionId)
             .order('created_at', { ascending: false })
 
@@ -93,7 +94,14 @@ export function registerDocumentHandlers(
         return data ?? []
     })
 
-    ipcMain.handle('doc:upload', async (_event, fileName: string, fileBuffer: ArrayBuffer, collectionId: string) => {
+    ipcMain.handle('doc:upload', async (
+        _event,
+        fileName: string,
+        fileBuffer: ArrayBuffer,
+        collectionId: string,
+        fileType?: string,
+        sizeBytes?: number
+    ) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
 
@@ -103,6 +111,23 @@ export function registerDocumentHandlers(
 
             console.log(`[RAG] Processing ${fileName}…`)
 
+            const safeName = path.basename(fileName).replace(/[^\w.\-() ]+/g, '_')
+            const filePath = `${user.id}/${collectionId}/${Date.now()}-${safeName}`
+
+            const uploadBody = Buffer.from(fileBuffer)
+            const uploadHash = crypto.createHash('sha256').update(uploadBody).digest('hex')
+            const normalizedSizeBytes = typeof sizeBytes === 'number' ? sizeBytes : uploadBody.byteLength
+            const { error: uploadError } = await supabase.storage
+                .from('documents')
+                .upload(filePath, uploadBody, {
+                    contentType: fileType || undefined,
+                    upsert: false,
+                })
+
+            if (uploadError) {
+                throw new Error(uploadError.message || 'Failed to upload file to storage')
+            }
+
             // Extract, chunk, embed
             const text = await extractText(fileName, fileBuffer)
             if (!text.trim()) return { success: false, error: 'Could not extract text from file' }
@@ -111,12 +136,25 @@ export function registerDocumentHandlers(
             console.log(`[RAG] ${chunks.length} chunks from ${fileName}`)
 
             const { embeddings, tokensUsed: embeddingTokens } = await embedChunks(chunks)
-            const { id: docId } = await storeDocument(supabase, user.id, collectionId, fileName, text, chunks, embeddings, embeddingTokens)
+            const { id: docId } = await storeDocument(
+                supabase,
+                user.id,
+                collectionId,
+                fileName,
+                text,
+                chunks,
+                embeddings,
+                embeddingTokens,
+                filePath,
+                fileType,
+                normalizedSizeBytes,
+                uploadHash
+            )
 
             // Track usage: document count + embedding tokens
             await incrementUsage(supabase, user.id, 'documents_count', 0)
             if (embeddingTokens > 0) {
-                await incrementUsage(supabase, user.id, 'tokens_used', embeddingTokens)
+                await incrementUsage(supabase, user.id, 'embedding_tokens', embeddingTokens)
             }
 
             return { success: true, id: docId }
@@ -142,17 +180,41 @@ export function registerDocumentHandlers(
             console.log(`[RAG] ${chunks.length} chunks from text input: ${title}`)
 
             const { embeddings, tokensUsed: embeddingTokens } = await embedChunks(chunks)
-            const { id: docId } = await storeDocument(supabase, user.id, collectionId, title, text, chunks, embeddings, embeddingTokens)
+            const { id: docId } = await storeDocument(
+                supabase,
+                user.id,
+                collectionId,
+                title,
+                text,
+                chunks,
+                embeddings,
+                embeddingTokens
+            )
 
             // Track usage: document count + embedding tokens
             await incrementUsage(supabase, user.id, 'documents_count', 0)
             if (embeddingTokens > 0) {
-                await incrementUsage(supabase, user.id, 'tokens_used', embeddingTokens)
+                await incrementUsage(supabase, user.id, 'embedding_tokens', embeddingTokens)
             }
 
             return { success: true, id: docId }
         } catch (err: any) {
             console.error('[RAG] Text Upload error:', err)
+            return { success: false, error: err.message }
+        }
+    })
+
+    ipcMain.handle('doc:get-file-url', async (_event, filePath: string, fileEtag?: string) => {
+        const supabase = getSupabase()
+        if (!supabase) return { success: false, error: 'Supabase not configured' }
+        if (!filePath) return { success: false, error: 'Missing file path' }
+
+        try {
+            const localPath = await ensureCached(supabase, filePath, fileEtag)
+            const url = `flownote-file://${encodeURI(localPath)}`
+            return { success: true, url }
+        } catch (err: any) {
+            console.error('[Documents] get-file-url error:', err)
             return { success: false, error: err.message }
         }
     })
@@ -236,7 +298,7 @@ export function registerDocumentHandlers(
             if (error) throw error
 
             if (tokensUsed > 0) {
-                await incrementUsage(supabase, user.id, 'tokens_used', tokensUsed)
+                await incrementUsage(supabase, user.id, 'embedding_tokens', tokensUsed)
             }
 
             return { success: true }
@@ -253,8 +315,8 @@ export function registerDocumentHandlers(
         if (!supabase || !collectionId) return []
 
         try {
-            const results = await searchSimilar(supabase, query, collectionId)
-            return results
+            const { chunks } = await searchSimilar(supabase, query, collectionId)
+            return chunks
         } catch (err: any) {
             console.error('[RAG] Search error:', err)
             return []
@@ -265,15 +327,16 @@ export function registerDocumentHandlers(
 
     ipcMain.handle('token:get-usage', async () => {
         const supabase = getSupabase()
-        if (!supabase) return { questions_count: 0, documents_count: 0, tokens_used: 0 }
+        const fallback = { questions_count: 0, documents_count: 0, tokens_used: 0, realtime_tokens: 0, embedding_tokens: 0, gemini_tokens: 0 }
+        if (!supabase) return fallback
 
         try {
             const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return { questions_count: 0, documents_count: 0, tokens_used: 0 }
+            if (!user) return fallback
             return await getUsage(supabase, user.id)
         } catch (err: any) {
             console.error('[Usage]', err)
-            return { questions_count: 0, documents_count: 0, tokens_used: 0 }
+            return fallback
         }
     })
 }

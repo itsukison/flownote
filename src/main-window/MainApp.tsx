@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
-import { FileText, History, Settings, LogOut, MessageSquare } from 'lucide-react'
+import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle } from 'lucide-react'
 import { ja } from '@/i18n/ja'
-
-const t = ja
 import AuthPage from './pages/AuthPage'
 import DocumentsPage from './pages/DocumentsPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
 import PromptsPage from './pages/PromptsPage'
 import SetupPage from './pages/SetupPage'
+import TutorialPage from './pages/TutorialPage'
+import HelpPage from './pages/HelpPage'
 import { UpdateToast } from '@/components/UpdateToast'
+import CommandPalette from '@/components/CommandPalette'
+
+const t = ja
 
 function Sidebar({ user }: { user: any }) {
     const navigate = useNavigate()
@@ -18,6 +21,7 @@ function Sidebar({ user }: { user: any }) {
         { to: '/documents', icon: FileText, label: t.sidebar.documents },
         { to: '/prompts', icon: MessageSquare, label: t.sidebar.prompts },
         { to: '/history', icon: History, label: t.sidebar.history },
+        { to: '/help', icon: HelpCircle, label: t.sidebar.help },
         { to: '/settings', icon: Settings, label: t.sidebar.settings },
     ]
 
@@ -75,6 +79,91 @@ export default function MainApp() {
     const navigate = useNavigate()
     const [session, setSession] = useState<any>(undefined)
     const [user, setUser] = useState<any>(null)
+    const [isPaletteOpen, setIsPaletteOpen] = useState(false)
+
+    // Cached state for pages
+    const [collections, setCollections] = useState<any[]>([])
+    const [collectionsLoading, setCollectionsLoading] = useState(true)
+    const [questions, setQuestions] = useState<any[]>([])
+    const [questionsLoading, setQuestionsLoading] = useState(true)
+    const [prompts, setPrompts] = useState<any[]>([])
+    const [promptsLoading, setPromptsLoading] = useState(true)
+    const [promptsSelectedIds, setPromptsSelectedIds] = useState<{ base?: string; rag?: string }>({})
+
+    // Load cached data on mount
+    useEffect(() => {
+        loadCollections()
+        loadQuestions()
+        loadPrompts()
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault()
+                setIsPaletteOpen(prev => !prev)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
+
+    const loadCollections = async () => {
+        try {
+            const cols = await window.electronAPI.listCollections()
+            setCollections(cols)
+        } catch (err) {
+            console.error('Failed to load collections:', err)
+        } finally {
+            setCollectionsLoading(false)
+        }
+    }
+
+    const loadQuestions = async () => {
+        try {
+            const qs = await window.electronAPI?.getQuestions() ?? []
+            setQuestions(qs.slice().reverse())
+        } catch (err) {
+            console.error('Failed to load questions:', err)
+        } finally {
+            setQuestionsLoading(false)
+        }
+    }
+
+    const loadPrompts = async () => {
+        try {
+            const result = await window.electronAPI?.getPrompts()
+            if (result?.success && result.data) {
+                setPrompts(result.data)
+                setPromptsSelectedIds({
+                    base: result.selectedBaseId,
+                    rag: result.selectedRagId
+                })
+            }
+        } catch (err) {
+            console.error('Failed to load prompts:', err)
+        } finally {
+            setPromptsLoading(false)
+        }
+    }
+
+    const refreshCollections = () => {
+        setCollectionsLoading(true)
+        loadCollections()
+    }
+
+    const refreshQuestions = () => {
+        setQuestionsLoading(true)
+        loadQuestions()
+    }
+
+    const refreshPrompts = () => {
+        setPromptsLoading(true)
+        loadPrompts()
+    }
+
+    const clearQuestions = () => {
+        window.electronAPI?.clearQuestions()
+        setQuestions([])
+    }
 
     useEffect(() => {
         if (!window.electronAPI) {
@@ -88,14 +177,34 @@ export default function MainApp() {
         })
         window.electronAPI.getUser().then(({ user }) => setUser(user))
 
+        // Check if tutorial is needed
+        if (session) {
+            checkTutorialStatus()
+        }
+
         // Listen for session changes
         const off = window.electronAPI.onSessionChange(({ session }) => {
             setSession(session)
             if (!session) navigate('/auth')
-            else window.electronAPI.getUser().then(({ user }) => setUser(user))
+            else {
+                window.electronAPI.getUser().then(({ user }) => setUser(user))
+                checkTutorialStatus()
+            }
         })
         return off
-    }, [])
+    }, [session])
+
+    const checkTutorialStatus = async () => {
+        const setupCompleted = await window.electronAPI?.getSetupCompleted()
+        if (!setupCompleted) {
+            navigate('/setup')
+            return
+        }
+        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
+        if (!tutorialCompleted) {
+            navigate('/tutorial')
+        }
+    }
 
     // Loading
     if (session === undefined) {
@@ -115,12 +224,24 @@ export default function MainApp() {
             <Routes>
                 <Route path="/auth" element={<AuthPage onAuth={async (s) => {
                     setSession(s)
-                    const completed = await window.electronAPI?.getSetupCompleted()
-                    navigate(completed ? '/documents' : '/setup')
+                    const setupCompleted = await window.electronAPI?.getSetupCompleted()
+                    if (!setupCompleted) {
+                        navigate('/setup')
+                    } else {
+                        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
+                        navigate(tutorialCompleted ? '/documents' : '/tutorial')
+                    }
                 }} />} />
                 <Route
                     path="/setup"
-                    element={session ? <SetupPage onComplete={() => navigate('/documents')} /> : <Navigate to="/auth" replace />}
+                    element={session ? <SetupPage onComplete={async () => {
+                        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
+                        navigate(tutorialCompleted ? '/documents' : '/tutorial')
+                    }} /> : <Navigate to="/auth" replace />}
+                />
+                <Route
+                    path="/tutorial"
+                    element={session ? <TutorialPage onComplete={() => navigate('/documents')} /> : <Navigate to="/auth" replace />}
                 />
                 <Route
                     path="/*"
@@ -131,10 +252,11 @@ export default function MainApp() {
                                 <main className="flex-1 overflow-auto">
                                     <Routes>
                                         <Route path="/" element={<Navigate to="/documents" replace />} />
-                                        <Route path="/documents" element={<DocumentsPage />} />
-                                        <Route path="/prompts" element={<PromptsPage />} />
-                                        <Route path="/history" element={<HistoryPage />} />
+                                        <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
+                                        <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
+                                        <Route path="/history" element={<HistoryPage questions={questions} loading={questionsLoading} onRefresh={refreshQuestions} onClear={clearQuestions} />} />
                                         <Route path="/settings" element={<SettingsPage user={user} />} />
+                                        <Route path="/help" element={<HelpPage />} />
                                     </Routes>
                                 </main>
                             </div>
@@ -144,6 +266,7 @@ export default function MainApp() {
                     }
                 />
             </Routes>
+            <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />
             <UpdateToast />
         </div>
     )

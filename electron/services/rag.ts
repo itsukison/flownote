@@ -89,7 +89,11 @@ export async function storeDocument(
     fullText: string,
     chunks: string[],
     embeddings: number[][],
-    embeddingTokens: number
+    embeddingTokens: number,
+    filePath?: string,
+    fileType?: string,
+    sizeBytes?: number,
+    fileEtag?: string
 ): Promise<{ id: string, tokensUsed: number }> {
     // Insert document record
     const { data: doc, error: docErr } = await supabase
@@ -99,6 +103,10 @@ export async function storeDocument(
             user_id: userId,
             name: fileName,
             content: fullText.slice(0, 10000), // store first 10k chars
+            file_path: filePath,
+            file_type: fileType,
+            size_bytes: sizeBytes,
+            file_etag: fileEtag,
         })
         .select('id')
         .single()
@@ -128,8 +136,8 @@ export async function searchSimilar(
     query: string,
     collectionId: string,
     topK = 5
-): Promise<string[]> {
-    const { embedding: queryEmbedding } = await embedQuery(query)
+): Promise<{ chunks: string[], tokensUsed: number }> {
+    const { embedding: queryEmbedding, tokensUsed } = await embedQuery(query)
 
     const { data, error } = await supabase.rpc('match_chunks', {
         query_embedding: queryEmbedding,
@@ -139,10 +147,13 @@ export async function searchSimilar(
 
     if (error) {
         console.error('[RAG] Search error:', error)
-        return []
+        return { chunks: [], tokensUsed }
     }
 
-    return (data ?? []).map((row: any) => row.content as string)
+    return {
+        chunks: (data ?? []).map((row: any) => row.content as string),
+        tokensUsed,
+    }
 }
 
 // ── Usage tracking ────────────────────────────────────────────────────────────
@@ -150,29 +161,38 @@ export async function searchSimilar(
 export async function incrementUsage(
     supabase: SupabaseClient,
     userId: string,
-    field: 'questions_count' | 'documents_count' | 'tokens_used',
+    field: 'questions_count' | 'documents_count' | 'tokens_used' | 'realtime_tokens' | 'embedding_tokens' | 'gemini_tokens',
     tokensUsed = 0
 ) {
     const today = new Date().toISOString().split('T')[0]
-    await supabase.rpc('increment_usage', {
-        p_user_id: userId,
-        p_date: today,
-        p_field: field,
-        p_tokens: tokensUsed,
-    }).throwOnError()
+    if (field === 'realtime_tokens' || field === 'embedding_tokens' || field === 'gemini_tokens') {
+        await supabase.rpc('increment_typed_usage', {
+            p_user_id: userId,
+            p_date: today,
+            p_field: field,
+            p_tokens: tokensUsed,
+        }).throwOnError()
+    } else {
+        await supabase.rpc('increment_usage', {
+            p_user_id: userId,
+            p_date: today,
+            p_field: field,
+            p_tokens: tokensUsed,
+        }).throwOnError()
+    }
 }
 
 export async function getUsage(
     supabase: SupabaseClient,
     userId: string
-): Promise<{ questions_count: number; documents_count: number; tokens_used: number }> {
+): Promise<{ questions_count: number; documents_count: number; tokens_used: number; realtime_tokens: number; embedding_tokens: number; gemini_tokens: number }> {
     const today = new Date().toISOString().split('T')[0]
     const { data } = await supabase
         .from('user_usage')
-        .select('questions_count, documents_count, tokens_used')
+        .select('questions_count, documents_count, tokens_used, realtime_tokens, embedding_tokens, gemini_tokens')
         .eq('user_id', userId)
         .eq('date', today)
         .single()
 
-    return data ?? { questions_count: 0, documents_count: 0, tokens_used: 0 }
+    return data ?? { questions_count: 0, documents_count: 0, tokens_used: 0, realtime_tokens: 0, embedding_tokens: 0, gemini_tokens: 0 }
 }

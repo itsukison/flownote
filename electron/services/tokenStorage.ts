@@ -43,3 +43,15 @@ export function getSetupCompleted(): boolean {
 export function setSetupCompleted(): void {
   setupStore.set('completed', true)
 }
+
+const tutorialStore = new Store<{ completed: boolean }>({
+  name: 'tutorial-store',
+})
+
+export function getTutorialCompleted(): boolean {
+  return tutorialStore.get('completed', false)
+}
+
+export function setTutorialCompleted(): void {
+  tutorialStore.set('completed', true)
+}

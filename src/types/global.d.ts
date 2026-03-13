@@ -36,15 +36,16 @@ declare global {
             deleteCollection: (id: string) => Promise<{ success: boolean; error?: string }>
             renameCollection: (id: string, newName: string) => Promise<{ success: boolean; error?: string }>
             listDocuments: (collectionId: string) => Promise<Doc[]>
-            uploadDocument: (fileName: string, fileBuffer: ArrayBuffer, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
+            uploadDocument: (fileName: string, fileBuffer: ArrayBuffer, collectionId: string, fileType?: string, sizeBytes?: number) => Promise<{ success: boolean; error?: string; id?: string }>
             uploadTextDocument: (title: string, text: string, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
             deleteDocument: (id: string) => Promise<{ success: boolean; error?: string }>
             renameDocument: (id: string, newName: string) => Promise<{ success: boolean; error?: string }>
             getTextDocument: (id: string) => Promise<{ success: boolean; error?: string; text?: string; title?: string }>
             updateTextDocument: (id: string, text: string) => Promise<{ success: boolean; error?: string }>
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
+            getDocumentFileUrl: (filePath: string, fileEtag?: string) => Promise<{ success: boolean; error?: string; url?: string }>
             // ── Usage ─────────────────────────────────────────────────────────────────
-            getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number }>
+            getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number; realtime_tokens: number; embedding_tokens: number; gemini_tokens: number }>
             // ── Prompts ────────────────────────────────────────────────────────────────
             getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
@@ -54,9 +55,11 @@ declare global {
             // ── Permissions ──────────────────────────────────────────────────────────
             checkSystemAudioPermission: () => Promise<'granted' | 'denied' | 'not-determined' | 'unknown'>
             openSystemAudioSettings: () => Promise<void>
-            // ── Setup ────────────────────────────────────────────────────────────────
             getSetupCompleted: () => Promise<boolean>
             setSetupCompleted: () => Promise<void>
+            // ── Tutorial ─────────────────────────────────────────────────────────────
+            getTutorialCompleted: () => Promise<boolean>
+            setTutorialCompleted: () => Promise<void>
             // ── Auto-update ──────────────────────────────────────────────────────────
             update: {
                 onAvailable: (cb: (info: { version: string }) => void) => () => void
@@ -86,6 +89,9 @@ declare global {
         name: string
         created_at: string
         size_bytes?: number
+        file_path?: string
+        file_type?: string
+        file_etag?: string
     }
 
     interface Prompt {

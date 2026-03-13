@@ -6,7 +6,7 @@ import { SystemAudioCapture } from '../audio/SystemAudioCapture'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { searchSimilar, incrementUsage } from '../services/rag'
-import { getSetupCompleted, setSetupCompleted } from '../services/tokenStorage'
+import { getSetupCompleted, setSetupCompleted, getTutorialCompleted, setTutorialCompleted } from '../services/tokenStorage'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -108,7 +108,7 @@ async function getSelectedPrompts(): Promise<{ basePrompt: any, ragPrompt: any }
   }
 }
 
-async function trackTokenUsage(tokens: number) {
+async function trackTypedTokenUsage(tokens: number, type: 'realtime_tokens' | 'embedding_tokens' | 'gemini_tokens') {
   if (!getSupabaseFn) return
   const supabase = getSupabaseFn()
   if (!supabase) return
@@ -116,9 +116,9 @@ async function trackTokenUsage(tokens: number) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    await incrementUsage(supabase, user.id, 'tokens_used', tokens)
+    await incrementUsage(supabase, user.id, type, tokens)
   } catch (err) {
-    console.error('[Handlers] trackTokenUsage error:', err)
+    console.error('[Handlers] trackTypedTokenUsage error:', err)
   }
 }
 
@@ -188,6 +188,9 @@ export function registerHandlers(
         },
         onError: (err) => {
           console.error('[Handlers] Detector error:', err)
+        },
+        onTokenUsage: (tokens) => {
+          trackTypedTokenUsage(tokens, 'realtime_tokens')
         },
       })
       await detector.start()
@@ -286,10 +289,11 @@ export function registerHandlers(
         const supabase = getSupabaseFn()
         if (supabase) {
           try {
-            const chunks = await searchSimilar(supabase, question, collectionId)
+            const { chunks, tokensUsed: ragTokens } = await searchSimilar(supabase, question, collectionId)
             if (chunks.length > 0) {
               contextBlock = chunks.join('\n\n') + '\n\n'
             }
+            if (ragTokens > 0) trackTypedTokenUsage(ragTokens, 'embedding_tokens')
           } catch (e) {
             console.warn('[Handlers] RAG search failed, proceeding without context:', e)
           }
@@ -345,7 +349,8 @@ export function registerHandlers(
       if (lastUsageMetadata) {
         const promptTokens = lastUsageMetadata.promptTokenCount || 0
         const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
-        trackTokenUsage(promptTokens + responseTokens)
+        const total = promptTokens + responseTokens
+        if (total > 0) trackTypedTokenUsage(total, 'gemini_tokens')
       }
 
       win.webContents.send('response-done')
@@ -527,6 +532,11 @@ export function registerHandlers(
 
   ipcMain.handle('setup:get-completed', () => getSetupCompleted())
   ipcMain.handle('setup:set-completed', () => setSetupCompleted())
+
+  // --- Tutorial ---
+
+  ipcMain.handle('tutorial:get-completed', () => getTutorialCompleted())
+  ipcMain.handle('tutorial:set-completed', () => setTutorialCompleted())
 
   // --- Auto-update ---
 

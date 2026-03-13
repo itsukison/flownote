@@ -52,7 +52,7 @@ export default function SetupPage({ onComplete }: Props) {
     const handleNext = () => setStep(2)
 
     return (
-        <div className="flex flex-col items-center justify-center h-full bg-[#0e0e10]">
+        <div className="flex flex-col items-center justify-center w-full h-full bg-[#0e0e10]">
             <div className="max-w-sm w-full mx-auto flex flex-col items-center gap-6 py-16 px-8">
                 {/* Step indicators */}
                 <div className="flex items-center gap-2">
