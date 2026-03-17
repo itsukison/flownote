@@ -7,6 +7,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { searchSimilar, incrementUsage } from '../services/rag'
 import { getSetupCompleted, setSetupCompleted, getTutorialCompleted, setTutorialCompleted } from '../services/tokenStorage'
+import { trackNormalizedUsage } from '../services/tokenNormalization'
+import { fetchUsageState, checkBudget, recordUsage, isUserInOrg, maybeRefreshCache } from '../services/usageLimiter'
+import { normalizeTokens } from '../services/tokenNormalization'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -121,6 +124,65 @@ async function trackTypedTokenUsage(tokens: number, type: 'realtime_tokens' | 'e
   }
 }
 
+async function trackNormalizedAndRecord(
+  type: 'realtime' | 'gemini' | 'embedding',
+  inputTokens: number,
+  outputTokens: number,
+  opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean }
+) {
+  if (!getSupabaseFn) return
+  const supabase = getSupabaseFn()
+  if (!supabase) return
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const newTotal = await trackNormalizedUsage(supabase, user.id, type, inputTokens, outputTokens, opts)
+    // Update in-memory cache with the normalized amount
+    const normalized = normalizeTokens(type, inputTokens, outputTokens)
+    recordUsage(normalized)
+    console.log(`[Handlers] Tracked ${type}: input=${inputTokens}, output=${outputTokens}, normalized=${normalized}, monthTotal=${newTotal}`)
+  } catch (err) {
+    console.error('[Handlers] trackNormalizedAndRecord error:', err)
+  }
+}
+
+async function getCurrentUserId(): Promise<string | null> {
+  if (!getSupabaseFn) return null
+  const supabase = getSupabaseFn()
+  if (!supabase) return null
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    return user?.id ?? null
+  } catch { return null }
+}
+
+async function ensureBudget(): Promise<{ allowed: boolean; error?: string }> {
+  if (!getSupabaseFn) return { allowed: false, error: 'no_database' }
+  const supabase = getSupabaseFn()
+  if (!supabase) return { allowed: false, error: 'no_database' }
+
+  try {
+    const userId = await getCurrentUserId()
+    if (!userId) return { allowed: false, error: 'not_authenticated' }
+
+    await maybeRefreshCache(supabase, userId)
+
+    if (!isUserInOrg()) {
+      return { allowed: false, error: 'no_org' }
+    }
+
+    const budget = checkBudget()
+    if (!budget.allowed) {
+      return { allowed: false, error: 'limit_exceeded' }
+    }
+    return { allowed: true }
+  } catch (err) {
+    console.error('[Handlers] ensureBudget error:', err)
+    return { allowed: false, error: 'check_failed' }
+  }
+}
+
 async function trackQuestionCount() {
   if (!getSupabaseFn) return
   const supabase = getSupabaseFn()
@@ -156,30 +218,43 @@ export function registerHandlers(
   ipcMain.handle('start-listening', async () => {
     if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
     try {
+      // Hard limit check
+      const budgetCheck = await ensureBudget()
+      if (!budgetCheck.allowed) {
+        return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+      }
+
       if (detector?.active) return { success: true }
 
       detector = new OpenAIRealtimeQuestionDetector(openaiApiKey, {
         onQuestion: (q) => {
           const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
-          trackQuestionCount()
+          trackNormalizedAndRecord('realtime', 0, 0, { incrementQuestions: true })
         },
         onError: (err) => {
           console.error('[Handlers] Detector error:', err)
         },
-        onTokenUsage: (tokens) => {
-          trackTypedTokenUsage(tokens, 'realtime_tokens')
+        onTokenUsage: (inputTokens, outputTokens) => {
+          trackNormalizedAndRecord('realtime', inputTokens, outputTokens)
+          // Check if over limit after usage, disconnect if so
+          const budget = checkBudget()
+          if (!budget.allowed) {
+            console.log('[Handlers] Usage limit exceeded after realtime response — disconnecting')
+            getOverlayWindow()?.webContents.send('usage-limit-exceeded')
+            detector?.stop()
+            detector = null
+            if (systemAudio) {
+              systemAudio.stop().catch(() => {})
+              systemAudio = null
+            }
+          }
+        },
+        onUsageLimitExceeded: () => {
+          getOverlayWindow()?.webContents.send('usage-limit-exceeded')
         },
       })
       await detector.start()
-
-      // Check Screen Recording permission before attempting system audio capture
-      const screenPermission = systemPreferences.getMediaAccessStatus('screen')
-      let systemAudioPermission: string | undefined
-      if (screenPermission !== 'granted') {
-        systemAudioPermission = screenPermission
-        console.warn(`[Handlers] Screen Recording permission is '${screenPermission}' — system audio will emit silence`)
-      }
 
       // Start system audio capture (macOS only) — fail gracefully
       systemAudio = new SystemAudioCapture()
@@ -194,8 +269,10 @@ export function registerHandlers(
         detector?.sendAudio(resampled, 'opponent').catch(console.error)
       })
       systemAudio.on('system-audio-silent', () => {
-        const win = getOverlayWindow()
-        win?.webContents.send('system-audio-silent')
+        getOverlayWindow()?.webContents.send('system-audio-silent')
+      })
+      systemAudio.on('system-audio-resumed', () => {
+        getOverlayWindow()?.webContents.send('system-audio-resumed')
       })
       systemAudio.on('error', (err: Error) => {
         console.warn('[Handlers] System audio error (continuing with mic-only):', err.message)
@@ -206,7 +283,7 @@ export function registerHandlers(
         systemAudio = null
       })
 
-      return { success: true, systemAudioPermission }
+      return { success: true }
     } catch (err: any) {
       console.error('[Handlers] start-listening error:', err)
       return { success: false, error: err.message }
@@ -258,6 +335,12 @@ export function registerHandlers(
     if (!genAI || !win) return { success: false, error: 'AI not available' }
 
     try {
+      // Hard limit check
+      const budgetCheck = await ensureBudget()
+      if (!budgetCheck.allowed) {
+        win.webContents.send('response-done')
+        return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+      }
       const isRag = !!collectionId && getSupabaseFn
       const { basePrompt, ragPrompt } = await getSelectedPrompts()
       const selectedPrompt = isRag ? ragPrompt : basePrompt
@@ -327,8 +410,9 @@ export function registerHandlers(
       if (lastUsageMetadata) {
         const promptTokens = lastUsageMetadata.promptTokenCount || 0
         const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
-        const total = promptTokens + responseTokens
-        if (total > 0) trackTypedTokenUsage(total, 'gemini_tokens')
+        if (promptTokens > 0 || responseTokens > 0) {
+          trackNormalizedAndRecord('gemini', promptTokens, responseTokens)
+        }
       }
 
       win.webContents.send('response-done')
@@ -498,8 +582,9 @@ export function registerHandlers(
 
   // --- Permissions ---
 
-  ipcMain.handle('permissions:check-system-audio', () => {
-    return systemPreferences.getMediaAccessStatus('screen')
+  ipcMain.handle('permissions:request-mic', async () => {
+    if (process.platform !== 'darwin') return true
+    return systemPreferences.askForMediaAccess('microphone')
   })
 
   ipcMain.handle('permissions:open-system-audio-settings', () => {

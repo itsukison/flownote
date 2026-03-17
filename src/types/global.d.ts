@@ -21,13 +21,14 @@ declare global {
             quitApp: () => void
             setWindowSize: (w: number, h: number) => void
             // ── Audio / question detection ────────────────────────────────────────────
-            startListening: () => Promise<{ success: boolean; error?: string; systemAudioPermission?: string }>
+            startListening: () => Promise<{ success: boolean; error?: string }>
             stopListening: () => Promise<{ success: boolean; error?: string }>
             processMicChunk: (data: Float32Array) => void
             getQuestions: () => Promise<Question[]>
             clearQuestions: () => Promise<void>
             generateResponse: (question: string, collectionId?: string) => Promise<{ success: boolean; error?: string }>
             onSystemAudioSilent: (cb: () => void) => () => void
+            onSystemAudioResumed: (cb: () => void) => () => void
             onQuestionDetected: (cb: (q: Question) => void) => () => void
             onResponseChunk: (cb: (chunk: string) => void) => () => void
             onResponseDone: (cb: () => void) => () => void
@@ -47,6 +48,12 @@ declare global {
             getDocumentFileUrl: (filePath: string, fileEtag?: string) => Promise<{ success: boolean; error?: string; url?: string }>
             // ── Usage ─────────────────────────────────────────────────────────────────
             getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number; realtime_tokens: number; embedding_tokens: number; gemini_tokens: number }>
+            // ── Organization / Activation ─────────────────────────────────────────
+            activateCode: (code: string) => Promise<{ success: boolean; error?: string; orgName?: string }>
+            getOrgMembership: () => Promise<{ orgId: string; orgName: string; used: number; limit: number } | null>
+            checkBudget: () => Promise<{ allowed: boolean; remaining: number; used: number; limit: number }>
+            getMonthlyUsage: () => Promise<MonthlyUsage | null>
+            onUsageLimitExceeded: (cb: () => void) => () => void
             // ── Prompts ────────────────────────────────────────────────────────────────
             getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
@@ -54,8 +61,8 @@ declare global {
             deletePrompt: (id: string) => Promise<{ success: boolean; error?: string }>
             selectPrompt: (id: string) => Promise<{ success: boolean; error?: string }>
             // ── Permissions ──────────────────────────────────────────────────────────
-            checkSystemAudioPermission: () => Promise<'granted' | 'denied' | 'not-determined' | 'unknown'>
             openSystemAudioSettings: () => Promise<void>
+            requestMicPermission: () => Promise<boolean>
             getSetupCompleted: () => Promise<boolean>
             setSetupCompleted: () => Promise<void>
             // ── Tutorial ─────────────────────────────────────────────────────────────
@@ -104,5 +111,19 @@ declare global {
         is_default: boolean
         created_at: string
         updated_at: string
+    }
+
+    interface MonthlyUsage {
+        normalized_tokens: number
+        token_limit: number
+        org_name: string | null
+        org_id: string | null
+        raw_realtime_input_tokens: number
+        raw_realtime_output_tokens: number
+        raw_embedding_tokens: number
+        raw_gemini_input_tokens: number
+        raw_gemini_output_tokens: number
+        questions_count: number
+        documents_count: number
     }
 }

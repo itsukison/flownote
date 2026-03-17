@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft } from 'lucide-react'
+import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle } from 'lucide-react'
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
@@ -36,8 +36,9 @@ export default function OverlayApp() {
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
     const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
-    const [systemAudioStatus, setSystemAudioStatus] = useState<string | null>(null)
     const [systemAudioSilent, setSystemAudioSilent] = useState(false)
+    const [hasOrg, setHasOrg] = useState<boolean | null>(null) // null = loading
+    const [limitExceeded, setLimitExceeded] = useState(false)
 
     const audioCtxRef = useRef<AudioContext | null>(null)
     const processorRef = useRef<ScriptProcessorNode | null>(null)
@@ -58,25 +59,29 @@ export default function OverlayApp() {
         return off
     }, [])
 
-    // Load collections when authed
+    // Check org membership and load collections when authed
     useEffect(() => {
         if (!session) return
+        window.electronAPI?.getOrgMembership().then((membership) => {
+            setHasOrg(!!membership)
+            if (membership) {
+                // Check if limit exceeded
+                window.electronAPI?.checkBudget().then((budget) => {
+                    setLimitExceeded(!budget.allowed)
+                })
+            }
+        })
         window.electronAPI?.listCollections().then((cols) => {
             setCollections(cols)
             if (cols.length > 0) setSelectedCollectionId(cols[0].id)
         })
     }, [session])
 
-    // Check system audio permission when settings drawer opens
-    useEffect(() => {
-        if (!settingsOpen) return
-        window.electronAPI?.checkSystemAudioPermission().then((status) => setSystemAudioStatus(status))
-    }, [settingsOpen])
-
     // Event listeners
     useEffect(() => {
         if (!window.electronAPI) return
         const offSilent = window.electronAPI.onSystemAudioSilent(() => setSystemAudioSilent(true))
+        const offResumed = window.electronAPI.onSystemAudioResumed(() => setSystemAudioSilent(false))
         const offQ = window.electronAPI.onQuestionDetected((q) =>
             setQuestions((prev) => (prev.find((p) => p.id === q.id) ? prev : [...prev, q]))
         )
@@ -85,7 +90,12 @@ export default function OverlayApp() {
             setResponse(responseRef.current)
         })
         const offDone = window.electronAPI.onResponseDone(() => setGenerating(false))
-        return () => { offSilent(); offQ(); offChunk(); offDone() }
+        const offLimit = window.electronAPI.onUsageLimitExceeded(() => {
+            setLimitExceeded(true)
+            setListening(false)
+            stopMicCapture()
+        })
+        return () => { offSilent(); offResumed(); offQ(); offChunk(); offDone(); offLimit() }
     }, [])
 
     // Global keyboard navigation
@@ -132,9 +142,6 @@ export default function OverlayApp() {
             try {
                 const res = await window.electronAPI.startListening()
                 if (!res.success) { setError(res.error || t.common.loading); return }
-                if (res.systemAudioPermission && res.systemAudioPermission !== 'granted') {
-                    setSystemAudioStatus(res.systemAudioPermission)
-                }
                 await startMicCapture()
                 setListening(true)
                 setSettingsOpen(false)
@@ -207,6 +214,60 @@ export default function OverlayApp() {
                     >
                         {t.overlay.openMainWindow}
                     </button>
+                </div>
+            </div>
+        )
+    }
+
+    // No org membership
+    if (hasOrg === false) {
+        return (
+            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
+                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
+                    <div className="flex items-center gap-1.5">
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
+                    </div>
+                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                        <X size={13} />
+                    </button>
+                </div>
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                    <Lock size={28} strokeWidth={1.5} className="text-zinc-700" />
+                    <div>
+                        <p className="text-sm text-zinc-400 font-medium">{t.activation.overlayLocked}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{t.activation.overlayLockedHint}</p>
+                    </div>
+                    <button
+                        onClick={() => window.electronAPI.showMainWindow()}
+                        className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs text-zinc-500 transition-all"
+                    >
+                        {t.overlay.openMainWindow}
+                    </button>
+                </div>
+            </div>
+        )
+    }
+
+    // Limit exceeded
+    if (limitExceeded) {
+        return (
+            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
+                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
+                    <div className="flex items-center gap-1.5">
+                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
+                    </div>
+                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                        <X size={13} />
+                    </button>
+                </div>
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+                    <AlertTriangle size={28} strokeWidth={1.5} className="text-amber-600" />
+                    <div>
+                        <p className="text-sm text-zinc-400 font-medium">{t.activation.limitReached}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{t.activation.limitReachedHint}</p>
+                    </div>
                 </div>
             </div>
         )
@@ -285,20 +346,6 @@ export default function OverlayApp() {
                         <p className="text-[10px] text-zinc-500 py-1 italic">{t.overlay.noProjectContext}</p>
                     )}
 
-                    {systemAudioStatus && systemAudioStatus !== 'granted' && (
-                        <div className="flex items-center justify-between pt-1">
-                            <div className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                                <span className="text-[10px] text-zinc-500">{t.overlay.systemAudioOff}</span>
-                            </div>
-                            <button
-                                onClick={() => window.electronAPI?.showMainWindow()}
-                                className="text-[10px] text-zinc-500 hover:text-zinc-400 transition-colors"
-                            >
-                                {t.overlay.fixPermission}
-                            </button>
-                        </div>
-                    )}
                 </div>
             )}
 

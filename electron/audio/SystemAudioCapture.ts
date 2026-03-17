@@ -84,8 +84,8 @@ export class SystemAudioCapture extends EventEmitter {
     let nonZeroChunksSeen = 0
     let consecutiveZeroChunks = 0
     let silentEventEmitted = false
-    // 25 chunks × 0.2s = 5 seconds of continuous silence triggers warning
-    const SILENT_THRESHOLD = 25
+    // 150 chunks × 0.2s = 30 seconds of continuous silence triggers warning
+    const SILENT_THRESHOLD = 150
 
     this.audioTeeProcess.stdout?.on('data', (data: Buffer) => {
       audioDataCount++
@@ -97,8 +97,10 @@ export class SystemAudioCapture extends EventEmitter {
       } else {
         consecutiveZeroChunks = 0
         nonZeroChunksSeen++
-        // Reset silent warning if audio recovers (e.g. user starts playing something)
-        silentEventEmitted = false
+        if (silentEventEmitted) {
+          silentEventEmitted = false
+          this.emit('system-audio-resumed')
+        }
       }
 
       if (audioDataCount === 1) {

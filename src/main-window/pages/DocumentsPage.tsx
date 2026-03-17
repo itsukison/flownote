@@ -97,9 +97,11 @@ export default function DocumentsPage({
     const [collections, setCollections] = useState<Collection[]>([])
     const [loading, setLoading] = useState(true)
     const [documents, setDocuments] = useState<Doc[]>([])
+    const [documentsLoading, setDocumentsLoading] = useState(false)
     const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
     // null = root (showing collections), else showing docs inside that collection
     const [selectedCol, setSelectedCol] = useState<Collection | null>(null)
+    const documentsRequestIdRef = useRef(0)
 
     // Modals & States
     const [isWriteModalOpen, setIsWriteModalOpen] = useState(false)
@@ -146,6 +148,8 @@ export default function DocumentsPage({
 
     useEffect(() => {
         if (selectedCol) {
+            setDocumentsLoading(true)
+            setDocuments([])
             loadDocuments(selectedCol.id)
         }
     }, [selectedCol])
@@ -210,12 +214,19 @@ export default function DocumentsPage({
     }
 
     const loadDocuments = async (colId: string) => {
+        const requestId = ++documentsRequestIdRef.current
         try {
             const docs = await window.electronAPI.listDocuments(colId)
-            setDocuments(docs)
+            if (documentsRequestIdRef.current === requestId) {
+                setDocuments(docs)
+            }
         } catch (err: any) {
             console.error(err)
             toast.error(t.documents.failedToLoadDocuments)
+        } finally {
+            if (documentsRequestIdRef.current === requestId) {
+                setDocumentsLoading(false)
+            }
         }
     }
 
@@ -451,6 +462,8 @@ export default function DocumentsPage({
         ? documents.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()))
         : collections.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
+    const isPageLoading = selectedCol ? documentsLoading : loading
+
     return (
         <div className="flex-1 flex flex-col bg-[#111113] text-white overflow-hidden min-h-full relative" onClick={closeContextMenu}>
             <Toaster position="bottom-center" toastOptions={{ style: { background: '#222', color: '#fff', fontSize: '14px' } }} />
@@ -514,7 +527,7 @@ export default function DocumentsPage({
                             )}
                         </div>
                     </div>
-                {loading ? (
+                {isPageLoading ? (
                     <div className="flex-1 flex items-center justify-center">
                         <Loader2 className="w-10 h-10 text-white/20 animate-spin" />
                     </div>

@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('system-audio-silent', fn)
     return () => ipcRenderer.removeListener('system-audio-silent', fn)
   },
+  onSystemAudioResumed: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('system-audio-resumed', fn)
+    return () => ipcRenderer.removeListener('system-audio-resumed', fn)
+  },
   onQuestionDetected: (cb: (q: { id: string; text: string; timestamp: number }) => void) => {
     const fn = (_: any, q: any) => cb(q)
     ipcRenderer.on('question-detected', fn)
@@ -87,6 +92,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Usage ─────────────────────────────────────────────────────────────────
   getTokenUsage: () => ipcRenderer.invoke('token:get-usage'),
 
+  // ── Organization / Activation ─────────────────────────────────────────────
+  activateCode: (code: string) => ipcRenderer.invoke('org:activate-code', code),
+  getOrgMembership: () => ipcRenderer.invoke('org:get-membership'),
+  checkBudget: () => ipcRenderer.invoke('org:check-budget'),
+  getMonthlyUsage: () => ipcRenderer.invoke('org:get-monthly-usage'),
+  onUsageLimitExceeded: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('usage-limit-exceeded', fn)
+    return () => ipcRenderer.removeListener('usage-limit-exceeded', fn)
+  },
+
   // ── Prompts ────────────────────────────────────────────────────────────────
   getPrompts: () => ipcRenderer.invoke('prompts:list'),
   createPrompt: (name: string, content: string, promptType: string) =>
@@ -97,8 +113,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectPrompt: (id: string) => ipcRenderer.invoke('prompts:select', id),
 
   // ── Permissions ────────────────────────────────────────────────────────────
-  checkSystemAudioPermission: () => ipcRenderer.invoke('permissions:check-system-audio'),
   openSystemAudioSettings: () => ipcRenderer.invoke('permissions:open-system-audio-settings'),
+  requestMicPermission: () => ipcRenderer.invoke('permissions:request-mic'),
 
   // ── Setup ──────────────────────────────────────────────────────────────────
   getSetupCompleted: () => ipcRenderer.invoke('setup:get-completed'),

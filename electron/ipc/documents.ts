@@ -4,8 +4,27 @@ import * as path from 'path'
 import * as crypto from 'crypto'
 import { extractText, chunkText, embedChunks, storeDocument, searchSimilar, getUsage, incrementUsage } from '../services/rag'
 import { ensureCached } from '../services/documentCache'
+import { trackNormalizedUsage } from '../services/tokenNormalization'
+import { checkBudget, isUserInOrg, maybeRefreshCache, recordUsage } from '../services/usageLimiter'
+import { normalizeTokens } from '../services/tokenNormalization'
 
 type GetWindowFn = () => BrowserWindow | null
+
+async function ensureDocBudget(getSupabase: () => SupabaseClient | null): Promise<{ allowed: boolean; error?: string }> {
+    const supabase = getSupabase()
+    if (!supabase) return { allowed: false, error: 'no_database' }
+    try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { allowed: false, error: 'not_authenticated' }
+        await maybeRefreshCache(supabase, user.id)
+        if (!isUserInOrg()) return { allowed: false, error: 'no_org' }
+        const budget = checkBudget()
+        if (!budget.allowed) return { allowed: false, error: 'limit_exceeded' }
+        return { allowed: true }
+    } catch {
+        return { allowed: false, error: 'check_failed' }
+    }
+}
 
 export function registerDocumentHandlers(
     _getMainWindow: GetWindowFn,
@@ -128,6 +147,12 @@ export function registerDocumentHandlers(
                 throw new Error(uploadError.message || 'Failed to upload file to storage')
             }
 
+            // Budget check before embedding
+            const budgetCheck = await ensureDocBudget(getSupabase)
+            if (!budgetCheck.allowed) {
+                return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+            }
+
             // Extract, chunk, embed
             const text = await extractText(fileName, fileBuffer)
             if (!text.trim()) return { success: false, error: 'Could not extract text from file' }
@@ -151,10 +176,10 @@ export function registerDocumentHandlers(
                 uploadHash
             )
 
-            // Track usage: document count + embedding tokens
-            await incrementUsage(supabase, user.id, 'documents_count', 0)
+            // Track usage: document count + embedding tokens (normalized)
             if (embeddingTokens > 0) {
-                await incrementUsage(supabase, user.id, 'embedding_tokens', embeddingTokens)
+                await trackNormalizedUsage(supabase, user.id, 'embedding', embeddingTokens, 0, { incrementDocuments: true })
+                recordUsage(normalizeTokens('embedding', embeddingTokens, 0))
             }
 
             return { success: true, id: docId }
@@ -174,6 +199,12 @@ export function registerDocumentHandlers(
 
             if (!title.trim() || !text.trim()) return { success: false, error: 'Title and content are required' }
 
+            // Budget check before embedding
+            const budgetCheck = await ensureDocBudget(getSupabase)
+            if (!budgetCheck.allowed) {
+                return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+            }
+
             console.log(`[RAG] Processing text document: ${title}…`)
 
             const chunks = chunkText(text)
@@ -191,10 +222,10 @@ export function registerDocumentHandlers(
                 embeddingTokens
             )
 
-            // Track usage: document count + embedding tokens
-            await incrementUsage(supabase, user.id, 'documents_count', 0)
+            // Track usage: document count + embedding tokens (normalized)
             if (embeddingTokens > 0) {
-                await incrementUsage(supabase, user.id, 'embedding_tokens', embeddingTokens)
+                await trackNormalizedUsage(supabase, user.id, 'embedding', embeddingTokens, 0, { incrementDocuments: true })
+                recordUsage(normalizeTokens('embedding', embeddingTokens, 0))
             }
 
             return { success: true, id: docId }
@@ -279,6 +310,12 @@ export function registerDocumentHandlers(
             // Note: If you want vector search to stay updated, we technically should re-embed.
             // For now, let's just update the content field (if re-implements, RAG will not match edited text automatically without calling re-embed)
 
+            // Budget check before re-embedding
+            const budgetCheck = await ensureDocBudget(getSupabase)
+            if (!budgetCheck.allowed) {
+                return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+            }
+
             // To be thorough, re-embed:
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return { success: false, error: 'Not authenticated' }
@@ -298,7 +335,8 @@ export function registerDocumentHandlers(
             if (error) throw error
 
             if (tokensUsed > 0) {
-                await incrementUsage(supabase, user.id, 'embedding_tokens', tokensUsed)
+                await trackNormalizedUsage(supabase, user.id, 'embedding', tokensUsed, 0)
+                recordUsage(normalizeTokens('embedding', tokensUsed, 0))
             }
 
             return { success: true }

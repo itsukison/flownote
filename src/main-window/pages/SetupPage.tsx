@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { Mic2, Headphones } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 
@@ -10,33 +10,9 @@ interface Props {
 
 export default function SetupPage({ onComplete }: Props) {
     const [step, setStep] = useState(1)
-    const [permStatus, setPermStatus] = useState<'granted' | 'denied' | 'not-determined' | 'unknown' | null>(null)
-    const [settingsOpened, setSettingsOpened] = useState(false)
-    const [confirmed, setConfirmed] = useState(false)
-    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-    // Check permission status once on mount
-    useEffect(() => {
-        window.electronAPI?.checkSystemAudioPermission().then(setPermStatus)
-    }, [])
-
-    // Start polling after "Open System Settings" is clicked
-    useEffect(() => {
-        if (!settingsOpened) return
-        pollRef.current = setInterval(async () => {
-            const status = await window.electronAPI?.checkSystemAudioPermission()
-            if (status) setPermStatus(status)
-            if (status === 'granted') {
-                clearInterval(pollRef.current!)
-                setConfirmed(true)
-            }
-        }, 2000)
-        return () => { if (pollRef.current) clearInterval(pollRef.current) }
-    }, [settingsOpened])
 
     const handleOpenSettings = () => {
         window.electronAPI?.openSystemAudioSettings()
-        setSettingsOpened(true)
     }
 
     const handleSkip = async () => {
@@ -49,7 +25,10 @@ export default function SetupPage({ onComplete }: Props) {
         onComplete()
     }
 
-    const handleNext = () => setStep(2)
+    const handleNext = async () => {
+        await window.electronAPI?.requestMicPermission()
+        setStep(2)
+    }
 
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-[#0e0e10]">
@@ -91,37 +70,19 @@ export default function SetupPage({ onComplete }: Props) {
                             <p className="text-[10px] text-zinc-600 leading-relaxed px-1">{t.setup.step2Note}</p>
                         </div>
 
-                        {/* Permission status */}
-                        <div className="flex items-center gap-2 h-5">
-                            {confirmed || permStatus === 'granted' ? (
-                                <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-white/60" />
-                                    <span className="text-xs text-zinc-400">✓ {t.setup.permissionGranted}</span>
-                                </>
-                            ) : settingsOpened ? (
-                                <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                                    <span className="text-xs text-zinc-500">{t.permissions.notGranted}</span>
-                                </>
-                            ) : null}
-                        </div>
-
                         <div className="flex flex-col items-center gap-3 w-full">
-                            {confirmed || permStatus === 'granted' ? (
-                                <button
-                                    onClick={handleContinue}
-                                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-200 transition-all"
-                                >
-                                    {t.setup.continue}
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={handleOpenSettings}
-                                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-200 transition-all"
-                                >
-                                    {t.setup.openSettings}
-                                </button>
-                            )}
+                            <button
+                                onClick={handleOpenSettings}
+                                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-200 transition-all"
+                            >
+                                {t.setup.openSettings}
+                            </button>
+                            <button
+                                onClick={handleContinue}
+                                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-200 transition-all"
+                            >
+                                {t.setup.continue}
+                            </button>
                             <button
                                 onClick={handleSkip}
                                 className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors"

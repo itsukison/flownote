@@ -5,6 +5,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
 import { registerAuthHandlers, registerAuthStateListener } from './ipc/auth'
 import { registerDocumentHandlers } from './ipc/documents'
+import { registerOrganizationHandlers } from './ipc/organization'
 import { getStoredSession } from './services/tokenStorage'
 import { initUpdater, flushPendingUpdate } from './services/updater'
 import { getCacheRoot } from './services/documentCache'
@@ -79,7 +80,7 @@ function createOverlayWindow() {
   })
 }
 
-async function createMainWindow() {
+function createMainWindow() {
   const { workAreaSize } = screen.getPrimaryDisplay()
 
   mainWindow = new BrowserWindow({
@@ -99,16 +100,7 @@ async function createMainWindow() {
     backgroundColor: '#0e0e10',
   })
 
-  // Check session to decide landing page
-  let startPath = '/auth'
-  if (supabase) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) startPath = '/documents'
-    } catch { }
-  }
-
-  mainWindow.loadURL(devUrl(startPath))
+  mainWindow.loadURL(devUrl('/auth'))
 
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow) flushPendingUpdate(mainWindow)
@@ -180,6 +172,7 @@ async function init() {
   registerHandlers(getOverlayWindow, getMainWindow, () => supabase)
   registerAuthHandlers(getMainWindow, getOverlayWindow, () => supabase)
   registerDocumentHandlers(getMainWindow, () => supabase)
+  registerOrganizationHandlers(getMainWindow, getOverlayWindow, () => supabase)
   ipcMain.handle('quit-app', () => app.quit())
 
   // Register auth state listener after supabase is ready
@@ -211,7 +204,7 @@ async function init() {
       }
     })
 
-    await createMainWindow()
+    createMainWindow()
     createOverlayWindow()
     mainWindow?.show()
     mainWindow?.focus()

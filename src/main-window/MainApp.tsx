@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
 import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import AuthPage from './pages/AuthPage'
+import ActivationPage from './pages/ActivationPage'
 import DocumentsPage from './pages/DocumentsPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
@@ -78,6 +79,7 @@ function Sidebar({ user }: { user: any }) {
 export default function MainApp() {
     const navigate = useNavigate()
     const [session, setSession] = useState<any>(undefined)
+    const [activationChecked, setActivationChecked] = useState(false)
     const [user, setUser] = useState<any>(null)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
 
@@ -165,49 +167,55 @@ export default function MainApp() {
         setQuestions([])
     }
 
+    const checkTutorialStatus = async () => {
+        const membership = await window.electronAPI?.getOrgMembership()
+        if (!membership) {
+            navigate('/activation')
+            setActivationChecked(true)
+            return
+        }
+        const setupCompleted = await window.electronAPI?.getSetupCompleted()
+        if (!setupCompleted) {
+            navigate('/setup')
+            setActivationChecked(true)
+            return
+        }
+        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
+        navigate(tutorialCompleted ? '/documents' : '/tutorial')
+        setActivationChecked(true)
+    }
+
     useEffect(() => {
         if (!window.electronAPI) {
             setSession(null)
+            setActivationChecked(true)
             return
         }
-        // Check initial session
-        window.electronAPI.getSession().then(({ session }) => {
+
+        window.electronAPI.getSession().then(async ({ session }) => {
             setSession(session)
-            if (!session) navigate('/auth')
+            if (!session) {
+                navigate('/auth')
+                setActivationChecked(true)
+            } else {
+                await window.electronAPI.getUser().then(({ user }) => setUser(user))
+                await checkTutorialStatus()
+            }
         })
-        window.electronAPI.getUser().then(({ user }) => setUser(user))
 
-        // Check if tutorial is needed
-        if (session) {
-            checkTutorialStatus()
-        }
-
-        // Listen for session changes
-        const off = window.electronAPI.onSessionChange(({ session }) => {
+        return window.electronAPI.onSessionChange(({ session }) => {
             setSession(session)
-            if (!session) navigate('/auth')
-            else {
+            if (!session) {
+                navigate('/auth')
+            } else {
                 window.electronAPI.getUser().then(({ user }) => setUser(user))
                 checkTutorialStatus()
             }
         })
-        return off
-    }, [session])
-
-    const checkTutorialStatus = async () => {
-        const setupCompleted = await window.electronAPI?.getSetupCompleted()
-        if (!setupCompleted) {
-            navigate('/setup')
-            return
-        }
-        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
-        if (!tutorialCompleted) {
-            navigate('/tutorial')
-        }
-    }
+    }, [])
 
     // Loading
-    if (session === undefined) {
+    if (session === undefined || !activationChecked) {
         return (
             <div className="flex items-center justify-center h-screen bg-[#0e0e10] text-white/30 text-sm">
                 <div className="flex items-center gap-2">
@@ -222,22 +230,17 @@ export default function MainApp() {
     return (
         <div className="flex h-screen bg-[#0e0e10] text-white overflow-hidden">
             <Routes>
-                <Route path="/auth" element={<AuthPage onAuth={async (s) => {
+                <Route path="/auth" element={<AuthPage onAuth={(s) => {
                     setSession(s)
-                    const setupCompleted = await window.electronAPI?.getSetupCompleted()
-                    if (!setupCompleted) {
-                        navigate('/setup')
-                    } else {
-                        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
-                        navigate(tutorialCompleted ? '/documents' : '/tutorial')
-                    }
+                    checkTutorialStatus()
                 }} />} />
                 <Route
+                    path="/activation"
+                    element={session ? <ActivationPage onActivated={() => checkTutorialStatus()} /> : <Navigate to="/auth" replace />}
+                />
+                <Route
                     path="/setup"
-                    element={session ? <SetupPage onComplete={async () => {
-                        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
-                        navigate(tutorialCompleted ? '/documents' : '/tutorial')
-                    }} /> : <Navigate to="/auth" replace />}
+                    element={session ? <SetupPage onComplete={checkTutorialStatus} /> : <Navigate to="/auth" replace />}
                 />
                 <Route
                     path="/tutorial"

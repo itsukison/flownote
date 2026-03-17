@@ -46,20 +46,23 @@ export class OpenAIRealtimeQuestionDetector {
 
   private onQuestion?: (q: Question) => void
   private onError?: (err: any) => void
-  private onTokenUsage?: (tokens: number) => void
+  private onTokenUsage?: (inputTokens: number, outputTokens: number) => void
+  private onUsageLimitExceeded?: () => void
 
   constructor(
     apiKey: string,
     callbacks?: {
       onQuestion?: (q: Question) => void
       onError?: (err: any) => void
-      onTokenUsage?: (tokens: number) => void
+      onTokenUsage?: (inputTokens: number, outputTokens: number) => void
+      onUsageLimitExceeded?: () => void
     }
   ) {
     this.apiKey = apiKey
     this.onQuestion = callbacks?.onQuestion
     this.onError = callbacks?.onError
     this.onTokenUsage = callbacks?.onTokenUsage
+    this.onUsageLimitExceeded = callbacks?.onUsageLimitExceeded
     console.log(`[OpenAIRealtimeDetector] Initialized — model: ${this.modelName}`)
   }
 
@@ -382,9 +385,10 @@ export class OpenAIRealtimeQuestionDetector {
         // Capture token usage from every response.done regardless of text processing state
         const usage = msg.response?.usage
         if (usage) {
-          const total = (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
-          console.log(`[OpenAIRealtimeDetector] ${source} — token usage: input=${usage.input_tokens}, output=${usage.output_tokens}, total=${total}`)
-          if (total > 0) this.onTokenUsage?.(total)
+          const inputTk = usage.input_tokens ?? 0
+          const outputTk = usage.output_tokens ?? 0
+          console.log(`[OpenAIRealtimeDetector] ${source} — token usage: input=${inputTk}, output=${outputTk}, total=${inputTk + outputTk}`)
+          if (inputTk > 0 || outputTk > 0) this.onTokenUsage?.(inputTk, outputTk)
         }
 
         if (alreadyProcessed) {

@@ -261,6 +261,12 @@ export default function PromptsPage({
     }, [])
 
     useEffect(() => {
+        if (initialPrompts !== undefined) {
+            setLoading(!!externalLoading)
+        }
+    }, [externalLoading, initialPrompts])
+
+    useEffect(() => {
         if (!externalLoading && initialPrompts !== undefined) {
             setPrompts(initialPrompts)
             if (selectedIds) {

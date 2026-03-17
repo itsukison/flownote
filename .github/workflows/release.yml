@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare signing certificate
+        shell: bash
+        run: |
+          if [[ -z "$CSC_LINK" ]]; then
+            echo "CSC_LINK secret is missing" >&2
+            exit 1
+          fi
+          if [[ "$CSC_LINK" == http* ]]; then
+            echo "Using CSC_LINK as URL"
+          else
+            echo "$CSC_LINK" | base64 --decode > /tmp/cert.p12
+            echo "CSC_LINK=/tmp/cert.p12" >> $GITHUB_ENV
+          fi
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+
+      - name: Build and publish (macOS)
+        run: |
+          npm run build
+          npx electron-builder --mac --publish always
+
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish (Windows)
+        run: |
+          npm run build
+          npx electron-builder --win --publish always
