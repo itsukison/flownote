@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import logoUrl from '../../assets/logo.png'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 
@@ -52,7 +53,7 @@ export default function AuthPage({ onAuth }: Props) {
                 {/* Logo */}
                 <div className="mb-8 text-center">
                     <div className="mb-4 flex justify-center">
-                        <img src="/logo.png" alt="FlowNote" className="w-12 h-12 object-contain" />
+                        <img src={logoUrl} alt="FlowNote" className="w-12 h-12 object-contain" />
                     </div>
                     <h1 className="text-xl font-semibold text-white">FlowNote</h1>
                     <p className="text-sm text-white/40 mt-1">{t.auth.aiPoweredAssistant}</p>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import logoUrl from '../assets/logo.png'
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
 import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle } from 'lucide-react'
 import { ja } from '@/i18n/ja'
@@ -35,7 +36,7 @@ function Sidebar({ user }: { user: any }) {
         <aside className="w-52 flex-none flex flex-col bg-[#111113] border-r border-white/[0.06]">
             {/* Brand */}
             <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-0.5">
-                <img src="/logo.png" alt="Logo" className="w-5 h-5 object-contain" />
+                <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" />
                 <span className="text-xs font-semibold text-white/60">Flownote</span>
             </div>
 

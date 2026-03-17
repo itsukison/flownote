@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.flownote.app",
     "productName": "Flownote",
+    "icon": "public/app-icon.png",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",

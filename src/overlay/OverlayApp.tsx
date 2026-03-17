@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import logoUrl from '../assets/logo.png'
 import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle } from 'lucide-react'
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
@@ -195,7 +196,7 @@ export default function OverlayApp() {
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
                 <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                     <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                         <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
                     <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
@@ -225,7 +226,7 @@ export default function OverlayApp() {
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
                 <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                     <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                         <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
                     <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
@@ -255,7 +256,7 @@ export default function OverlayApp() {
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
                 <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
                     <div className="flex items-center gap-1.5">
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                         <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
                     <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
@@ -284,7 +285,7 @@ export default function OverlayApp() {
                                 <ArrowLeft size={13} />
                             </button>
                         )}
-                        <img src="/logo.png" alt="Logo" className="w-4 h-4 object-contain" />
+                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                         <span className="text-xs font-semibold text-zinc-400">FlowNote</span>
                     </div>
                     {listening && viewMode === 'list' && (
