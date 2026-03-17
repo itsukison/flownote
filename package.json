@@ -16,7 +16,7 @@
   "build": {
     "appId": "com.flownote.app",
     "productName": "Flownote",
-    "icon": "public/app-icon.png",
+    "icon": "public/icon.icns",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -56,7 +56,8 @@
     "publish": {
       "provider": "github",
       "owner": "itsukison",
-      "repo": "flownote"
+      "repo": "flownote",
+      "releaseType": "release"
     }
   },
   "devDependencies": {

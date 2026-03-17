@@ -49,9 +49,18 @@ export function initUpdater(getMainWindow: GetWindowFn) {
   })
 
   autoUpdater.on('error', (err: Error) => {
-    console.error('[Updater] Error:', err.message)
-    pendingError = { message: err.message }
-    send('update:error', { message: err.message })
+    const msg = err.message ?? ''
+    const isNoReleasesYet =
+      msg.includes('Cannot parse releases feed') ||
+      msg.includes('Unable to find latest version') ||
+      msg.includes('HttpError: 404')
+    if (isNoReleasesYet) {
+      console.log('[Updater] No releases found (expected on fresh install)')
+      return
+    }
+    console.error('[Updater] Error:', msg)
+    pendingError = { message: msg }
+    send('update:error', { message: msg })
   })
 
   // Delay first check — avoids firing before any renderer is ready

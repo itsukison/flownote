@@ -15,26 +15,57 @@ def round_corners(im, radius):
     im.putalpha(alpha)
     return im
 
+import os
+import subprocess
+import shutil
+
 def main():
     try:
-        # Use src/assets/logo.png as it exists and is high resolution (1280x1280)
-        im = Image.open('src/assets/logo.png').convert("RGBA")
+        source_path = 'src/assets/logo.png'
+        if not os.path.exists(source_path):
+            print(f"Error: {source_path} not found.")
+            sys.exit(1)
+            
+        im = Image.open(source_path).convert("RGBA")
         
-        # Resize to 1024x1024 for standard macOS app icon size
+        # 1. Generate the standard app-icon.png (1024x1024)
         target_size = (1024, 1024)
-        im = im.resize(target_size, Image.Resampling.LANCZOS)
+        im_1024 = im.resize(target_size, Image.Resampling.LANCZOS)
+        radius = int(im_1024.size[0] * 0.225)
+        rounded_im = round_corners(im_1024, radius)
+        rounded_im.save('public/app-icon.png', optimize=True)
+        print("Successfully saved public/app-icon.png (1024x1024)")
+
+        # 2. Generate .icns file for macOS
+        iconset_dir = 'public/icon.iconset'
+        if os.path.exists(iconset_dir):
+            shutil.rmtree(iconset_dir)
+        os.makedirs(iconset_dir)
+
+        # macOS iconset requirements
+        sizes = [
+            (16, '16x16'), (32, '16x16@2x'),
+            (32, '32x32'), (64, '32x32@2x'),
+            (128, '128x128'), (256, '128x128@2x'),
+            (256, '256x256'), (512, '256x256@2x'),
+            (512, '512x512'), (1024, '512x512@2x')
+        ]
+
+        for size, name in sizes:
+            resized = im.resize((size, size), Image.Resampling.LANCZOS)
+            # Apply rounded corners to each size
+            r = int(size * 0.225)
+            rounded = round_corners(resized, r)
+            rounded.save(os.path.join(iconset_dir, f'icon_{name}.png'))
+
+        # Run iconutil to create .icns
+        subprocess.run(['iconutil', '-c', 'icns', iconset_dir, '-o', 'public/icon.icns'], check=True)
         
-        # Determine radius based on image size. A standard ratio is about 22.5% of the width for macOS style
-        # 1024x1024 -> ~230 radius
-        radius = int(im.size[0] * 0.225)
-        rounded_im = round_corners(im, radius)
+        # Cleanup iconset directory
+        shutil.rmtree(iconset_dir)
         
-        # Save as png
-        rounded_im.save('public/app-icon.png')
+        print("Successfully generated public/icon.icns!")
         
-        # Save as icns (Requires scaling down and saving layered, simple save might not cover all icns features but works mostly in PIL, otherwise we just use the png for electron)
-        # Pillow has a bug where it can't natively save .icns with correct standard sizing sometimes. We will stick to using the png for Electron.
-        print("Successfully processed app-icon.png (1024x1024)!")
     except Exception as e:
         print(f"Error processing image: {e}")
         sys.exit(1)

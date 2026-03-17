@@ -17,7 +17,7 @@ type UpdateState =
   | { kind: 'progress'; info: UpdateInfo; percent: number }
   | { kind: 'preparing'; info: UpdateInfo }
   | { kind: 'ready'; info: UpdateInfo }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ export function UpdateToast() {
   }, [])
 
   const handleError = useCallback((data: { message: string }) => {
-    setState({ kind: 'error', message: data.message })
+    setState({ kind: 'error' })
     setDismissed(false)
   }, [])
 
@@ -104,7 +104,7 @@ export function UpdateToast() {
           <ReadyView version={state.info.version} onInstall={handleInstall} onDismiss={handleDismiss} />
         )}
         {state.kind === 'error' && (
-          <ErrorView message={state.message} onDismiss={handleDismiss} />
+          <ErrorView onDismiss={handleDismiss} />
         )}
       </div>
     </div>
@@ -203,16 +203,13 @@ function ReadyView({ version, onInstall, onDismiss }: {
   )
 }
 
-function ErrorView({ message, onDismiss }: {
-  message: string
-  onDismiss: () => void
-}) {
+function ErrorView({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0">
         <ToastHeader label="アップデート失敗" />
-        <p className="text-xs text-white/40 mt-0.5 truncate" title={message}>
-          {message}
+        <p className="text-xs text-white/40 mt-0.5">
+          アップデートの確認に失敗しました
         </p>
       </div>
       <DismissButton onClick={onDismiss} />
