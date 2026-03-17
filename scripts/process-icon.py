@@ -17,10 +17,15 @@ def round_corners(im, radius):
 
 def main():
     try:
-        im = Image.open('public/logo.png').convert("RGBA")
+        # Use src/assets/logo.png as it exists and is high resolution (1280x1280)
+        im = Image.open('src/assets/logo.png').convert("RGBA")
+        
+        # Resize to 1024x1024 for standard macOS app icon size
+        target_size = (1024, 1024)
+        im = im.resize(target_size, Image.Resampling.LANCZOS)
         
         # Determine radius based on image size. A standard ratio is about 22.5% of the width for macOS style
-        # e.g., 512x512 -> 115 radius
+        # 1024x1024 -> ~230 radius
         radius = int(im.size[0] * 0.225)
         rounded_im = round_corners(im, radius)
         
@@ -29,7 +34,7 @@ def main():
         
         # Save as icns (Requires scaling down and saving layered, simple save might not cover all icns features but works mostly in PIL, otherwise we just use the png for electron)
         # Pillow has a bug where it can't natively save .icns with correct standard sizing sometimes. We will stick to using the png for Electron.
-        print("Successfully processed app-icon.png!")
+        print("Successfully processed app-icon.png (1024x1024)!")
     except Exception as e:
         print(f"Error processing image: {e}")
         sys.exit(1)

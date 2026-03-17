@@ -30,7 +30,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function devUrl(path: string) {
-  return DEV ? `${BASE_URL}${path}` : `file://${__dirname}/../dist/index.html#${path}`
+  return DEV ? `${BASE_URL}/#${path}` : `file://${__dirname}/../dist/index.html#${path}`
 }
 
 function createOverlayWindow() {

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { HashRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import './index.css'
 import '@fontsource/geist-sans'
@@ -8,7 +8,7 @@ import RootRouter from './RootRouter'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <HashRouter>
       <RootRouter />
       <Toaster
         position="bottom-right"
@@ -22,6 +22,6 @@ createRoot(document.getElementById('root')!).render(
           },
         }}
       />
-    </BrowserRouter>
+    </HashRouter>
   </StrictMode>,
 )
