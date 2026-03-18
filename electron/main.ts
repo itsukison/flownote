@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
 import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol } from 'electron'
 import * as path from 'path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
@@ -13,9 +13,12 @@ import { getCacheRoot } from './services/documentCache'
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let supabase: SupabaseClient | null = null
+let supabaseConfigErrorMsg: string | null = null
 
 const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
 const BASE_URL = 'http://localhost:5182'
+
+dotenv.config()
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -104,6 +107,15 @@ function createMainWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     if (mainWindow) flushPendingUpdate(mainWindow)
+    if (supabaseConfigErrorMsg) {
+      mainWindow?.webContents.send('toast:show', { type: 'error', message: supabaseConfigErrorMsg })
+    }
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (isMainFrame) {
+      console.error('[Main] did-fail-load:', { errorCode, errorDescription, validatedURL })
+    }
   })
 
   mainWindow.on('closed', () => {
@@ -145,6 +157,10 @@ async function init() {
   const gotLock = app.requestSingleInstanceLock()
   if (!gotLock) { app.quit(); return }
 
+  if (app.isPackaged) {
+    dotenv.config({ path: path.join(process.resourcesPath, '.env'), override: true })
+  }
+
   // Initialize Supabase
   const supabaseUrl = process.env.SUPABASE_URL || 'https://qysgsadrjijofvtzmziw.supabase.co'
   const supabaseKey = process.env.SUPABASE_ANON_KEY || ''
@@ -166,12 +182,13 @@ async function init() {
     }
   } else {
     console.warn('[Main] SUPABASE_ANON_KEY not set')
+    supabaseConfigErrorMsg = 'Supabaseの設定が見つかりませんでした。ビルド設定を確認してください。'
   }
 
   // Register all IPC handlers
   registerHandlers(getOverlayWindow, getMainWindow, () => supabase)
   registerAuthHandlers(getMainWindow, getOverlayWindow, () => supabase)
-  registerDocumentHandlers(getMainWindow, () => supabase)
+  registerDocumentHandlers(getMainWindow, getOverlayWindow, () => supabase)
   registerOrganizationHandlers(getMainWindow, getOverlayWindow, () => supabase)
   ipcMain.handle('quit-app', () => app.quit())
 

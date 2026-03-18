@@ -32,26 +32,65 @@ export function hasStoredSession(): boolean {
   return store.has('session')
 }
 
-const setupStore = new Store<{ completed: boolean }>({
+const setupStore = new Store<{ completed: boolean; completedByUser?: Record<string, boolean> }>({
   name: 'setup-store',
 })
 
-export function getSetupCompleted(): boolean {
-  return setupStore.get('completed', false)
+function getPerUserFlag(store: Store<{ completed: boolean; completedByUser?: Record<string, boolean> }>, userId?: string): boolean {
+  if (userId) {
+    const map = store.get('completedByUser', {})
+    return Boolean(map?.[userId])
+  }
+  return store.get('completed', false)
 }
 
-export function setSetupCompleted(): void {
-  setupStore.set('completed', true)
+function setPerUserFlag(store: Store<{ completed: boolean; completedByUser?: Record<string, boolean> }>, userId?: string): void {
+  if (userId) {
+    const map = store.get('completedByUser', {})
+    store.set('completedByUser', { ...map, [userId]: true })
+    return
+  }
+  store.set('completed', true)
 }
 
-const tutorialStore = new Store<{ completed: boolean }>({
+export function getSetupCompleted(userId?: string): boolean {
+  return getPerUserFlag(setupStore, userId)
+}
+
+export function setSetupCompleted(userId?: string): void {
+  setPerUserFlag(setupStore, userId)
+}
+
+const tutorialStore = new Store<{ completed: boolean; completedByUser?: Record<string, boolean> }>({
   name: 'tutorial-store',
 })
 
-export function getTutorialCompleted(): boolean {
-  return tutorialStore.get('completed', false)
+export function getTutorialCompleted(userId?: string): boolean {
+  return getPerUserFlag(tutorialStore, userId)
 }
 
-export function setTutorialCompleted(): void {
-  tutorialStore.set('completed', true)
+export function setTutorialCompleted(userId?: string): void {
+  setPerUserFlag(tutorialStore, userId)
+}
+
+const onboardingStore = new Store<{ completed: boolean; completedByUser?: Record<string, boolean> }>({
+  name: 'onboarding-store',
+})
+
+export function getOnboardingCompleted(userId?: string): boolean {
+  const local = getPerUserFlag(onboardingStore, userId)
+  if (local) return true
+
+  // Local migration: if older flags were set, treat onboarding as completed.
+  const legacyCompleted = getPerUserFlag(setupStore, userId) || getPerUserFlag(tutorialStore, userId)
+  if (legacyCompleted) {
+    setPerUserFlag(onboardingStore, userId)
+    return true
+  }
+
+  return false
+}
+
+export function setOnboardingCompleted(userId?: string): void {
+  setPerUserFlag(onboardingStore, userId)
 }

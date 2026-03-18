@@ -26,6 +26,10 @@
       {
         "from": "custom-binaries/audiotee",
         "to": "audiotee"
+      },
+      {
+        "from": ".env.production",
+        "to": ".env"
       }
     ],
     "asarUnpack": [

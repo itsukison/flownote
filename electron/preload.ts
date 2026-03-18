@@ -102,6 +102,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('usage-limit-exceeded', fn)
     return () => ipcRenderer.removeListener('usage-limit-exceeded', fn)
   },
+  onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => {
+    const fn = (_: any, payload: any) => cb(payload)
+    ipcRenderer.on('org:membership-changed', fn)
+    return () => ipcRenderer.removeListener('org:membership-changed', fn)
+  },
+  onCollectionsChanged: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('collections-changed', fn)
+    return () => ipcRenderer.removeListener('collections-changed', fn)
+  },
 
   // ── Prompts ────────────────────────────────────────────────────────────────
   getPrompts: () => ipcRenderer.invoke('prompts:list'),
@@ -116,13 +126,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSystemAudioSettings: () => ipcRenderer.invoke('permissions:open-system-audio-settings'),
   requestMicPermission: () => ipcRenderer.invoke('permissions:request-mic'),
 
-  // ── Setup ──────────────────────────────────────────────────────────────────
-  getSetupCompleted: () => ipcRenderer.invoke('setup:get-completed'),
-  setSetupCompleted: () => ipcRenderer.invoke('setup:set-completed'),
+  // ── Onboarding ────────────────────────────────────────────────────────────
+  getOnboardingCompleted: () => ipcRenderer.invoke('onboarding:get-completed'),
+  setOnboardingCompleted: () => ipcRenderer.invoke('onboarding:set-completed'),
 
-  // ── Tutorial ──────────────────────────────────────────────────────────────
-  getTutorialCompleted: () => ipcRenderer.invoke('tutorial:get-completed'),
-  setTutorialCompleted: () => ipcRenderer.invoke('tutorial:set-completed'),
+  // Backward-compat aliases
+  getSetupCompleted: () => ipcRenderer.invoke('onboarding:get-completed'),
+  setSetupCompleted: () => ipcRenderer.invoke('onboarding:set-completed'),
+  getTutorialCompleted: () => ipcRenderer.invoke('onboarding:get-completed'),
+  setTutorialCompleted: () => ipcRenderer.invoke('onboarding:set-completed'),
 
   // ── Auto-update ────────────────────────────────────────────────────────────
   update: {

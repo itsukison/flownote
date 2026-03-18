@@ -6,7 +6,7 @@ import { getCurrentYearMonth } from '../services/tokenNormalization'
 type GetWindowFn = () => BrowserWindow | null
 
 export function registerOrganizationHandlers(
-  _getMainWindow: GetWindowFn,
+  getMainWindow: GetWindowFn,
   getOverlayWindow: GetWindowFn,
   getSupabase: () => SupabaseClient | null
 ) {
@@ -31,6 +31,10 @@ export function registerOrganizationHandlers(
 
       // Refresh usage state after activation
       await fetchUsageState(supabase, user.id)
+
+      const payload = { orgId: result.org_id ?? null, orgName: result.org_name ?? null }
+      getMainWindow()?.webContents.send('org:membership-changed', payload)
+      getOverlayWindow()?.webContents.send('org:membership-changed', payload)
 
       return { success: true, orgName: result.org_name }
     } catch (err: any) {

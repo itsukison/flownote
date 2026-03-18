@@ -22,6 +22,10 @@ CREATE TABLE profiles (
   id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email       TEXT NOT NULL,
   full_name   TEXT,
+  onboarding_completed BOOLEAN NOT NULL DEFAULT false,
+  -- Legacy flags (deprecated, retained for compatibility/migration)
+  setup_completed BOOLEAN NOT NULL DEFAULT false,
+  tutorial_completed BOOLEAN NOT NULL DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT now(),
   updated_at  TIMESTAMPTZ DEFAULT now()
 );

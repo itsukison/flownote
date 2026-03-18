@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import logoUrl from '../../assets/logo.png'
+import { assetUrl } from '@/utils/assetUrl'
+const logoUrl = assetUrl('logo.png')
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 

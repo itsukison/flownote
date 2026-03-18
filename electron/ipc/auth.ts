@@ -9,12 +9,28 @@ export function registerAuthHandlers(
   getOverlayWindow: GetWindowFn,
   getSupabase: () => SupabaseClient | null
 ) {
+  const ensureProfile = async (supabase: SupabaseClient, user: { id: string; email?: string | null }) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, email: user.email ?? '' }, { onConflict: 'id' })
+      if (error) {
+        console.error('[Auth] ensureProfile upsert failed:', error.code, error.details, error.message)
+      }
+    } catch (err: any) {
+      console.error('[Auth] ensureProfile upsert failed:', err?.message ?? err)
+    }
+  }
+
   ipcMain.handle('auth:sign-in', async (_event, email: string, password: string) => {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Supabase not configured' }
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) return { success: false, error: error.message }
+      if (data.user) {
+        await ensureProfile(supabase, { id: data.user.id, email: data.user.email })
+      }
       if (data.session) {
         saveSession({
           access_token: data.session.access_token,
@@ -35,6 +51,9 @@ export function registerAuthHandlers(
     try {
       const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) return { success: false, error: error.message }
+      if (data.user) {
+        await ensureProfile(supabase, { id: data.user.id, email: data.user.email })
+      }
       if (data.session) {
         saveSession({
           access_token: data.session.access_token,

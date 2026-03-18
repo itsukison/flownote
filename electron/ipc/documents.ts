@@ -28,6 +28,7 @@ async function ensureDocBudget(getSupabase: () => SupabaseClient | null): Promis
 
 export function registerDocumentHandlers(
     _getMainWindow: GetWindowFn,
+    getOverlayWindow: GetWindowFn,
     getSupabase: () => SupabaseClient | null
 ) {
     // ── Collections ────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ export function registerDocumentHandlers(
             .single()
 
         if (error) { console.error('[Documents] create collection:', error); return null }
+        getOverlayWindow()?.webContents.send('collections-changed')
         return data
     })
 
@@ -77,6 +79,7 @@ export function registerDocumentHandlers(
             console.error('[Documents] rename collection:', error)
             return { success: false, error: error.message }
         }
+        getOverlayWindow()?.webContents.send('collections-changed')
         return { success: true }
     })
 
@@ -94,6 +97,7 @@ export function registerDocumentHandlers(
             console.error('[Documents] delete collection:', error)
             return { success: false, error: error.message }
         }
+        getOverlayWindow()?.webContents.send('collections-changed')
         return { success: true }
     })
 

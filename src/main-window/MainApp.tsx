@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import logoUrl from '../assets/logo.png'
+import { assetUrl } from '@/utils/assetUrl'
+const logoUrl = assetUrl('logo.png')
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
 import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle } from 'lucide-react'
 import { ja } from '@/i18n/ja'
@@ -9,7 +10,6 @@ import DocumentsPage from './pages/DocumentsPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
 import PromptsPage from './pages/PromptsPage'
-import SetupPage from './pages/SetupPage'
 import TutorialPage from './pages/TutorialPage'
 import HelpPage from './pages/HelpPage'
 import { UpdateToast } from '@/components/UpdateToast'
@@ -168,21 +168,15 @@ export default function MainApp() {
         setQuestions([])
     }
 
-    const checkTutorialStatus = async () => {
+    const checkOnboardingStatus = async () => {
         const membership = await window.electronAPI?.getOrgMembership()
         if (!membership) {
             navigate('/activation')
             setActivationChecked(true)
             return
         }
-        const setupCompleted = await window.electronAPI?.getSetupCompleted()
-        if (!setupCompleted) {
-            navigate('/setup')
-            setActivationChecked(true)
-            return
-        }
-        const tutorialCompleted = await window.electronAPI?.getTutorialCompleted()
-        navigate(tutorialCompleted ? '/documents' : '/tutorial')
+        const onboardingCompleted = await window.electronAPI?.getOnboardingCompleted()
+        navigate(onboardingCompleted ? '/documents' : '/tutorial')
         setActivationChecked(true)
     }
 
@@ -200,7 +194,7 @@ export default function MainApp() {
                 setActivationChecked(true)
             } else {
                 await window.electronAPI.getUser().then(({ user }) => setUser(user))
-                await checkTutorialStatus()
+                await checkOnboardingStatus()
             }
         })
 
@@ -210,7 +204,7 @@ export default function MainApp() {
                 navigate('/auth')
             } else {
                 window.electronAPI.getUser().then(({ user }) => setUser(user))
-                checkTutorialStatus()
+                checkOnboardingStatus()
             }
         })
     }, [])
@@ -233,15 +227,21 @@ export default function MainApp() {
             <Routes>
                 <Route path="/auth" element={<AuthPage onAuth={(s) => {
                     setSession(s)
-                    checkTutorialStatus()
+                    refreshCollections()
+                    refreshPrompts()
+                    checkOnboardingStatus()
                 }} />} />
                 <Route
                     path="/activation"
-                    element={session ? <ActivationPage onActivated={() => checkTutorialStatus()} /> : <Navigate to="/auth" replace />}
+                    element={session ? <ActivationPage onActivated={() => {
+                        refreshCollections()
+                        refreshPrompts()
+                        checkOnboardingStatus()
+                    }} /> : <Navigate to="/auth" replace />}
                 />
                 <Route
                     path="/setup"
-                    element={session ? <SetupPage onComplete={checkTutorialStatus} /> : <Navigate to="/auth" replace />}
+                    element={session ? <Navigate to="/tutorial" replace /> : <Navigate to="/auth" replace />}
                 />
                 <Route
                     path="/tutorial"

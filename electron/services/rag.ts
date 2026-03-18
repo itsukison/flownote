@@ -34,7 +34,11 @@ export async function extractText(fileName: string, arrayBuffer: ArrayBuffer): P
         return result.value
     }
 
-    // txt / md / anything else → raw text
+    if (ext === '.html' || ext === '.htm') {
+        return buf.toString('utf-8').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    }
+
+    // txt / md / csv / json / anything else → raw text
     return buf.toString('utf-8')
 }
 

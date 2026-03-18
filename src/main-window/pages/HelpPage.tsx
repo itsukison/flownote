@@ -11,7 +11,6 @@ export default function HelpPage() {
   const navigate = useNavigate()
 
   const handleRestartTutorial = async () => {
-    await window.electronAPI?.setTutorialCompleted() 
     navigate('/tutorial')
   }
 

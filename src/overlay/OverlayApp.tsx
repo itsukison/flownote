@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import logoUrl from '../assets/logo.png'
-import { Mic, MicOff, X, ChevronUp, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { assetUrl } from '@/utils/assetUrl'
+const logoUrl = assetUrl('logo.png')
+import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle } from 'lucide-react'
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
@@ -11,6 +12,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import { useListening } from '@/hooks/useListening'
+import { useResponseStream } from '@/hooks/useResponseStream'
 
 const t = ja
 
@@ -26,78 +29,72 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 }
 
 export default function OverlayApp() {
-    const [session, setSession] = useState<any>(undefined) // undefined = loading
-    const [listening, setListening] = useState(false)
-    const [questions, setQuestions] = useState<Question[]>([])
-    const [selectedId, setSelectedId] = useState<string | null>(null)
-    const [response, setResponse] = useState('')
-    const [generating, setGenerating] = useState(false)
-    const [error, setError] = useState<string | null>(null)
+    const [session, setSession] = useState<any>(undefined)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
-    const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
-    const [systemAudioSilent, setSystemAudioSilent] = useState(false)
-    const [hasOrg, setHasOrg] = useState<boolean | null>(null) // null = loading
+    const [hasOrg, setHasOrg] = useState<boolean | null>(null)
     const [limitExceeded, setLimitExceeded] = useState(false)
 
-    const audioCtxRef = useRef<AudioContext | null>(null)
-    const processorRef = useRef<ScriptProcessorNode | null>(null)
-    const streamRef = useRef<MediaStream | null>(null)
-    const responseRef = useRef('')
+    const { listening, systemAudioSilent, error, toggleListening, forceStop } = useListening()
+    const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream()
 
-    // Check session on mount
+    const refreshCollections = useCallback(() => {
+        window.electronAPI?.listCollections().then((cols) => {
+            setCollections(cols)
+            if (cols.length > 0) setSelectedCollectionId(cols[0].id)
+        })
+    }, [])
+
+    // Session check
     useEffect(() => {
         if (!window.electronAPI) { setSession(null); return }
         window.electronAPI.getSession().then(({ session }) => setSession(session))
         const off = window.electronAPI.onSessionChange(({ session }) => {
             setSession(session)
-            if (!session) {
-                stopMicCapture()
-                setListening(false)
-            }
+            if (!session) forceStop()
         })
         return off
-    }, [])
+    }, [forceStop])
 
-    // Check org membership and load collections when authed
+    // Org membership + collections when authed
     useEffect(() => {
         if (!session) return
-        window.electronAPI?.getOrgMembership().then((membership) => {
-            setHasOrg(!!membership)
-            if (membership) {
-                // Check if limit exceeded
-                window.electronAPI?.checkBudget().then((budget) => {
-                    setLimitExceeded(!budget.allowed)
-                })
-            }
-        })
-        window.electronAPI?.listCollections().then((cols) => {
-            setCollections(cols)
-            if (cols.length > 0) setSelectedCollectionId(cols[0].id)
-        })
-    }, [session])
+        const refreshMembership = () => {
+            window.electronAPI?.getOrgMembership().then((membership) => {
+                setHasOrg(!!membership)
+                if (membership) {
+                    window.electronAPI?.checkBudget().then((budget) => {
+                        setLimitExceeded(!budget.allowed)
+                    })
+                }
+            })
+        }
+        refreshMembership()
+        refreshCollections()
+    }, [session, refreshCollections])
 
-    // Event listeners
+    // Misc event listeners
     useEffect(() => {
         if (!window.electronAPI) return
-        const offSilent = window.electronAPI.onSystemAudioSilent(() => setSystemAudioSilent(true))
-        const offResumed = window.electronAPI.onSystemAudioResumed(() => setSystemAudioSilent(false))
-        const offQ = window.electronAPI.onQuestionDetected((q) =>
-            setQuestions((prev) => (prev.find((p) => p.id === q.id) ? prev : [...prev, q]))
-        )
-        const offChunk = window.electronAPI.onResponseChunk((chunk) => {
-            responseRef.current += chunk
-            setResponse(responseRef.current)
-        })
-        const offDone = window.electronAPI.onResponseDone(() => setGenerating(false))
         const offLimit = window.electronAPI.onUsageLimitExceeded(() => {
             setLimitExceeded(true)
-            setListening(false)
-            stopMicCapture()
+            forceStop()
         })
-        return () => { offSilent(); offResumed(); offQ(); offChunk(); offDone(); offLimit() }
-    }, [])
+        const offOrg = window.electronAPI.onOrgMembershipChanged(() => {
+            window.electronAPI?.getOrgMembership().then((membership) => {
+                setHasOrg(!!membership)
+                if (membership) {
+                    window.electronAPI?.checkBudget().then((budget) => {
+                        setLimitExceeded(!budget.allowed)
+                    })
+                }
+            })
+            refreshCollections()
+        })
+        const offCols = window.electronAPI.onCollectionsChanged(() => refreshCollections())
+        return () => { offLimit(); offOrg(); offCols() }
+    }, [forceStop, refreshCollections])
 
     // Global keyboard navigation
     useEffect(() => {
@@ -110,76 +107,7 @@ export default function OverlayApp() {
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [viewMode])
-
-    const stopMicCapture = useCallback(() => {
-        processorRef.current?.disconnect()
-        processorRef.current = null
-        audioCtxRef.current?.close()
-        audioCtxRef.current = null
-        streamRef.current?.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-    }, [])
-
-    const startMicCapture = useCallback(async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        streamRef.current = stream
-        const ctx = new AudioContext({ sampleRate: 16000 })
-        audioCtxRef.current = ctx
-        console.log('[MicCapture] AudioContext actual sampleRate:', ctx.sampleRate)
-        const source = ctx.createMediaStreamSource(stream)
-        const processor = ctx.createScriptProcessor(4096, 1, 1)
-        processorRef.current = processor
-        processor.onaudioprocess = (e) => {
-            window.electronAPI?.processMicChunk(new Float32Array(e.inputBuffer.getChannelData(0)))
-        }
-        source.connect(processor)
-        processor.connect(ctx.destination)
-    }, [])
-
-    const toggleListening = async () => {
-        setError(null)
-        if (!listening) {
-            try {
-                const res = await window.electronAPI.startListening()
-                if (!res.success) { setError(res.error || t.common.loading); return }
-                await startMicCapture()
-                setListening(true)
-                setSettingsOpen(false)
-            } catch (e: any) {
-                setError(e.message || t.common.loading)
-            }
-        } else {
-            stopMicCapture()
-            await window.electronAPI.stopListening()
-            setListening(false)
-            setSystemAudioSilent(false)
-        }
-    }
-
-    const selectQuestion = async (q: Question) => {
-        if (generating) return
-        setSelectedId(q.id)
-        setResponse('')
-        responseRef.current = ''
-        setViewMode('detail')
-        setGenerating(true)
-        await window.electronAPI.generateResponse(q.text, selectedCollectionId ?? undefined)
-    }
-
-    const goBack = () => {
-        setViewMode('list')
-    }
-
-    const clearAll = () => {
-        setQuestions([])
-        setSelectedId(null)
-        setResponse('')
-        responseRef.current = ''
-        window.electronAPI.clearQuestions()
-    }
-
-    const selectedQuestion = questions.find((q) => q.id === selectedId)
+    }, [viewMode, goBack])
 
     // Loading state
     if (session === undefined) {
@@ -305,7 +233,7 @@ export default function OverlayApp() {
                         </button>
                     )}
                     <button
-                        onClick={toggleListening}
+                        onClick={() => toggleListening({ onStarted: () => setSettingsOpen(false) })}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${listening
                             ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
                             : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800 border border-zinc-800'
@@ -342,11 +270,9 @@ export default function OverlayApp() {
                             </Select>
                         </div>
                     )}
-
                     {!collections.length && (
                         <p className="text-[10px] text-zinc-500 py-1 italic">{t.overlay.noProjectContext}</p>
                     )}
-
                 </div>
             )}
 
@@ -371,7 +297,7 @@ export default function OverlayApp() {
                 {viewMode === 'detail' ? (
                     <div className="p-4 space-y-3">
                         <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
-                            {questions.find((q) => q.id === selectedId)?.text}
+                            {selectedQuestion?.text}
                         </p>
                         <div className="text-sm text-zinc-300 leading-relaxed">
                             {response ? (
@@ -410,7 +336,7 @@ export default function OverlayApp() {
                                 {questions.map((q) => (
                                     <button
                                         key={q.id}
-                                        onClick={() => selectQuestion(q)}
+                                        onClick={() => selectQuestion(q, selectedCollectionId)}
                                         className={`w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${selectedId === q.id
                                             ? 'bg-zinc-900 text-zinc-100 border border-zinc-800'
                                             : 'bg-zinc-900/30 text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200 border border-transparent'

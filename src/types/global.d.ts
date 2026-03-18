@@ -54,6 +54,8 @@ declare global {
             checkBudget: () => Promise<{ allowed: boolean; remaining: number; used: number; limit: number }>
             getMonthlyUsage: () => Promise<MonthlyUsage | null>
             onUsageLimitExceeded: (cb: () => void) => () => void
+            onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
+            onCollectionsChanged: (cb: () => void) => () => void
             // ── Prompts ────────────────────────────────────────────────────────────────
             getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
@@ -63,6 +65,10 @@ declare global {
             // ── Permissions ──────────────────────────────────────────────────────────
             openSystemAudioSettings: () => Promise<void>
             requestMicPermission: () => Promise<boolean>
+            // ── Onboarding ─────────────────────────────────────────────────────────
+            getOnboardingCompleted: () => Promise<boolean>
+            setOnboardingCompleted: () => Promise<void>
+            // Backward-compat aliases
             getSetupCompleted: () => Promise<boolean>
             setSetupCompleted: () => Promise<void>
             // ── Tutorial ─────────────────────────────────────────────────────────────

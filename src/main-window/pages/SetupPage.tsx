@@ -16,12 +16,10 @@ export default function SetupPage({ onComplete }: Props) {
     }
 
     const handleSkip = async () => {
-        await window.electronAPI?.setSetupCompleted()
         onComplete()
     }
 
     const handleContinue = async () => {
-        await window.electronAPI?.setSetupCompleted()
         onComplete()
     }
 

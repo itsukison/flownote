@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { KeyRound, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function ActivationPage({ onActivated }: Props) {
+  const navigate = useNavigate()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +55,7 @@ export default function ActivationPage({ onActivated }: Props) {
           </div>
           <h1 className="text-lg font-semibold text-zinc-100">{t.activation.title}</h1>
           <p className="text-sm text-zinc-500 mt-2 leading-relaxed">{t.activation.description}</p>
+          <p className="text-xs text-zinc-600 mt-2">{t.activation.hintNoCode}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -95,6 +98,14 @@ export default function ActivationPage({ onActivated }: Props) {
             )}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={() => navigate('/auth')}
+          className="w-full mt-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-xl transition-colors"
+        >
+          {t.activation.backToAuth}
+        </button>
       </div>
     </div>
   )

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic2, Headphones, MessageSquare, Check, PlayCircle } from 'lucide-react'
+import { FolderOpen, Terminal } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
+import { assetUrl } from '@/utils/assetUrl'
 
 const t = ja.tutorial
 
@@ -13,36 +14,7 @@ interface TutorialPageProps {
 export default function TutorialPage({ onComplete }: TutorialPageProps) {
   const [step, setStep] = useState(0)
 
-  const steps = [
-    {
-      id: 'welcome',
-      icon: <Check size={32} strokeWidth={1.5} className="text-zinc-500" />,
-      title: t.welcome.title,
-      subtitle: t.welcome.subtitle,
-      body: t.welcome.body,
-    },
-    {
-      id: 'audio',
-      icon: <MessageSquare size={32} strokeWidth={1.5} className="text-zinc-500" />,
-      title: t.audio.title,
-      subtitle: t.audio.subtitle,
-      body: t.audio.body,
-    },
-    {
-      id: 'live',
-      icon: <Mic2 size={32} strokeWidth={1.5} className="text-zinc-500" />,
-      title: t.live.title,
-      subtitle: t.live.subtitle,
-      body: t.live.body,
-    },
-    {
-      id: 'finish',
-      icon: <PlayCircle size={32} strokeWidth={1.5} className="text-zinc-500" />,
-      title: t.finish.title,
-      subtitle: t.finish.subtitle,
-      body: t.finish.body,
-    },
-  ]
+  const steps = t.steps
 
   const handleNext = useCallback(() => {
     if (step < steps.length - 1) {
@@ -59,74 +31,178 @@ export default function TutorialPage({ onComplete }: TutorialPageProps) {
   }, [step])
 
   const handleFinish = useCallback(async () => {
-    await window.electronAPI?.setTutorialCompleted()
+    await window.electronAPI?.setOnboardingCompleted()
     onComplete()
   }, [onComplete])
 
   const currentStep = steps[step]
+  const isLast = step === steps.length - 1
+  const isVideoStep = step === 1 || step === 2 || step === 3
+  const videoSrc =
+    step === 1 ? assetUrl('command-slash.mov')
+      : step === 2 ? assetUrl('detection.mov')
+        : step === 3 ? assetUrl('answering.mov')
+          : null
+
+  const renderVisual = () => {
+    if (isVideoStep && videoSrc) {
+      return (
+        <div className="w-full h-full flex items-center justify-center relative bg-black/40 overflow-hidden">
+          <video
+            src={videoSrc}
+            className="w-full h-full object-cover lg:object-contain relative z-10 md:scale-105"
+            autoPlay
+            muted
+            loop
+            playsInline
+          />
+          {/* Subtle overlay to blend sharp edges if any */}
+          <div className="absolute inset-0 ring-1 ring-inset ring-white/5 pointer-events-none z-20" />
+        </div>
+      )
+    }
+
+    if (step === 0 || step === 6) {
+      return (
+        <div className="w-full h-full flex items-center justify-center relative bg-black/40 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent z-0"></div>
+          <motion.div
+            animate={{ y: [0, -15, 0] }}
+            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+            className="relative z-10 flex items-center justify-center"
+          >
+            <div className="absolute inset-0 bg-white/20 blur-[100px] rounded-full w-56 h-56 m-auto mix-blend-screen" />
+            <img src={assetUrl('app-icon.png')} alt="Flownote" className="w-40 h-40 md:w-52 md:h-52 object-contain drop-shadow-2xl relative z-10" />
+          </motion.div>
+        </div>
+      )
+    }
+
+    if (step === 4) {
+      return (
+        <div className="w-full h-full flex items-center justify-center relative bg-black/40 overflow-hidden group">
+          <div className="absolute inset-0 bg-white/5 blur-[120px] w-72 h-72 m-auto rounded-full transition-opacity duration-1000" />
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 100, damping: 20 }}
+            className="w-56 h-56 bg-white/5 border border-white/10 rounded-[2rem] flex items-center justify-center shadow-2xl backdrop-blur-md relative z-10 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent" />
+            <FolderOpen className="w-24 h-24 text-zinc-200 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] relative z-10" />
+          </motion.div>
+        </div>
+      )
+    }
+
+    if (step === 5) {
+      return (
+        <div className="w-full h-full flex items-center justify-center relative bg-black/40 overflow-hidden">
+          <div className="absolute inset-0 bg-white/5 blur-[120px] w-72 h-72 m-auto rounded-full transition-opacity duration-1000" />
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.1 }}
+            className="w-56 h-56 bg-white/5 border border-white/10 rounded-[2rem] flex items-center justify-center shadow-2xl backdrop-blur-md relative z-10 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent" />
+            <Terminal className="w-24 h-24 text-zinc-200 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] relative z-10" />
+          </motion.div>
+        </div>
+      )
+    }
+
+    return null
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full bg-[#0e0e10] text-white">
-      <div className="max-w-md w-full mx-auto px-8 relative">
+    <div className="flex flex-col items-center justify-center w-full h-full bg-[#0e0e10] text-white p-6 md:p-8">
+      <div className="max-w-[1000px] w-full h-full min-h-[500px] max-h-[680px] mx-auto flex flex-col relative">
         {/* Step Indicators */}
-        <div className="flex justify-center gap-2 mb-12">
+        <div className="flex justify-center gap-2 mb-8 shrink-0">
           {steps.map((_, i) => (
             <div
               key={i}
-              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? 'bg-zinc-100 scale-125' : 'bg-zinc-800'
+              className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                i === step ? 'bg-white scale-125 w-6' : 'bg-white/20'
               }`}
             />
           ))}
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStep.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="flex flex-col items-center text-center space-y-6"
-          >
-            <div className="w-16 h-16 rounded-2xl bg-zinc-900/50 flex items-center justify-center border border-white/[0.05]">
-              {currentStep.icon}
-            </div>
-
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight text-zinc-100">
-                {currentStep.title}
-              </h1>
-              <p className="text-zinc-500 font-medium text-lg">
-                {currentStep.subtitle}
-              </p>
-            </div>
-
-            <p className="text-zinc-400 leading-relaxed text-sm max-w-[320px]">
-              {currentStep.body}
-            </p>
-          </motion.div>
-        </AnimatePresence>
-
-        <div className="mt-16 flex flex-col items-center gap-6">
-          <Button
-            onClick={handleNext}
-            className="w-full max-w-[240px] py-6 rounded-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 transition-all font-semibold flex items-center justify-center gap-2"
-          >
-            {step === steps.length - 1 ? t.finish.start : t.next}
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </Button>
-
-          {step > 0 && (
-            <button
-              onClick={handleBack}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors text-sm font-medium"
+        {/* Main Card Container */}
+        <div className="flex-1 w-full bg-[#151517] border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden relative flex shadow-black/50">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, scale: 0.98, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, scale: 1.02, filter: 'blur(4px)' }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-0 flex flex-col md:flex-row w-full h-full"
             >
-              {t.back}
-            </button>
-          )}
+              {/* Left Content Pane */}
+              <div className="w-full md:w-[45%] flex flex-col justify-between p-8 md:p-12 z-10 relative overflow-y-auto">
+                <div className="space-y-6">
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-medium text-zinc-300">
+                    Step {step + 1} of {steps.length}
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white leading-tight">
+                      {currentStep.title}
+                    </h1>
+                    <p className="text-zinc-400 leading-relaxed text-base md:text-lg">
+                      {currentStep.body}
+                    </p>
+                  </div>
+
+                  {step === 2 && (
+                    <div className="flex flex-col gap-3 mt-8">
+                      <Button
+                        onClick={() => window.electronAPI?.requestMicPermission()}
+                        className="w-full py-6 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all font-semibold text-base shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_25px_rgba(255,255,255,0.25)]"
+                      >
+                        {t.cta.mic}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.electronAPI?.openSystemAudioSettings()}
+                        className="w-full py-6 rounded-xl border-white/15 bg-white/5 text-white hover:bg-white/10 transition-all font-semibold text-base"
+                      >
+                        {t.cta.system}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="flex items-center gap-4 mt-12 pt-6 border-t border-white/10 shrink-0">
+                  <Button
+                    onClick={handleNext}
+                    className="flex-1 py-6 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all text-base font-semibold shadow-[0_4px_20px_rgba(255,255,255,0.15)] hover:shadow-[0_6px_25px_rgba(255,255,255,0.25)]"
+                  >
+                    {isLast ? t.start : t.next}
+                  </Button>
+                  
+                  {step > 0 && (
+                    <Button
+                      variant="ghost"
+                      onClick={handleBack}
+                      className="py-6 px-6 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-colors text-base font-medium"
+                    >
+                      {t.back}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Visual Pane */}
+              <div className="hidden md:flex w-[55%] border-l border-white/10 bg-[#0a0a0c] relative">
+                {renderVisual()}
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>
