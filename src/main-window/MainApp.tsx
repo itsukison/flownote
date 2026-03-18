@@ -77,6 +77,16 @@ function Sidebar({ user }: { user: any }) {
     )
 }
 
+const FullPageLoader = () => (
+    <div className="flex items-center justify-center h-screen bg-[#0e0e10] text-white/30 text-sm">
+        <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse" />
+            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-100" />
+            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-200" />
+        </div>
+    </div>
+)
+
 export default function MainApp() {
     const navigate = useNavigate()
     const [session, setSession] = useState<any>(undefined)
@@ -211,21 +221,13 @@ export default function MainApp() {
 
     // Loading
     if (session === undefined || !activationChecked) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-[#0e0e10] text-white/30 text-sm">
-                <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-100" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-200" />
-                </div>
-            </div>
-        )
+        return <FullPageLoader />
     }
 
     return (
         <div className="flex h-screen bg-[#0e0e10] text-white overflow-hidden">
             <Routes>
-                <Route path="/auth" element={<AuthPage onAuth={(s) => {
+                <Route path="/auth" element={session ? <FullPageLoader /> : <AuthPage onAuth={(s) => {
                     setSession(s)
                     refreshCollections()
                     refreshPrompts()
