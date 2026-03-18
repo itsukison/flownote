@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LogOut, Loader2 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
+import { Button } from '@/components/ui/button'
 
 const t = ja
 
@@ -40,31 +41,32 @@ export default function SettingsPage({ user }: Props) {
             {/* Permissions Section */}
             <section className="space-y-1 mb-10">
                 <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">{t.permissions.title}</h2>
-                <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-5 space-y-4">
-                    <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 text-xs font-bold text-zinc-400">1</div>
-                        <div>
-                            <p className="text-sm font-medium text-zinc-200">{t.permissions.openSettings}</p>
-                            <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                                {t.permissions.systemAudioHint}
-                            </p>
-                            <button
-                                onClick={() => window.electronAPI?.openSystemAudioSettings()}
-                                className="mt-3 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs text-zinc-300 transition-all flex items-center gap-2 group"
-                            >
-                                {t.permissions.openSettings}
-                                <span className="opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-                            </button>
+                <div className="space-y-2">
+                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-zinc-900/20 rounded-xl transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-800 text-xs font-bold text-zinc-400">1</div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start gap-4">
+                                <div className="flex-1">
+                                    <p className="text-sm font-medium text-zinc-200">{t.permissions.openSettings}</p>
+                                    <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                                        {t.permissions.systemAudioHint}
+                                    </p>
+                                </div>
+                                <Button
+                                    onClick={() => window.electronAPI?.openSystemAudioSettings()}
+                                    className="px-4 py-2 bg-zinc-100 text-zinc-950 hover:bg-zinc-200 rounded-lg text-xs transition-all font-semibold shrink-0"
+                                >
+                                    {t.permissions.openSettings}
+                                </Button>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="h-px bg-zinc-800/50 ml-12" />
-
-                    <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 text-xs font-bold text-zinc-400">2</div>
+                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-zinc-900/20 rounded-xl transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-800 text-xs font-bold text-zinc-400">2</div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-zinc-200">{t.permissions.systemAudio}</p>
-                            <div className="mt-2.5 p-3 bg-zinc-950/50 border border-zinc-800 rounded-xl space-y-2">
+                            <div className="mt-3 p-3 bg-zinc-950/50 border border-zinc-800 rounded-xl space-y-2 max-w-fit">
                                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                                     {t.permissions.systemAudioPath.split(' → ').map((step, i, arr) => (
                                         <div key={step} className="flex items-center gap-2 shrink-0">

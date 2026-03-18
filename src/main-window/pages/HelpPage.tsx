@@ -50,7 +50,7 @@ export default function HelpPage() {
           </section>
 
           {/* Usage Tips */}
-          <section className="space-y-8">
+          <section className="space-y-8 -mb-4">
             <h2 className="text-xs font-bold uppercase tracking-widest text-white/30 flex items-center gap-2">
               <Lightbulb size={14} />
               {t.help.tips.title}

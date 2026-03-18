@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FolderOpen, Terminal } from 'lucide-react'
+import { FolderOpen, Terminal, Mic, Settings } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 import { assetUrl } from '@/utils/assetUrl'
@@ -50,7 +50,7 @@ export default function TutorialPage({ onComplete }: TutorialPageProps) {
         <div className="w-full h-full flex items-center justify-center relative bg-black/40 overflow-hidden">
           <video
             src={videoSrc}
-            className="w-full h-full object-cover lg:object-contain relative z-10 md:scale-105"
+            className="w-[105%] h-[105%] object-cover absolute z-10"
             autoPlay
             muted
             loop
@@ -152,26 +152,51 @@ export default function TutorialPage({ onComplete }: TutorialPageProps) {
                     <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white leading-tight">
                       {currentStep.title}
                     </h1>
-                    <p className="text-zinc-400 leading-relaxed text-base md:text-lg">
+                    <p className={`text-zinc-400 leading-relaxed ${step === 2 ? 'text-sm' : 'text-base md:text-lg'}`}>
                       {currentStep.body}
                     </p>
                   </div>
 
                   {step === 2 && (
-                    <div className="flex flex-col gap-3 mt-8">
-                      <Button
-                        onClick={() => window.electronAPI?.requestMicPermission()}
-                        className="w-full py-6 rounded-xl bg-white text-black hover:bg-zinc-200 transition-all font-semibold text-base shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_25px_rgba(255,255,255,0.25)]"
-                      >
-                        {t.cta.mic}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => window.electronAPI?.openSystemAudioSettings()}
-                        className="w-full py-6 rounded-xl border-white/15 bg-white/5 text-white hover:bg-white/10 transition-all font-semibold text-base"
-                      >
-                        {t.cta.system}
-                      </Button>
+                    <div className="flex flex-col gap-4 mt-8">
+                      <div className="flex items-center justify-between p-4 rounded-[14px] border border-white/5 bg-white/5 hover:bg-white/10 transition-colors group">
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 rounded-lg bg-white/10 text-zinc-300">
+                            <Mic className="w-5 h-5" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-white">マイク</span>
+                            <span className="text-xs text-zinc-400">マイクへのアクセス</span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => window.electronAPI?.requestMicPermission()}
+                          className="rounded-full bg-white text-black hover:bg-zinc-200 font-semibold text-xs px-4 border shadow-sm"
+                        >
+                          許可する
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 rounded-[14px] border border-white/5 bg-white/5 hover:bg-white/10 transition-colors group">
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 rounded-lg bg-white/10 text-zinc-300">
+                            <Settings className="w-5 h-5" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-white">システム音声</span>
+                            <span className="text-xs text-zinc-400">設定から追加</span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.electronAPI?.openSystemAudioSettings()}
+                          className="rounded-full bg-transparent hover:bg-white/10 text-zinc-200 border-white/20 font-semibold text-xs px-4"
+                        >
+                          開く
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
