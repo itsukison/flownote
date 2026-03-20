@@ -48,7 +48,7 @@ function createOverlayWindow() {
     transparent: true,
     alwaysOnTop: true,
     resizable: true,
-    hasShadow: true,
+    hasShadow: process.platform === 'darwin',
     skipTaskbar: true,
     show: false,
     fullscreenable: false,

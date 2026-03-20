@@ -327,16 +327,33 @@ export function registerDocumentHandlers(
             const chunks = chunkText(text)
             const { embeddings, tokensUsed } = await embedChunks(chunks)
 
-            const { error } = await supabase
+            const { error: docErr } = await supabase
                 .from('documents')
                 .update({
-                    content: text,
-                    chunks: chunks,
-                    embeddings: embeddings
+                    content: text.slice(0, 10000)
                 })
                 .eq('id', documentId)
 
-            if (error) throw error
+            if (docErr) throw docErr
+
+            const { error: delErr } = await supabase
+                .from('document_chunks')
+                .delete()
+                .eq('document_id', documentId)
+
+            if (delErr) throw delErr
+
+            const chunkRows = chunks.map((chunkContent, i) => ({
+                document_id: documentId,
+                content: chunkContent,
+                embedding: embeddings[i],
+                chunk_index: i,
+            }))
+
+            if (chunkRows.length > 0) {
+                const { error: chunkErr } = await supabase.from('document_chunks').insert(chunkRows)
+                if (chunkErr) throw chunkErr
+            }
 
             if (tokensUsed > 0) {
                 await trackNormalizedUsage(supabase, user.id, 'embedding', tokensUsed, 0)

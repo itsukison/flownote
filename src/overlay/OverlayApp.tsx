@@ -224,14 +224,12 @@ export default function OverlayApp() {
                     )}
                 </div>
                 <div className="no-drag flex items-center gap-1.5">
-                    {viewMode === 'list' && (
-                        <button
-                            onClick={() => setSettingsOpen((o) => !o)}
-                            className={`p-1.5 rounded-lg transition-colors ${settingsOpen ? 'bg-zinc-800 text-zinc-300' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400'}`}
-                        >
-                            <Settings size={13} />
-                        </button>
-                    )}
+                    <button
+                        onClick={() => setSettingsOpen((o) => !o)}
+                        className={`p-1.5 rounded-lg transition-colors ${settingsOpen ? 'bg-zinc-800 text-zinc-300' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400'}`}
+                    >
+                        <Settings size={13} />
+                    </button>
                     <button
                         onClick={() => toggleListening({ onStarted: () => setSettingsOpen(false) })}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${listening
