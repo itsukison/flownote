@@ -3,7 +3,8 @@ import { OpenAIRealtimeQuestionDetector } from '../audio/OpenAIRealtimeQuestionD
 import { resamplePcm16To24k } from '../audio/AudioResampler'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
-import { ensureBudget, trackNormalizedAndRecord, GetSupabaseFn } from './shared'
+import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
+import { getCurrentTranscriptIdValue } from './transcription-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -30,6 +31,23 @@ export function registerListeningHandlers(
           const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
           trackNormalizedAndRecord(getSupabase, 'realtime', 0, 0, { incrementQuestions: true })
+
+          // Persist question to database
+          const sb = getSupabase()
+          if (sb) {
+            getCurrentUserId(getSupabase).then((userId) => {
+              if (userId) {
+                sb.from('questions').insert({
+                  user_id: userId,
+                  question_text: q.text,
+                  source_audio_type: 'realtime',
+                  session_id: getCurrentTranscriptIdValue(),
+                }).then(({ error }) => {
+                  if (error) console.error('[Listening] Failed to persist question:', error.message)
+                })
+              }
+            })
+          }
         },
         onError: (err) => {
           console.error('[Handlers] Detector error:', err)

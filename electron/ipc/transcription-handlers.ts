@@ -4,6 +4,7 @@ import { TranscriptionSession, TranscriptSegment } from '../audio/TranscriptionS
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
+import { generateSessionTitle } from './ai-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -13,14 +14,21 @@ let segments: TranscriptSegment[] = []
 let currentTranscriptId: string | null = null
 let sysAudioChunkCount = 0
 
+export function getCurrentTranscriptIdValue(): string | null {
+  return currentTranscriptId
+}
+
+export function getCurrentSegments(): TranscriptSegment[] {
+  return segments
+}
+
 export function registerTranscriptionHandlers(
   getOverlayWindow: GetWindowFn,
+  getMainWindow: GetWindowFn,
   getSupabase: GetSupabaseFn,
-  openaiApiKey: string
+  openaiApiKey: string,
+  genAI: GoogleGenerativeAI | null
 ) {
-  const geminiApiKey = process.env.GEMINI_API_KEY || ''
-  let genAI: GoogleGenerativeAI | null = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null
-
   ipcMain.handle('start-transcription', async () => {
     if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
     try {
@@ -34,7 +42,6 @@ export function registerTranscriptionHandlers(
       segments = []
       sysAudioChunkCount = 0
 
-      // Create Supabase transcript row
       const supabase = getSupabase()
       const userId = await getCurrentUserId(getSupabase)
       if (supabase && userId) {
@@ -82,7 +89,6 @@ export function registerTranscriptionHandlers(
       await micSession.start()
       await speakerSession.start()
 
-      // Acquire shared audio router for system audio
       sharedAudioRouter.acquire()
       sharedAudioRouter.on('audio-data', onSystemAudioForTranscription)
       sharedAudioRouter.on('system-audio-silent', onSystemAudioSilent)
@@ -99,7 +105,6 @@ export function registerTranscriptionHandlers(
     try {
       await stopTranscription()
 
-      // Persist final segments to Supabase
       const supabase = getSupabase()
       if (supabase && currentTranscriptId) {
         await supabase
@@ -109,6 +114,12 @@ export function registerTranscriptionHandlers(
             segments: segments,
           })
           .eq('id', currentTranscriptId)
+
+        if (segments.length > 0 && genAI) {
+          generateSessionTitle(genAI, getSupabase, currentTranscriptId, segments).catch(
+            (err) => console.error('[Transcription] Auto-title error:', err)
+          )
+        }
       }
 
       return { success: true }
@@ -124,7 +135,6 @@ export function registerTranscriptionHandlers(
       const s = Math.max(-1, Math.min(1, float32Array[i]))
       buf.writeInt16LE(Math.round(s * 32767), i * 2)
     }
-    // Transcription model uses pcm16 at 16kHz — no resampling needed
     micSession.sendAudio(buf)
   })
 
@@ -132,69 +142,13 @@ export function registerTranscriptionHandlers(
     return segments
   })
 
-  ipcMain.handle('ask-transcript-question', async (_event, question: string) => {
-    const win = getOverlayWindow()
-    if (!genAI || !win) return { success: false, error: 'AI not available' }
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
-    try {
-      const budgetCheck = await ensureBudget(getSupabase)
-      if (!budgetCheck.allowed) {
-        win.webContents.send('transcript-response-done')
-        return { success: false, error: budgetCheck.error || 'limit_exceeded' }
-      }
-
-      // Build transcript context (last ~15000 chars)
-      const transcriptText = segments
-        .map((s) => `[${s.speaker}]: ${s.text}`)
-        .join('\n')
-      const contextWindow = transcriptText.slice(-15000)
-
-      const prompt = `以下は会議のトランスクリプトです。ユーザーの質問に日本語で簡潔に答えてください。
-
-【トランスクリプト】
-${contextWindow}
-
-【質問】
-${question}`
-
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash-lite',
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1300 },
-      })
-
-      const result = await model.generateContentStream(prompt)
-
-      let lastUsageMetadata: any = null
-      for await (const chunk of result.stream) {
-        const text = chunk.text()
-        if (text) win.webContents.send('transcript-response-chunk', text)
-        if (chunk.usageMetadata) lastUsageMetadata = chunk.usageMetadata
-      }
-
-      if (lastUsageMetadata) {
-        const promptTokens = lastUsageMetadata.promptTokenCount || 0
-        const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
-        if (promptTokens > 0 || responseTokens > 0) {
-          trackNormalizedAndRecord(getSupabase, 'gemini', promptTokens, responseTokens)
-        }
-      }
-
-      win.webContents.send('transcript-response-done')
-      return { success: true }
-    } catch (err: any) {
-      console.error('[Transcription] ask-transcript-question error:', err)
-      win?.webContents.send('transcript-response-done')
-      return { success: false, error: err.message }
-    }
-  })
-
-  // Helper: system audio data forwarding
   function onSystemAudioForTranscription(buf: Buffer) {
     sysAudioChunkCount++
     if (sysAudioChunkCount % 100 === 0) {
       console.log(`[Transcription] System audio forwarded ${sysAudioChunkCount} chunks`)
     }
-    // Transcription model uses pcm16 at 16kHz — no resampling needed
     speakerSession?.sendAudio(buf)
   }
 

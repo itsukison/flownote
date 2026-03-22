@@ -41,6 +41,19 @@ declare global {
             onTranscriptSegment: (cb: (segment: TranscriptSegment) => void) => () => void
             onTranscriptResponseChunk: (cb: (chunk: string) => void) => () => void
             onTranscriptResponseDone: (cb: () => void) => () => void
+            // ── Session History ──────────────────────────────────────────────────────
+            getSessions: () => Promise<{ success: boolean; data: SessionTranscript[]; error?: string }>
+            getSessionDetail: (id: string) => Promise<{ success: boolean; data?: SessionTranscript; error?: string }>
+            deleteSession: (id: string) => Promise<{ success: boolean; error?: string }>
+            updateSessionTitle: (id: string, title: string) => Promise<{ success: boolean; error?: string }>
+            generateSessionSummary: (id: string) => Promise<{ success: boolean; error?: string }>
+            askSessionQuestion: (id: string, question: string) => Promise<{ success: boolean; error?: string }>
+            getSessionMessages: (id: string) => Promise<{ success: boolean; data: SessionMessage[]; error?: string }>
+            getSessionQA: (id: string) => Promise<{ success: boolean; data: SessionQA[]; error?: string }>
+            onSessionSummaryChunk: (cb: (chunk: string) => void) => () => void
+            onSessionSummaryDone: (cb: () => void) => () => void
+            onSessionChatChunk: (cb: (chunk: string) => void) => () => void
+            onSessionChatDone: (cb: () => void) => () => void
             // ── Documents & RAG ───────────────────────────────────────────────────────
             listCollections: () => Promise<Collection[]>
             createCollection: (name: string) => Promise<Collection | null>
@@ -133,6 +146,31 @@ declare global {
         is_default: boolean
         created_at: string
         updated_at: string
+    }
+
+    interface SessionTranscript {
+        id: string
+        title: string | null
+        started_at: string
+        ended_at: string | null
+        segments?: TranscriptSegment[]
+        summary: string | null
+        created_at: string
+    }
+
+    interface SessionMessage {
+        id: string
+        transcript_id: string
+        role: 'user' | 'assistant'
+        content: string
+        created_at: string
+    }
+
+    interface SessionQA {
+        id: string
+        question_text: string
+        created_at: string
+        responses: { response_text: string }[]
     }
 
     interface MonthlyUsage {

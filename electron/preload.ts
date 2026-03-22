@@ -90,6 +90,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('transcript-response-done', fn)
   },
 
+  // ── Session History ──────────────────────────────────────────────────────
+  getSessions: () => ipcRenderer.invoke('session:list'),
+  getSessionDetail: (id: string) => ipcRenderer.invoke('session:get', id),
+  deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
+  updateSessionTitle: (id: string, title: string) =>
+    ipcRenderer.invoke('session:update-title', id, title),
+  generateSessionSummary: (id: string) =>
+    ipcRenderer.invoke('session:generate-summary', id),
+  askSessionQuestion: (id: string, question: string) =>
+    ipcRenderer.invoke('session:ask-question', id, question),
+  getSessionMessages: (id: string) => ipcRenderer.invoke('session:get-messages', id),
+  getSessionQA: (id: string) => ipcRenderer.invoke('session:get-qa', id),
+  onSessionSummaryChunk: (cb: (chunk: string) => void) => {
+    const fn = (_: any, chunk: string) => cb(chunk)
+    ipcRenderer.on('session-summary-chunk', fn)
+    return () => ipcRenderer.removeListener('session-summary-chunk', fn)
+  },
+  onSessionSummaryDone: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('session-summary-done', fn)
+    return () => ipcRenderer.removeListener('session-summary-done', fn)
+  },
+  onSessionChatChunk: (cb: (chunk: string) => void) => {
+    const fn = (_: any, chunk: string) => cb(chunk)
+    ipcRenderer.on('session-chat-chunk', fn)
+    return () => ipcRenderer.removeListener('session-chat-chunk', fn)
+  },
+  onSessionChatDone: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('session-chat-done', fn)
+    return () => ipcRenderer.removeListener('session-chat-done', fn)
+  },
+
   // ── Documents & RAG ───────────────────────────────────────────────────────
   listCollections: () => ipcRenderer.invoke('doc:list-collections'),
   createCollection: (name: string) => ipcRenderer.invoke('doc:create-collection', name),

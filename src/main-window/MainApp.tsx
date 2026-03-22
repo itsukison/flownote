@@ -7,7 +7,7 @@ import { ja } from '@/i18n/ja'
 import AuthPage from './pages/AuthPage'
 import ActivationPage from './pages/ActivationPage'
 import DocumentsPage from './pages/DocumentsPage'
-import HistoryPage from './pages/HistoryPage'
+import HistoryPage from './pages/history'
 import SettingsPage from './pages/SettingsPage'
 import PromptsPage from './pages/PromptsPage'
 import TutorialPage from './pages/TutorialPage'
@@ -105,8 +105,6 @@ export default function MainApp() {
     // Cached state for pages
     const [collections, setCollections] = useState<any[]>([])
     const [collectionsLoading, setCollectionsLoading] = useState(true)
-    const [questions, setQuestions] = useState<any[]>([])
-    const [questionsLoading, setQuestionsLoading] = useState(true)
     const [prompts, setPrompts] = useState<any[]>([])
     const [promptsLoading, setPromptsLoading] = useState(true)
     const [promptsSelectedIds, setPromptsSelectedIds] = useState<{ base?: string; rag?: string }>({})
@@ -114,7 +112,6 @@ export default function MainApp() {
     // Load cached data on mount
     useEffect(() => {
         loadCollections()
-        loadQuestions()
         loadPrompts()
 
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -135,17 +132,6 @@ export default function MainApp() {
             console.error('Failed to load collections:', err)
         } finally {
             setCollectionsLoading(false)
-        }
-    }
-
-    const loadQuestions = async () => {
-        try {
-            const qs = await window.electronAPI?.getQuestions() ?? []
-            setQuestions(qs.slice().reverse())
-        } catch (err) {
-            console.error('Failed to load questions:', err)
-        } finally {
-            setQuestionsLoading(false)
         }
     }
 
@@ -171,19 +157,9 @@ export default function MainApp() {
         loadCollections()
     }
 
-    const refreshQuestions = () => {
-        setQuestionsLoading(true)
-        loadQuestions()
-    }
-
     const refreshPrompts = () => {
         setPromptsLoading(true)
         loadPrompts()
-    }
-
-    const clearQuestions = () => {
-        window.electronAPI?.clearQuestions()
-        setQuestions([])
     }
 
     const checkOnboardingStatus = async () => {
@@ -292,7 +268,7 @@ export default function MainApp() {
                                             <Route path="/" element={<Navigate to="/documents" replace />} />
                                             <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
                                             <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
-                                            <Route path="/history" element={<HistoryPage questions={questions} loading={questionsLoading} onRefresh={refreshQuestions} onClear={clearQuestions} />} />
+                                            <Route path="/history" element={<HistoryPage />} />
                                             <Route path="/settings" element={<SettingsPage user={user} />} />
                                             <Route path="/help" element={<HelpPage />} />
                                         </Routes>
