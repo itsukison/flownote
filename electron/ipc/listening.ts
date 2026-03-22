@@ -1,14 +1,14 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { OpenAIRealtimeQuestionDetector } from '../audio/OpenAIRealtimeQuestionDetector'
 import { resamplePcm16To24k } from '../audio/AudioResampler'
-import { SystemAudioCapture } from '../audio/SystemAudioCapture'
+import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, GetSupabaseFn } from './shared'
 
 type GetWindowFn = () => BrowserWindow | null
 
 let detector: OpenAIRealtimeQuestionDetector | null = null
-let systemAudio: SystemAudioCapture | null = null
+let sysAudioChunkCount = 0
 
 export function registerListeningHandlers(
   getOverlayWindow: GetWindowFn,
@@ -42,10 +42,8 @@ export function registerListeningHandlers(
             getOverlayWindow()?.webContents.send('usage-limit-exceeded')
             detector?.stop()
             detector = null
-            if (systemAudio) {
-              systemAudio.stop().catch(() => {})
-              systemAudio = null
-            }
+            sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
+            sharedAudioRouter.release()
           }
         },
         onUsageLimitExceeded: () => {
@@ -54,30 +52,9 @@ export function registerListeningHandlers(
       })
       await detector.start()
 
-      systemAudio = new SystemAudioCapture()
-      let sysAudioChunkCount = 0
-      systemAudio.on('audio-data', (buf: Buffer) => {
-        sysAudioChunkCount++
-        if (sysAudioChunkCount % 100 === 0) {
-          console.log(`[Handlers] System audio forwarded ${sysAudioChunkCount} chunks to Realtime`)
-        }
-        const resampled = resamplePcm16To24k(buf)
-        detector?.sendAudio(resampled, 'opponent').catch(console.error)
-      })
-      systemAudio.on('system-audio-silent', () => {
-        getOverlayWindow()?.webContents.send('system-audio-silent')
-      })
-      systemAudio.on('system-audio-resumed', () => {
-        getOverlayWindow()?.webContents.send('system-audio-resumed')
-      })
-      systemAudio.on('error', (err: Error) => {
-        console.warn('[Handlers] System audio error (continuing with mic-only):', err.message)
-        systemAudio = null
-      })
-      systemAudio.start().catch((err: Error) => {
-        console.warn('[Handlers] System audio unavailable (continuing with mic-only):', err.message)
-        systemAudio = null
-      })
+      sysAudioChunkCount = 0
+      sharedAudioRouter.acquire()
+      sharedAudioRouter.on('audio-data', onSystemAudioForDetection)
 
       return { success: true }
     } catch (err: any) {
@@ -86,14 +63,22 @@ export function registerListeningHandlers(
     }
   })
 
+  function onSystemAudioForDetection(buf: Buffer) {
+    sysAudioChunkCount++
+    if (sysAudioChunkCount % 100 === 0) {
+      console.log(`[Handlers] System audio forwarded ${sysAudioChunkCount} chunks to Realtime`)
+    }
+    const resampled = resamplePcm16To24k(buf)
+    detector?.sendAudio(resampled, 'opponent').catch(console.error)
+  }
+
   ipcMain.handle('stop-listening', async () => {
     try {
-      if (systemAudio) {
-        await systemAudio.stop()
-        systemAudio = null
-      }
+      sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
+      sharedAudioRouter.release()
       await detector?.stop()
       detector = null
+      sysAudioChunkCount = 0
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err.message }

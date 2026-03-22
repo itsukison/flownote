@@ -8,9 +8,10 @@ export const NORMALIZATION_MULTIPLIERS = {
   REALTIME_INPUT: 6.0,
   REALTIME_OUTPUT: 24.0,
   EMBEDDING_INPUT: 0.2,
+  TRANSCRIPTION_AUDIO_MS: 0.01,
 } as const
 
-export type UsageType = 'realtime' | 'gemini' | 'embedding'
+export type UsageType = 'realtime' | 'gemini' | 'embedding' | 'transcription'
 
 /**
  * Normalizes raw token counts to a unified cost-based unit.
@@ -34,6 +35,10 @@ export function normalizeTokens(
     case 'embedding':
       return Math.round(
         inputTokens * NORMALIZATION_MULTIPLIERS.EMBEDDING_INPUT
+      )
+    case 'transcription':
+      return Math.round(
+        inputTokens * NORMALIZATION_MULTIPLIERS.TRANSCRIPTION_AUDIO_MS
       )
     default:
       return inputTokens + outputTokens
@@ -61,6 +66,8 @@ function rawFieldName(type: UsageType, direction: 'input' | 'output'): string {
       return direction === 'input' ? 'raw_gemini_input_tokens' : 'raw_gemini_output_tokens'
     case 'embedding':
       return 'raw_embedding_tokens'
+    case 'transcription':
+      return 'raw_transcription_audio_ms'
   }
 }
 

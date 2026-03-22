@@ -4,6 +4,7 @@ import { registerListeningHandlers } from './listening'
 import { registerResponseHandlers } from './response'
 import { registerPromptHandlers } from './prompts'
 import { registerOnboardingHandlers } from './onboarding'
+import { registerTranscriptionHandlers } from './transcription'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -20,4 +21,5 @@ export function registerHandlers(
   registerResponseHandlers(getOverlayWindow, getSupabaseFn, geminiApiKey)
   registerPromptHandlers(getSupabaseFn)
   registerOnboardingHandlers(getOverlayWindow, getMainWindow, getSupabaseFn)
+  registerTranscriptionHandlers(getOverlayWindow, getSupabaseFn, openaiApiKey)
 }

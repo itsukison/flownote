@@ -65,6 +65,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('response-done', fn)
   },
 
+  // ── Transcription ──────────────────────────────────────────────────────────
+  startTranscription: () => ipcRenderer.invoke('start-transcription'),
+  stopTranscription: () => ipcRenderer.invoke('stop-transcription'),
+  processMicChunkTranscription: (data: Float32Array) =>
+    ipcRenderer.invoke('process-mic-chunk-transcription', data),
+  getTranscriptSegments: () => ipcRenderer.invoke('get-transcript-segments'),
+  askTranscriptQuestion: (question: string) =>
+    ipcRenderer.invoke('ask-transcript-question', question),
+
+  onTranscriptSegment: (cb: (segment: { id: string; speaker: 'You' | 'Speaker'; text: string; timestamp: number }) => void) => {
+    const fn = (_: any, segment: any) => cb(segment)
+    ipcRenderer.on('transcript-segment', fn)
+    return () => ipcRenderer.removeListener('transcript-segment', fn)
+  },
+  onTranscriptResponseChunk: (cb: (chunk: string) => void) => {
+    const fn = (_: any, chunk: string) => cb(chunk)
+    ipcRenderer.on('transcript-response-chunk', fn)
+    return () => ipcRenderer.removeListener('transcript-response-chunk', fn)
+  },
+  onTranscriptResponseDone: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('transcript-response-done', fn)
+    return () => ipcRenderer.removeListener('transcript-response-done', fn)
+  },
+
   // ── Documents & RAG ───────────────────────────────────────────────────────
   listCollections: () => ipcRenderer.invoke('doc:list-collections'),
   createCollection: (name: string) => ipcRenderer.invoke('doc:create-collection', name),

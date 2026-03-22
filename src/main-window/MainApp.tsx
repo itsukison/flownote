@@ -77,13 +77,21 @@ function Sidebar({ user }: { user: any }) {
     )
 }
 
-const FullPageLoader = () => (
-    <div className="flex items-center justify-center h-screen bg-[#0e0e10] text-white/30 text-sm">
-        <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse" />
-            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-100" />
-            <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse delay-200" />
-        </div>
+const FullPageLoader = ({
+    isFadingOut = false,
+    className = ""
+}: {
+    isFadingOut?: boolean
+    className?: string
+}) => (
+    <div
+        className={`flex items-center justify-center h-screen w-screen bg-[#0e0e10] text-white/30 text-sm transition-opacity duration-700 ${isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${className}`}
+    >
+        <img
+            src={logoUrl}
+            alt="Logo"
+            className="w-16 h-16 object-contain animate-pulse opacity-90"
+        />
     </div>
 )
 
@@ -190,6 +198,18 @@ export default function MainApp() {
         setActivationChecked(true)
     }
 
+    // Minimum splash screen duration
+    const [splashMinTimePassed, setSplashMinTimePassed] = useState(false)
+    const [showLoaderOverlay, setShowLoaderOverlay] = useState(true)
+    const [fadeLoader, setFadeLoader] = useState(false)
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSplashMinTimePassed(true)
+        }, 1200) // Minimum 1.2s splash duration
+        return () => clearTimeout(timer)
+    }, [])
+
     useEffect(() => {
         if (!window.electronAPI) {
             setSession(null)
@@ -219,61 +239,81 @@ export default function MainApp() {
         })
     }, [])
 
-    // Loading
-    if (session === undefined || !activationChecked) {
+    // Fade out logic
+    const isReady = session !== undefined && activationChecked && splashMinTimePassed
+
+    useEffect(() => {
+        if (isReady) {
+            setFadeLoader(true)
+            const t = setTimeout(() => setShowLoaderOverlay(false), 700) // duration-700
+            return () => clearTimeout(t)
+        }
+    }, [isReady])
+
+    // Render early loader if completely completely not ready to even render children
+    if (!showLoaderOverlay && !isReady) {
         return <FullPageLoader />
     }
 
     return (
-        <div className="flex h-screen bg-[#0e0e10] text-white overflow-hidden">
-            <Routes>
-                <Route path="/auth" element={session ? <FullPageLoader /> : <AuthPage onAuth={(s) => {
-                    setSession(s)
-                    refreshCollections()
-                    refreshPrompts()
-                    checkOnboardingStatus()
-                }} />} />
-                <Route
-                    path="/activation"
-                    element={session ? <ActivationPage onActivated={() => {
+        <>
+            <div className="flex h-screen bg-[#0e0e10] text-white overflow-hidden">
+                <Routes>
+                    <Route path="/auth" element={<AuthPage onAuth={(s) => {
+                        setSession(s)
                         refreshCollections()
                         refreshPrompts()
                         checkOnboardingStatus()
-                    }} /> : <Navigate to="/auth" replace />}
-                />
-                <Route
-                    path="/setup"
-                    element={session ? <Navigate to="/tutorial" replace /> : <Navigate to="/auth" replace />}
-                />
-                <Route
-                    path="/tutorial"
-                    element={session ? <TutorialPage onComplete={() => navigate('/documents')} /> : <Navigate to="/auth" replace />}
-                />
-                <Route
-                    path="/*"
-                    element={
-                        session ? (
-                            <div className="flex flex-1 overflow-hidden">
-                                <Sidebar user={user} />
-                                <main className="flex-1 overflow-auto">
-                                    <Routes>
-                                        <Route path="/" element={<Navigate to="/documents" replace />} />
-                                        <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
-                                        <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
-                                        <Route path="/history" element={<HistoryPage questions={questions} loading={questionsLoading} onRefresh={refreshQuestions} onClear={clearQuestions} />} />
-                                        <Route path="/settings" element={<SettingsPage user={user} />} />
-                                        <Route path="/help" element={<HelpPage />} />
-                                    </Routes>
-                                </main>
-                            </div>
-                        ) : (
-                            <Navigate to="/auth" replace />
-                        )
-                    }
-                />
-            </Routes>
-            <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />
-            <UpdateToast />
-        </div>
+                    }} />} />
+                    <Route
+                        path="/activation"
+                        element={session ? <ActivationPage onActivated={() => {
+                            refreshCollections()
+                            refreshPrompts()
+                            checkOnboardingStatus()
+                        }} /> : <Navigate to="/auth" replace />}
+                    />
+                    <Route
+                        path="/setup"
+                        element={session ? <Navigate to="/tutorial" replace /> : <Navigate to="/auth" replace />}
+                    />
+                    <Route
+                        path="/tutorial"
+                        element={session ? <TutorialPage onComplete={() => navigate('/documents')} /> : <Navigate to="/auth" replace />}
+                    />
+                    <Route
+                        path="/*"
+                        element={
+                            session ? (
+                                <div className="flex flex-1 overflow-hidden">
+                                    <Sidebar user={user} />
+                                    <main className="flex-1 overflow-auto">
+                                        <Routes>
+                                            <Route path="/" element={<Navigate to="/documents" replace />} />
+                                            <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
+                                            <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
+                                            <Route path="/history" element={<HistoryPage questions={questions} loading={questionsLoading} onRefresh={refreshQuestions} onClear={clearQuestions} />} />
+                                            <Route path="/settings" element={<SettingsPage user={user} />} />
+                                            <Route path="/help" element={<HelpPage />} />
+                                        </Routes>
+                                    </main>
+                                </div>
+                            ) : (
+                                <Navigate to="/auth" replace />
+                            )
+                        }
+                    />
+                </Routes>
+                <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} />
+                <UpdateToast />
+            </div>
+
+            {/* Fading overlay on top */}
+            {showLoaderOverlay && (
+                <div className="fixed inset-0 z-50 pointer-events-none">
+                    <FullPageLoader isFadingOut={fadeLoader} className="pointer-events-auto" />
+                </div>
+            )}
+        </>
     )
 }

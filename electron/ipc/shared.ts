@@ -33,7 +33,7 @@ export async function ensureBudget(getSupabase: GetSupabaseFn): Promise<{ allowe
 
 export async function trackNormalizedAndRecord(
   getSupabase: GetSupabaseFn,
-  type: 'realtime' | 'gemini' | 'embedding',
+  type: 'realtime' | 'gemini' | 'embedding' | 'transcription',
   inputTokens: number,
   outputTokens: number,
   opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean }

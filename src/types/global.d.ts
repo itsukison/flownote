@@ -32,6 +32,15 @@ declare global {
             onQuestionDetected: (cb: (q: Question) => void) => () => void
             onResponseChunk: (cb: (chunk: string) => void) => () => void
             onResponseDone: (cb: () => void) => () => void
+            // ── Transcription ──────────────────────────────────────────────────────
+            startTranscription: () => Promise<{ success: boolean; error?: string; transcriptId?: string }>
+            stopTranscription: () => Promise<{ success: boolean; error?: string }>
+            processMicChunkTranscription: (data: Float32Array) => void
+            getTranscriptSegments: () => Promise<TranscriptSegment[]>
+            askTranscriptQuestion: (question: string) => Promise<{ success: boolean; error?: string }>
+            onTranscriptSegment: (cb: (segment: TranscriptSegment) => void) => () => void
+            onTranscriptResponseChunk: (cb: (chunk: string) => void) => () => void
+            onTranscriptResponseDone: (cb: () => void) => () => void
             // ── Documents & RAG ───────────────────────────────────────────────────────
             listCollections: () => Promise<Collection[]>
             createCollection: (name: string) => Promise<Collection | null>
@@ -85,6 +94,13 @@ declare global {
         }
     }
 
+    interface TranscriptSegment {
+        id: string
+        speaker: 'You' | 'Speaker'
+        text: string
+        timestamp: number
+    }
+
     interface Question {
         id: string
         text: string
@@ -129,6 +145,7 @@ declare global {
         raw_embedding_tokens: number
         raw_gemini_input_tokens: number
         raw_gemini_output_tokens: number
+        raw_transcription_audio_ms: number
         questions_count: number
         documents_count: number
     }
