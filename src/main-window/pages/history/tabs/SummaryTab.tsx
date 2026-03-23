@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react'
+import { Stars } from 'lucide-react'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 import { CopyButton } from '@/components/CopyButton'
 import { ja } from '@/i18n/ja'
@@ -35,7 +35,7 @@ export function SummaryTab({
   if (!summaryText) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
-        <Sparkles size={28} strokeWidth={1} className="text-white/15" />
+        <Stars size={28} strokeWidth={1} className="text-white/15" />
         <p className="text-xs text-white/25">{t.history.noSummaryYet}</p>
         <button
           onClick={onGenerate}

@@ -1,17 +1,123 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { LogOut, Loader2 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 
 const t = ja
 
-const JPY_RATE = 150
-const COST_PER_MILLION = 0.10 // $0.10 per 1M normalized tokens
-
 function formatTokens(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
     if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
     return n.toLocaleString()
+}
+
+// Normalization multipliers (mirrors electron/services/tokenNormalization.ts)
+const NORM = {
+    REALTIME_INPUT: 6,
+    REALTIME_OUTPUT: 24,
+    GEMINI_INPUT: 1,
+    GEMINI_OUTPUT: 4,
+    EMBEDDING_INPUT: 0.2,
+    TRANSCRIPTION_MS: 0.01,
+} as const
+
+function UsageBar({ monthlyUsage, usagePercent }: { monthlyUsage: MonthlyUsage; usagePercent: number }) {
+    const barRef = useRef<HTMLDivElement>(null)
+    const [tooltip, setTooltip] = useState<{ x: number; label: string; norm: number; pct: number } | null>(null)
+
+    const realtimeNorm = Math.round(monthlyUsage.raw_realtime_input_tokens * NORM.REALTIME_INPUT + monthlyUsage.raw_realtime_output_tokens * NORM.REALTIME_OUTPUT)
+    const geminiNorm   = Math.round(monthlyUsage.raw_gemini_input_tokens * NORM.GEMINI_INPUT + monthlyUsage.raw_gemini_output_tokens * NORM.GEMINI_OUTPUT)
+    const embeddingNorm = Math.round(monthlyUsage.raw_embedding_tokens * NORM.EMBEDDING_INPUT)
+    const transcriptionNorm = Math.round(monthlyUsage.raw_transcription_audio_ms * NORM.TRANSCRIPTION_MS)
+
+    const limit = monthlyUsage.token_limit || 1
+
+    const segments = [
+        { key: 'realtime',      norm: realtimeNorm,      color: 'bg-amber-500',   hoverColor: 'bg-amber-400',   label: t.settings.realtimeTokens },
+        { key: 'gemini',        norm: geminiNorm,         color: 'bg-violet-500',  hoverColor: 'bg-violet-400',  label: t.settings.geminiTokens },
+        { key: 'embedding',     norm: embeddingNorm,      color: 'bg-blue-500',    hoverColor: 'bg-blue-400',    label: t.settings.embeddingTokens },
+        { key: 'transcription', norm: transcriptionNorm,  color: 'bg-emerald-500', hoverColor: 'bg-emerald-400', label: t.settings.transcriptionTokens },
+    ]
+
+    const handleSegmentEnter = useCallback((e: React.MouseEvent<HTMLDivElement>, seg: typeof segments[0]) => {
+        const barRect = barRef.current?.getBoundingClientRect()
+        const segRect = e.currentTarget.getBoundingClientRect()
+        if (!barRect) return
+        const centerX = segRect.left + segRect.width / 2 - barRect.left
+        const pct = limit > 0 ? (seg.norm / limit) * 100 : 0
+        setTooltip({ x: centerX, label: seg.label, norm: seg.norm, pct })
+    }, [limit])
+
+    const legendRows = [
+        { key: 'realtime',      norm: realtimeNorm,      dotColor: 'bg-amber-500',   label: t.settings.realtimeTokens,      sub: `${monthlyUsage.questions_count} ${t.settings.questions}` },
+        { key: 'gemini',        norm: geminiNorm,         dotColor: 'bg-violet-500',  label: t.settings.geminiTokens,        sub: null },
+        { key: 'embedding',     norm: embeddingNorm,      dotColor: 'bg-blue-500',    label: t.settings.embeddingTokens,     sub: `${monthlyUsage.documents_count} ${t.settings.documents}` },
+        { key: 'transcription', norm: transcriptionNorm,  dotColor: 'bg-emerald-500', label: t.settings.transcriptionTokens, sub: null },
+    ]
+
+    return (
+        <div className="space-y-1">
+            <div className="py-3 -mx-3 px-3">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-zinc-400">{t.settings.normalizedTokens}</span>
+                    <span className="text-xs text-zinc-400">
+                        {formatTokens(monthlyUsage.normalized_tokens)} / {formatTokens(monthlyUsage.token_limit)}
+                    </span>
+                </div>
+
+                {/* Bar */}
+                <div className="relative mb-4" ref={barRef} onMouseLeave={() => setTooltip(null)}>
+                    <div className="h-2.5 rounded-full overflow-hidden bg-zinc-800 flex">
+                        {segments.map(seg => seg.norm > 0 && (
+                            <div
+                                key={seg.key}
+                                className={`h-full transition-all cursor-default ${tooltip?.label === seg.label ? seg.hoverColor : seg.color}`}
+                                style={{ width: `${Math.min((seg.norm / limit) * 100, 100)}%` }}
+                                onMouseEnter={(e) => handleSegmentEnter(e, seg)}
+                            />
+                        ))}
+                        {segments.every(s => s.norm === 0) && (
+                            <div className="h-full rounded-full bg-zinc-700 transition-all" style={{ width: `${usagePercent}%` }} />
+                        )}
+                    </div>
+
+                    {/* Tooltip */}
+                    {tooltip && (
+                        <div
+                            className="absolute -top-9 pointer-events-none z-10"
+                            style={{ left: tooltip.x, transform: 'translateX(-50%)' }}
+                        >
+                            <div className="bg-zinc-800 border border-zinc-700 text-white text-[11px] px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                                <span className="text-zinc-300">{tooltip.label}</span>
+                                <span className="text-zinc-500 mx-1">·</span>
+                                <span className="text-zinc-400">{formatTokens(tooltip.norm)}</span>
+                                <span className="text-zinc-600 ml-1">({tooltip.pct.toFixed(1)}%)</span>
+                            </div>
+                            <div className="w-2 h-2 bg-zinc-800 border-b border-r border-zinc-700 rotate-45 mx-auto -mt-1" />
+                        </div>
+                    )}
+                </div>
+
+                {/* Legend */}
+                <div className="space-y-2.5 mb-4">
+                    {legendRows.map(row => (
+                        <div key={row.key} className="flex justify-between items-center text-xs">
+                            <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${row.dotColor} shrink-0`} />
+                                <span className="text-zinc-400">{row.label}</span>
+                                {row.sub && <span className="text-zinc-600">{row.sub}</span>}
+                            </div>
+                            <span className="text-zinc-500 tabular-nums">{formatTokens(row.norm)}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-zinc-800/50">
+                    <span className="text-xs text-zinc-500">{usagePercent.toFixed(1)}% {t.settings.usage}</span>
+                </div>
+            </div>
+        </div>
+    )
 }
 
 interface Props {
@@ -130,80 +236,7 @@ export default function SettingsPage({ user }: Props) {
                         <Loader2 size={20} className="animate-spin text-zinc-600" />
                     </div>
                 ) : monthlyUsage ? (
-                    <div className="space-y-1">
-                        {/* Segmented Progress bar: used / limit */}
-                        <div className="py-3 -mx-3 px-3">
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm text-zinc-400">{t.settings.normalizedTokens}</span>
-                                <span className="text-xs text-zinc-400">
-                                    {formatTokens(monthlyUsage.normalized_tokens)} / {formatTokens(monthlyUsage.token_limit)}
-                                </span>
-                            </div>
-                            
-                            {(() => {
-                                const realtimeTotal = monthlyUsage.raw_realtime_input_tokens + monthlyUsage.raw_realtime_output_tokens
-                                const geminiTotal = monthlyUsage.raw_gemini_input_tokens + monthlyUsage.raw_gemini_output_tokens
-                                const embeddingTotal = monthlyUsage.raw_embedding_tokens
-                                const totalRaw = realtimeTotal + geminiTotal + embeddingTotal
-                                
-                                const segments = [
-                                    { key: 'realtime', value: realtimeTotal, color: 'bg-amber-500' },
-                                    { key: 'embedding', value: embeddingTotal, color: 'bg-blue-500' },
-                                    { key: 'gemini', value: geminiTotal, color: 'bg-violet-500' },
-                                ]
-
-                                return (
-                                    <>
-                                        <div className="h-2.5 rounded-full overflow-hidden bg-zinc-800 mb-4 flex">
-                                            {totalRaw === 0 ? (
-                                                <div 
-                                                    className={`h-full rounded-full transition-all ${usagePercent >= 90 ? 'bg-red-500' : usagePercent >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                                                    style={{ width: `${usagePercent}%` }}
-                                                />
-                                            ) : (
-                                                segments.map(seg => seg.value > 0 && (
-                                                    <div
-                                                        key={seg.key}
-                                                        className={`h-full ${seg.color} transition-all`}
-                                                        style={{ width: `${(seg.value / totalRaw) * usagePercent}%` }}
-                                                    />
-                                                ))
-                                            )}
-                                        </div>
-
-                                        {/* Legend with counts */}
-                                        <div className="space-y-2.5 mb-4">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                                                    <span className="text-zinc-400">{monthlyUsage.questions_count} {t.settings.questions}</span>
-                                                </div>
-                                                <span className="text-zinc-500">{t.settings.realtimeTokens}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                                                    <span className="text-zinc-400">{monthlyUsage.documents_count} {t.settings.documents}</span>
-                                                </div>
-                                                <span className="text-zinc-500">{t.settings.embeddingTokens}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0" />
-                                                    <span className="text-zinc-400">{t.settings.geminiTokens}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                )
-                            })()}
-
-                            <div className="flex justify-between items-center pt-2 border-t border-zinc-800/50">
-                                <span className="text-xs text-zinc-500">{usagePercent.toFixed(1)}% {t.settings.usage}</span>
-                            </div>
-                        </div>
-                    </div>
-
+                    <UsageBar monthlyUsage={monthlyUsage} usagePercent={usagePercent} />
                 ) : (
                     <p className="text-sm text-zinc-500 text-center py-8">{t.settings.noUsageDataYet}</p>
                 )}

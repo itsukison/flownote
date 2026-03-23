@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
 import { ArrowUp } from 'lucide-react'
+import { assetUrl } from '@/utils/assetUrl'
+const logoUrl = assetUrl('logo.png')
 import { ja } from '@/i18n/ja'
 
 const t = ja
@@ -8,10 +10,14 @@ export function ChatBar({
   onSend,
   generating,
   className,
+  onOpenModal,
+  expanded,
 }: {
   onSend: (question: string) => void
   generating: boolean
   className?: string
+  onOpenModal?: () => void
+  expanded?: boolean
 }) {
   const [input, setInput] = useState('')
 
@@ -33,8 +39,17 @@ export function ChatBar({
     <div className={wrapperClass}>
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-2xl pointer-events-auto flex items-center gap-2 bg-[#1c1c1f]/80 backdrop-blur-md border border-white/[0.08] shadow-2xl rounded-[24px] px-3 py-2.5 hover:bg-[#1c1c1f]/90 transition-colors"
+        className={`w-full ${expanded ? 'max-w-5xl' : 'max-w-2xl'} pointer-events-auto flex items-center gap-2 bg-[#1c1c1f]/80 backdrop-blur-md border border-white/[0.08] shadow-2xl rounded-[24px] px-3 py-2.5 hover:bg-[#1c1c1f]/90 transition-all duration-300`}
       >
+        {onOpenModal && (
+          <button
+            type="button"
+            onClick={onOpenModal}
+            className="p-1 px-2 rounded-full text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-all shrink-0"
+          >
+            <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain opacity-60" />
+          </button>
+        )}
         <div className="flex-1 px-2">
           <input
             type="text"

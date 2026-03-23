@@ -39,6 +39,8 @@ declare global {
             getTranscriptSegments: () => Promise<TranscriptSegment[]>
             askTranscriptQuestion: (question: string) => Promise<{ success: boolean; error?: string }>
             onTranscriptSegment: (cb: (segment: TranscriptSegment) => void) => () => void
+            onTranscriptDelta: (cb: (data: { itemId: string; text: string; speaker: 'You' | 'Speaker' }) => void) => () => void
+            onTranscriptSpeechStarted: (cb: (data: { speaker: 'You' | 'Speaker' }) => void) => () => void
             onTranscriptResponseChunk: (cb: (chunk: string) => void) => () => void
             onTranscriptResponseDone: (cb: () => void) => () => void
             // ── Session History ──────────────────────────────────────────────────────

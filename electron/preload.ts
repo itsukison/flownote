@@ -79,6 +79,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('transcript-segment', fn)
     return () => ipcRenderer.removeListener('transcript-segment', fn)
   },
+  onTranscriptDelta: (cb: (data: { itemId: string; text: string; speaker: 'You' | 'Speaker' }) => void) => {
+    const fn = (_: any, data: any) => cb(data)
+    ipcRenderer.on('transcript-delta', fn)
+    return () => ipcRenderer.removeListener('transcript-delta', fn)
+  },
+  onTranscriptSpeechStarted: (cb: (data: { speaker: 'You' | 'Speaker' }) => void) => {
+    const fn = (_: any, data: any) => cb(data)
+    ipcRenderer.on('transcript-speech-started', fn)
+    return () => ipcRenderer.removeListener('transcript-speech-started', fn)
+  },
   onTranscriptResponseChunk: (cb: (chunk: string) => void) => {
     const fn = (_: any, chunk: string) => cb(chunk)
     ipcRenderer.on('transcript-response-chunk', fn)

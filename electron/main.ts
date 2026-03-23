@@ -6,6 +6,7 @@ import { registerHandlers } from './ipc/handlers'
 import { registerAuthHandlers, registerAuthStateListener } from './ipc/auth'
 import { registerDocumentHandlers } from './ipc/documents'
 import { registerOrganizationHandlers } from './ipc/organization'
+import { stopTranscriptionAndSave, getCurrentTranscriptIdValue } from './ipc/transcription-handlers'
 import { getStoredSession } from './services/tokenStorage'
 import { initUpdater, flushPendingUpdate } from './services/updater'
 import { getCacheRoot } from './services/documentCache'
@@ -190,7 +191,14 @@ async function init() {
   registerAuthHandlers(getMainWindow, getOverlayWindow, () => supabase)
   registerDocumentHandlers(getMainWindow, getOverlayWindow, () => supabase)
   registerOrganizationHandlers(getMainWindow, getOverlayWindow, () => supabase)
-  ipcMain.handle('quit-app', () => app.quit())
+  ipcMain.handle('quit-app', async () => {
+    if (getCurrentTranscriptIdValue()) {
+      await stopTranscriptionAndSave().catch((err) =>
+        console.error('[Quit] stopTranscriptionAndSave error:', err)
+      )
+    }
+    app.quit()
+  })
 
   // Register auth state listener after supabase is ready
   if (supabase) {

@@ -134,7 +134,11 @@ export function SessionDetailView({
       </div>
 
       {/* Chat Bar */}
-      <ChatBar onSend={chat.sendMessage} generating={chat.generating} />
+      <ChatBar
+        onSend={chat.sendMessage}
+        generating={chat.generating}
+        onOpenModal={chat.messages.length > 0 ? chat.openModal : undefined}
+      />
 
       {/* Chat Answer Modal */}
       {chat.activeAnswer && (

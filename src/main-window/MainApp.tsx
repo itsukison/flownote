@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
-import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle } from 'lucide-react'
+import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle, ChevronLeft, ChevronRight, AlignJustify } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import AuthPage from './pages/AuthPage'
 import ActivationPage from './pages/ActivationPage'
@@ -17,7 +17,7 @@ import CommandPalette from '@/components/CommandPalette'
 
 const t = ja
 
-function Sidebar({ user }: { user: any }) {
+function Sidebar({ user, collapsed, onToggle }: { user: any; collapsed: boolean; onToggle: () => void }) {
     const navigate = useNavigate()
     const navItems = [
         { to: '/documents', icon: FileText, label: t.sidebar.documents },
@@ -33,44 +33,54 @@ function Sidebar({ user }: { user: any }) {
     }
 
     return (
-        <aside className="w-52 flex-none flex flex-col bg-[#111113] border-r border-white/[0.06]">
-            {/* Brand */}
-            <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-0.5">
-                <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" />
-                <span className="text-xs font-semibold text-white/60">Flownote</span>
-            </div>
+        <aside
+            style={{
+                width: collapsed ? 0 : 208,
+                transition: 'width 250ms ease',
+                overflow: 'hidden',
+                flexShrink: 0,
+            }}
+            className="flex flex-col bg-[#111113] border-r border-white/[0.06]"
+        >
+            <div style={{ width: 208 }} className="flex flex-col flex-1">
+                {/* Brand */}
+                <div className="px-5 py-5 border-b border-white/[0.06] flex items-center gap-0.5">
+                    <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" />
+                    <span className="text-xs font-semibold text-white/60">Flownote</span>
+                </div>
 
-            {/* Nav */}
-            <nav className="flex-1 p-3 space-y-0.5">
-                {navItems.map(({ to, icon: Icon, label }) => (
-                    <NavLink
-                        key={to}
-                        to={to}
-                        className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${isActive
-                                ? 'bg-white/10 text-white font-medium'
-                                : 'text-white/40 hover:text-white/70 hover:bg-white/[0.05]'
-                            }`
-                        }
-                    >
-                        <Icon size={15} />
-                        {label}
-                    </NavLink>
-                ))}
-            </nav>
+                {/* Nav */}
+                <nav className="flex-1 p-3 space-y-0.5">
+                    {navItems.map(({ to, icon: Icon, label }) => (
+                        <NavLink
+                            key={to}
+                            to={to}
+                            className={({ isActive }) =>
+                                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${isActive
+                                    ? 'bg-white/10 text-white font-medium'
+                                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.05]'
+                                }`
+                            }
+                        >
+                            <Icon size={15} />
+                            {label}
+                        </NavLink>
+                    ))}
+                </nav>
 
-            {/* User */}
-            <div className="p-3 border-t border-white/[0.06]">
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.04]">
-                    <div className="w-7 h-7 rounded-full bg-gray-500 flex items-center justify-center text-[11px] font-semibold text-white flex-none">
-                        {user?.email?.[0]?.toUpperCase() ?? '?'}
+                {/* User */}
+                <div className="p-3 border-t border-white/[0.06]">
+                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.04]">
+                        <div className="w-7 h-7 rounded-full bg-gray-500 flex items-center justify-center text-[11px] font-semibold text-white flex-none">
+                            {user?.email?.[0]?.toUpperCase() ?? '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs text-white/70 truncate">{user?.email ?? t.common.unknown}</p>
+                        </div>
+                        <button onClick={handleSignOut} className="text-white/25 hover:text-white/60 transition-colors" title={t.settings.signOut}>
+                            <LogOut size={13} />
+                        </button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-xs text-white/70 truncate">{user?.email ?? t.common.unknown}</p>
-                    </div>
-                    <button onClick={handleSignOut} className="text-white/25 hover:text-white/60 transition-colors" title={t.settings.signOut}>
-                        <LogOut size={13} />
-                    </button>
                 </div>
             </div>
         </aside>
@@ -101,6 +111,15 @@ export default function MainApp() {
     const [activationChecked, setActivationChecked] = useState(false)
     const [user, setUser] = useState<any>(null)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+        try { return localStorage.getItem('sidebarCollapsed') === 'true' } catch { return false }
+    })
+
+    const toggleSidebar = () => setSidebarCollapsed(prev => {
+        const next = !prev
+        try { localStorage.setItem('sidebarCollapsed', String(next)) } catch { /* noop */ }
+        return next
+    })
 
     // Cached state for pages
     const [collections, setCollections] = useState<any[]>([])
@@ -261,8 +280,25 @@ export default function MainApp() {
                         path="/*"
                         element={
                             session ? (
-                                <div className="flex flex-1 overflow-hidden">
-                                    <Sidebar user={user} />
+                                <div className="flex flex-1 overflow-hidden relative">
+                                    <Sidebar user={user} collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+
+                                    {/* Floating toggle button */}
+                                    <button
+                                        onClick={toggleSidebar}
+                                        style={{
+                                            position: 'absolute',
+                                            top: 16,
+                                            left: sidebarCollapsed ? 12 : 172,
+                                            transition: 'left 250ms ease',
+                                            zIndex: 30,
+                                        }}
+                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-white/30 hover:text-white/70 hover:bg-white/[0.07] transition-colors"
+                                        title={sidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
+                                    >
+                                        {sidebarCollapsed ? <AlignJustify size={14} /> : <ChevronLeft size={14} />}
+                                    </button>
+
                                     <main className="flex-1 overflow-auto">
                                         <Routes>
                                             <Route path="/" element={<Navigate to="/documents" replace />} />

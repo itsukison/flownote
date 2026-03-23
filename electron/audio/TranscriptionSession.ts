@@ -9,6 +9,8 @@ export interface TranscriptSegment {
 
 interface TranscriptionCallbacks {
   onTranscript: (segment: TranscriptSegment) => void
+  onTranscriptDelta: (itemId: string, text: string, speaker: 'You' | 'Speaker') => void
+  onSpeechStarted: (speaker: 'You' | 'Speaker') => void
   onError: (err: any) => void
   onUsage: (audioMs: number) => void
 }
@@ -199,8 +201,16 @@ export class TranscriptionSession {
         break
       }
 
+      case 'input_audio_buffer.speech_started': {
+        this.callbacks.onSpeechStarted(this.speaker)
+        break
+      }
+
       case 'conversation.item.input_audio_transcription.delta': {
-        // Partial transcript — ignore for now, we use completed events
+        const deltaText = msg.delta ?? ''
+        if (typeof deltaText === 'string' && deltaText) {
+          this.callbacks.onTranscriptDelta(msg.item_id ?? '', deltaText, this.speaker)
+        }
         break
       }
 

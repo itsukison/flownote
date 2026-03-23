@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 export function useTranscription() {
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
+  const [partialSegment, setPartialSegment] = useState<{ speaker: 'You' | 'Speaker' } | null>(null)
   const [transcribing, setTranscribing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [transcriptId, setTranscriptId] = useState<string | null>(null)
@@ -10,13 +11,17 @@ export function useTranscription() {
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  // Subscribe to transcript segments from main process
+  // Subscribe to transcript events from main process
   useEffect(() => {
     if (!window.electronAPI) return
-    const off = window.electronAPI.onTranscriptSegment((segment: TranscriptSegment) => {
-      setSegments((prev) => [...prev, segment])
+    const offSpeechStarted = window.electronAPI.onTranscriptSpeechStarted((data: { speaker: 'You' | 'Speaker' }) => {
+      setPartialSegment({ speaker: data.speaker })
     })
-    return off
+    const offSegment = window.electronAPI.onTranscriptSegment((segment: TranscriptSegment) => {
+      setSegments((prev) => [...prev, segment])
+      setPartialSegment(null)
+    })
+    return () => { offSpeechStarted(); offSegment() }
   }, [])
 
   const stopMicCapture = useCallback(() => {
@@ -63,6 +68,7 @@ export function useTranscription() {
     stopMicCapture()
     await window.electronAPI.stopTranscription()
     setTranscribing(false)
+    setPartialSegment(null)
   }, [stopMicCapture])
 
   const toggleTranscription = useCallback(async (opts?: { onStarted?: () => void }) => {
@@ -81,11 +87,13 @@ export function useTranscription() {
   const forceStop = useCallback(async () => {
     stopMicCapture()
     setTranscribing(false)
+    setPartialSegment(null)
     await window.electronAPI?.stopTranscription().catch(() => {})
   }, [stopMicCapture])
 
   return {
     segments,
+    partialSegment,
     transcribing,
     error,
     setError,

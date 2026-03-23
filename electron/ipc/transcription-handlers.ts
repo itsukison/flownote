@@ -14,12 +14,50 @@ let segments: TranscriptSegment[] = []
 let currentTranscriptId: string | null = null
 let sysAudioChunkCount = 0
 
+// Module-level refs set during registerTranscriptionHandlers, used by stopTranscriptionAndSave
+let _getSupabase: GetSupabaseFn = () => null
+let _genAI: GoogleGenerativeAI | null = null
+let _sysAudioDataHandler: ((buf: Buffer) => void) | null = null
+let _sysAudioSilentHandler: (() => void) | null = null
+let _sysAudioResumedHandler: (() => void) | null = null
+
 export function getCurrentTranscriptIdValue(): string | null {
   return currentTranscriptId
 }
 
 export function getCurrentSegments(): TranscriptSegment[] {
   return segments
+}
+
+export async function stopTranscriptionAndSave(): Promise<void> {
+  if (!micSession?.active && !currentTranscriptId) return
+
+  // Stop audio capture
+  if (_sysAudioDataHandler) sharedAudioRouter.removeListener('audio-data', _sysAudioDataHandler)
+  if (_sysAudioSilentHandler) sharedAudioRouter.removeListener('system-audio-silent', _sysAudioSilentHandler)
+  if (_sysAudioResumedHandler) sharedAudioRouter.removeListener('system-audio-resumed', _sysAudioResumedHandler)
+  sharedAudioRouter.release()
+
+  await micSession?.stop()
+  await speakerSession?.stop()
+  micSession = null
+  speakerSession = null
+  sysAudioChunkCount = 0
+
+  // Save to Supabase
+  const supabase = _getSupabase()
+  if (supabase && currentTranscriptId) {
+    await supabase
+      .from('transcripts')
+      .update({ ended_at: new Date().toISOString(), segments })
+      .eq('id', currentTranscriptId)
+
+    if (segments.length > 0 && _genAI) {
+      generateSessionTitle(_genAI, _getSupabase, currentTranscriptId, segments).catch(
+        (err) => console.error('[Transcription] Auto-title error on quit:', err)
+      )
+    }
+  }
 }
 
 export function registerTranscriptionHandlers(
@@ -29,6 +67,9 @@ export function registerTranscriptionHandlers(
   openaiApiKey: string,
   genAI: GoogleGenerativeAI | null
 ) {
+  _getSupabase = getSupabase
+  _genAI = genAI
+
   ipcMain.handle('start-transcription', async () => {
     if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
     try {
@@ -60,6 +101,14 @@ export function registerTranscriptionHandlers(
         getOverlayWindow()?.webContents.send('transcript-segment', segment)
       }
 
+      const transcriptDeltaCallback = (itemId: string, text: string, speaker: 'You' | 'Speaker') => {
+        getOverlayWindow()?.webContents.send('transcript-delta', { itemId, text, speaker })
+      }
+
+      const speechStartedCallback = (speaker: 'You' | 'Speaker') => {
+        getOverlayWindow()?.webContents.send('transcript-speech-started', { speaker })
+      }
+
       const errorCallback = (err: any) => {
         console.error('[Transcription] Session error:', err)
       }
@@ -76,12 +125,16 @@ export function registerTranscriptionHandlers(
 
       micSession = new TranscriptionSession(openaiApiKey, 'user', {
         onTranscript: transcriptCallback,
+        onTranscriptDelta: transcriptDeltaCallback,
+        onSpeechStarted: speechStartedCallback,
         onError: errorCallback,
         onUsage: usageCallback,
       })
 
       speakerSession = new TranscriptionSession(openaiApiKey, 'opponent', {
         onTranscript: transcriptCallback,
+        onTranscriptDelta: transcriptDeltaCallback,
+        onSpeechStarted: speechStartedCallback,
         onError: errorCallback,
         onUsage: usageCallback,
       })
@@ -93,6 +146,9 @@ export function registerTranscriptionHandlers(
       sharedAudioRouter.on('audio-data', onSystemAudioForTranscription)
       sharedAudioRouter.on('system-audio-silent', onSystemAudioSilent)
       sharedAudioRouter.on('system-audio-resumed', onSystemAudioResumed)
+      _sysAudioDataHandler = onSystemAudioForTranscription
+      _sysAudioSilentHandler = onSystemAudioSilent
+      _sysAudioResumedHandler = onSystemAudioResumed
 
       return { success: true, transcriptId: currentTranscriptId }
     } catch (err: any) {
@@ -165,6 +221,9 @@ export function registerTranscriptionHandlers(
     sharedAudioRouter.removeListener('system-audio-silent', onSystemAudioSilent)
     sharedAudioRouter.removeListener('system-audio-resumed', onSystemAudioResumed)
     sharedAudioRouter.release()
+    _sysAudioDataHandler = null
+    _sysAudioSilentHandler = null
+    _sysAudioResumedHandler = null
 
     await micSession?.stop()
     await speakerSession?.stop()

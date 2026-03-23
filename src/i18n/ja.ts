@@ -113,6 +113,7 @@ export const ja = {
     realtimeTokens: 'リアルタイム検出',
     embeddingTokens: 'エンベディング',
     geminiTokens: 'AI回答生成',
+    transcriptionTokens: '文字起こし',
     tutorial: {
       title: 'チュートリアル',
       rewatch: 'チュートリアルをもう一度見る',

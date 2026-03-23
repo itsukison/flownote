@@ -27,7 +27,7 @@ function SessionMenu({ onDelete }: { onDelete: () => void }) {
         <MoreHorizontal size={14} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-[#1c1c1f] border border-white/[0.08] rounded-lg shadow-xl py-1 min-w-[140px]">
+        <div className="absolute right-0 top-full mt-1 z-50 bg-[#1c1c1f] border border-white/[0.08] rounded-lg shadow-xl py-1 min-w-[100px]">
           <button
             onClick={(e) => {
               e.stopPropagation()

@@ -36,9 +36,9 @@ export default function OverlayApp() {
     const transcriptContainerRef = useRef<HTMLDivElement>(null)
     const [autoScroll, setAutoScroll] = useState(true)
 
-    const { listening, systemAudioSilent, error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
+    const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
     const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream()
-    const { segments, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription } = useTranscription()
+    const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription } = useTranscription()
     const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA()
 
     const error = transcriptionError || listenError
@@ -75,7 +75,7 @@ export default function OverlayApp() {
         if (autoScroll && transcriptEndRef.current) {
             transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' })
         }
-    }, [segments, autoScroll])
+    }, [segments, partialSegment, autoScroll])
 
     // Detect scroll position for auto-scroll toggle
     const handleTranscriptScroll = useCallback(() => {
@@ -408,19 +408,6 @@ export default function OverlayApp() {
                 </div>
             )}
 
-            {/* System audio silent warning */}
-            {systemAudioSilent && transcribing && (
-                <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-500 text-[10px] flex items-center justify-between gap-2">
-                    <span>{t.overlay.systemAudioOff}</span>
-                    <button
-                        onClick={() => window.electronAPI?.openSystemAudioSettings()}
-                        className="shrink-0 text-zinc-400 hover:text-zinc-300 transition-colors"
-                    >
-                        {t.overlay.fixPermission}
-                    </button>
-                </div>
-            )}
-
             {/* Error */}
             {error && <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-600 text-xs">{error}</div>}
 
@@ -483,6 +470,20 @@ export default function OverlayApp() {
                                         <p className="text-xs text-zinc-300 leading-relaxed">{g.lines.join(' ')}</p>
                                     </div>
                                 ))}
+                                {partialSegment && (
+                                    <div>
+                                        <span className="text-[10px] font-bold text-zinc-500">
+                                            {partialSegment.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
+                                        </span>
+                                        <p className="flex items-center gap-1 mt-0.5">
+                                            <span className="flex gap-0.5">
+                                                <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                            </span>
+                                        </p>
+                                    </div>
+                                )}
                                 <div ref={transcriptEndRef} />
                             </div>
                         )}

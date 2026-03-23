@@ -85,6 +85,10 @@ export function useSessionChat(transcriptId: string | null) {
     setActiveAnswer(null)
   }, [])
 
+  const openModal = useCallback(() => {
+    setActiveAnswer({ question: '', response: '' })
+  }, [])
+
   return {
     messages,
     streamingResponse,
@@ -92,5 +96,6 @@ export function useSessionChat(transcriptId: string | null) {
     activeAnswer,
     sendMessage,
     closeModal,
+    openModal,
   }
 }
