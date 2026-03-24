@@ -22,7 +22,7 @@ export default function HelpPage() {
     <div className="flex flex-col w-full h-full bg-[#0e0e10] text-white">
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-8 py-8">
-          <h1 className="text-lg font-semibold text-zinc-100 flex items-center gap-2 mb-8">
+          <h1 className="text-2xl font-semibold text-zinc-100 flex items-center gap-2 mb-8">
             {t.help.title}
           </h1>
 

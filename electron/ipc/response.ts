@@ -7,12 +7,49 @@ type GetWindowFn = () => BrowserWindow | null
 
 let genAI: GoogleGenerativeAI | null = null
 
+// Hardcoded default prompts — always available, no DB dependency
+const HARDCODED_BASE_PROMPT = `ビジネス会話をリアルタイムでサポートするAIアシスタントです。
+
+【禁止（使ったら失敗）】
+「承知しました」「はい、」「以下に」「〜によると」「資料では」「ご質問ありがとう」
+
+【ルール】
+- 第1単語は必ず内容（名詞・動詞・数字）から始める
+- 参考情報は出典なしで自然に織り込む
+- 箇条書き活用、200〜350字程度
+
+【例】
+質問：「自己紹介をしてください」
+❌「承知しました。以下に...」 ✅「エンジニアとして5年間...」
+質問：「御社の強みは？」
+❌「はい、資料によると...」 ✅「3つの強みがあります。①...」`
+
+const HARDCODED_RAG_PROMPT = `ビジネス会話をリアルタイムでサポートするAIアシスタントです。
+
+【禁止（使ったら失敗）】
+「承知しました」「はい、」「以下に」「〜によると」「資料では」「ご質問ありがとう」
+
+【ルール】
+- 第1単語は必ず内容（名詞・動詞・数字）から始める
+- 参考情報は出典なしで自然に織り込む
+- 箇条書き活用、200〜350字程度
+
+以下の自社に関する参考資料（コンテキスト）をもとに、質問に回答してください。
+{{context}}
+質問: {{question}}`
+
 async function getSelectedPrompts(getSupabase: GetSupabaseFn): Promise<{ basePrompt: any; ragPrompt: any }> {
   const supabase = getSupabase()
-  if (!supabase) return { basePrompt: null, ragPrompt: null }
+  if (!supabase) return {
+    basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
+    ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
+  }
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { basePrompt: null, ragPrompt: null }
+    if (!user) return {
+      basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
+      ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -20,30 +57,28 @@ async function getSelectedPrompts(getSupabase: GetSupabaseFn): Promise<{ basePro
       .eq('id', user.id)
       .single()
 
-    let basePrompt = null
+    // Only fetch from DB if a custom prompt is selected; otherwise use hardcoded default
+    let basePrompt: any = null
     if (profile?.selected_base_prompt_id) {
       const { data } = await supabase.from('prompts').select('*').eq('id', profile.selected_base_prompt_id).single()
       basePrompt = data
     }
-    if (!basePrompt) {
-      const { data } = await supabase.from('prompts').select('*').eq('user_id', user.id).eq('is_default', true).eq('prompt_type', 'base').limit(1).single()
-      basePrompt = data
-    }
+    if (!basePrompt) basePrompt = { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' }
 
-    let ragPrompt = null
+    let ragPrompt: any = null
     if (profile?.selected_rag_prompt_id) {
       const { data } = await supabase.from('prompts').select('*').eq('id', profile.selected_rag_prompt_id).single()
       ragPrompt = data
     }
-    if (!ragPrompt) {
-      const { data } = await supabase.from('prompts').select('*').eq('user_id', user.id).eq('is_default', true).eq('prompt_type', 'rag').limit(1).single()
-      ragPrompt = data
-    }
+    if (!ragPrompt) ragPrompt = { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' }
 
     return { basePrompt, ragPrompt }
   } catch (err) {
     console.error('[Handlers] getSelectedPrompts error:', err)
-    return { basePrompt: null, ragPrompt: null }
+    return {
+      basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
+      ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
+    }
   }
 }
 
@@ -90,33 +125,12 @@ export function registerResponseHandlers(
       }
 
       let prompt: string
-      if (selectedPrompt) {
-        if (isRag) {
-          prompt = selectedPrompt.content
-            .replace(/{{context}}/g, contextBlock || '参考資料はありません')
-            .replace(/{{question}}/g, question)
-        } else {
-          prompt = `${selectedPrompt.content}\n\n質問: ${question}`
-        }
+      if (isRag) {
+        prompt = selectedPrompt.content
+          .replace(/{{context}}/g, contextBlock || '参考資料はありません')
+          .replace(/{{question}}/g, question)
       } else {
-        const fallbackPrompt = `ビジネス会話をリアルタイムでサポートするAIアシスタントです。
-
-【禁止（使ったら失敗）】
-「承知しました」「はい、」「以下に」「〜によると」「資料では」「ご質問ありがとう」
-
-【ルール】
-- 第1単語は必ず内容（名詞・動詞・数字）から始める
-- 参考情報は出典なしで自然に織り込む
-- 箇条書き活用、200〜350字程度
-
-【例】
-質問：「自己紹介をしてください」
-❌「承知しました。以下に...」 ✅「エンジニアとして5年間...」
-質問：「御社の強みは？」
-❌「はい、資料によると...」 ✅「3つの強みがあります。①...」`
-        prompt = contextBlock
-          ? `${fallbackPrompt}\n\n【参考情報】\n${contextBlock}【質問】\n${question}`
-          : `${fallbackPrompt}\n\n【質問】\n${question}`
+        prompt = `${selectedPrompt.content}\n\n質問: ${question}`
       }
 
       const model = genAI.getGenerativeModel({

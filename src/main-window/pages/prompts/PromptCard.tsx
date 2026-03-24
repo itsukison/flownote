@@ -11,10 +11,14 @@ interface PromptCardProps {
   onSelect: () => void
   onEdit: () => void
   onDelete: () => void
+  toggleMode?: boolean
+  onToggleActive?: (isActive: boolean) => void
 }
 
-export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete }: PromptCardProps) {
+export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, toggleMode, onToggleActive }: PromptCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+
+  const isQuick = prompt.prompt_type === 'quick'
 
   return (
     <div
@@ -22,7 +26,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete }: P
         ? 'bg-white/[0.06] border-white/20'
         : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1]'
         }`}
-      onClick={onSelect}
+      onClick={toggleMode ? () => onToggleActive?.(!prompt.is_active) : onSelect}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -33,12 +37,14 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete }: P
                 {t.prompts.default}
               </span>
             )}
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${prompt.prompt_type === 'rag'
-              ? 'bg-blue-500/15 text-blue-400'
-              : 'bg-zinc-700 text-zinc-400'
-              }`}>
-              {prompt.prompt_type === 'rag' ? 'RAG' : 'Base'}
-            </span>
+            {!isQuick && (
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${prompt.prompt_type === 'rag'
+                ? 'bg-blue-500/15 text-blue-400'
+                : 'bg-zinc-700 text-zinc-400'
+                }`}>
+                {prompt.prompt_type === 'rag' ? 'RAG' : 'Base'}
+              </span>
+            )}
           </div>
           <p className={`text-xs text-zinc-500 font-mono whitespace-pre-wrap ${!isExpanded ? 'line-clamp-2' : ''}`}>
             {prompt.content}
@@ -46,7 +52,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete }: P
         </div>
 
         <div className="flex items-center gap-2">
-          {prompt.is_default && (
+          {prompt.is_default && !isQuick && (
             <button
               onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded) }}
               className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -54,11 +60,24 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete }: P
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           )}
-          {isSelected && (
+          {toggleMode ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleActive?.(!prompt.is_active) }}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                prompt.is_active ? 'bg-emerald-500' : 'bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                  prompt.is_active ? 'translate-x-[18px]' : 'translate-x-[3px]'
+                }`}
+              />
+            </button>
+          ) : isSelected ? (
             <div className="flex-none">
               <Check size={16} className="text-emerald-400" />
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 

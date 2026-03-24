@@ -188,7 +188,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updatePrompt: (id: string, name: string, content: string) =>
     ipcRenderer.invoke('prompts:update', id, name, content),
   deletePrompt: (id: string) => ipcRenderer.invoke('prompts:delete', id),
-  selectPrompt: (id: string) => ipcRenderer.invoke('prompts:select', id),
+  selectPrompt: (id: string | null, type: string) =>
+    ipcRenderer.invoke('prompts:select', id, type),
+  togglePromptActive: (id: string, isActive: boolean) =>
+    ipcRenderer.invoke('prompts:toggle-active', id, isActive),
 
   // ── Permissions ────────────────────────────────────────────────────────────
   openSystemAudioSettings: () => ipcRenderer.invoke('permissions:open-system-audio-settings'),

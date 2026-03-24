@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { GetSupabaseFn } from './shared'
 
-async function getPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
+async function getCustomPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
   const supabase = getSupabase()
   if (!supabase) return []
   try {
@@ -13,12 +13,12 @@ async function getPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
     if (error) {
-      console.error('[Handlers] getPrompts error:', error)
+      console.error('[Handlers] getCustomPrompts error:', error)
       return []
     }
     return prompts || []
   } catch (err) {
-    console.error('[Handlers] getPrompts error:', err)
+    console.error('[Handlers] getCustomPrompts error:', err)
     return []
   }
 }
@@ -45,7 +45,7 @@ async function getSelectedProfilePromptIds(getSupabase: GetSupabaseFn): Promise<
 
 export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
   ipcMain.handle('prompts:list', async () => {
-    const prompts = await getPrompts(getSupabase)
+    const prompts = await getCustomPrompts(getSupabase)
     const selectedIds = await getSelectedProfilePromptIds(getSupabase)
     return { success: true, data: prompts, selectedBaseId: selectedIds.baseId, selectedRagId: selectedIds.ragId }
   })
@@ -59,17 +59,19 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
 
       const { data: existingPrompts } = await supabase
         .from('prompts')
-        .select('id')
+        .select('id, prompt_type')
         .eq('user_id', user.id)
 
-      const customCount = (existingPrompts || []).filter((p: any) => !p.is_default).length
-      if (customCount >= 3) {
-        return { success: false, error: '最大3つまでのカスタムプロンプトを作成できます' }
+      const isQuick = promptType === 'quick'
+      const maxCustom = isQuick ? 10 : 3
+      const customCount = (existingPrompts || []).filter((p: any) => p.prompt_type === promptType).length
+      if (customCount >= maxCustom) {
+        return { success: false, error: isQuick ? '最大10個までのクイックプロンプトを作成できます' : '最大3つまでのカスタムプロンプトを作成できます' }
       }
 
       const { data, error } = await supabase
         .from('prompts')
-        .insert({ user_id: user.id, name, content, prompt_type: promptType, is_default: false })
+        .insert({ user_id: user.id, name, content, prompt_type: promptType, is_default: false, is_active: promptType === 'quick' })
         .select()
         .single()
 
@@ -84,16 +86,6 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }
     try {
-      const { data: existing } = await supabase
-        .from('prompts')
-        .select('is_default')
-        .eq('id', id)
-        .single()
-
-      if (existing?.is_default) {
-        return { success: false, error: 'デフォルトプロンプトは編集できません' }
-      }
-
       const { data, error } = await supabase
         .from('prompts')
         .update({ name, content, updated_at: new Date().toISOString() })
@@ -112,16 +104,6 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }
     try {
-      const { data: existing } = await supabase
-        .from('prompts')
-        .select('is_default')
-        .eq('id', id)
-        .single()
-
-      if (existing?.is_default) {
-        return { success: false, error: 'デフォルトプロンプトは削除できません' }
-      }
-
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return { success: false, error: 'Not authenticated' }
 
@@ -133,6 +115,7 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
 
       if (error) return { success: false, error: error.message }
 
+      // If deleted prompt was the selected one, reset to default (null)
       const { data: profile } = await supabase
         .from('profiles')
         .select('selected_base_prompt_id, selected_rag_prompt_id')
@@ -140,29 +123,9 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
         .single()
 
       if (profile?.selected_base_prompt_id === id) {
-        const { data: defaultPrompt } = await supabase
-          .from('prompts')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('is_default', true)
-          .eq('prompt_type', 'base')
-          .limit(1)
-          .single()
-        if (defaultPrompt) {
-          await supabase.from('profiles').update({ selected_base_prompt_id: defaultPrompt.id }).eq('id', user.id)
-        }
+        await supabase.from('profiles').update({ selected_base_prompt_id: null }).eq('id', user.id)
       } else if (profile?.selected_rag_prompt_id === id) {
-        const { data: defaultPrompt } = await supabase
-          .from('prompts')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('is_default', true)
-          .eq('prompt_type', 'rag')
-          .limit(1)
-          .single()
-        if (defaultPrompt) {
-          await supabase.from('profiles').update({ selected_rag_prompt_id: defaultPrompt.id }).eq('id', user.id)
-        }
+        await supabase.from('profiles').update({ selected_rag_prompt_id: null }).eq('id', user.id)
       }
 
       return { success: true }
@@ -171,22 +134,29 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     }
   })
 
-  ipcMain.handle('prompts:select', async (_event, id: string) => {
+  ipcMain.handle('prompts:toggle-active', async (_event, id: string, isActive: boolean) => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'Database not available' }
+    try {
+      const { error } = await supabase
+        .from('prompts')
+        .update({ is_active: isActive, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('prompts:select', async (_event, id: string | null, type: string) => {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return { success: false, error: 'Not authenticated' }
 
-      const { data: prompt } = await supabase
-        .from('prompts')
-        .select('prompt_type')
-        .eq('id', id)
-        .single()
-
-      if (!prompt) return { success: false, error: 'Prompt not found' }
-
-      const updateData = prompt.prompt_type === 'base'
+      const updateData = type === 'base'
         ? { selected_base_prompt_id: id }
         : { selected_rag_prompt_id: id }
 

@@ -6,15 +6,18 @@ const t = ja
 
 interface PromptFormModalProps {
   prompt?: Prompt
+  forceType?: 'base' | 'rag' | 'quick'
   onSave: (name: string, content: string, promptType: string) => void
   onCancel: () => void
 }
 
-export function PromptFormModal({ prompt, onSave, onCancel }: PromptFormModalProps) {
+export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptFormModalProps) {
   const [name, setName] = useState(prompt?.name || '')
   const [content, setContent] = useState(prompt?.content || '')
-  const [promptType, setPromptType] = useState<'base' | 'rag'>(prompt?.prompt_type || 'base')
+  const [promptType, setPromptType] = useState<'base' | 'rag' | 'quick'>(forceType || prompt?.prompt_type || 'base')
   const [error, setError] = useState('')
+
+  const isQuick = promptType === 'quick'
 
   useEffect(() => {
     if (promptType === 'rag') {
@@ -35,42 +38,44 @@ export function PromptFormModal({ prompt, onSave, onCancel }: PromptFormModalPro
   }
 
   const isValid = name.trim() && content.trim() &&
-    (promptType === 'base' || (content.includes('{{context}}') && content.includes('{{question}}')))
+    (promptType === 'base' || promptType === 'quick' || (content.includes('{{context}}') && content.includes('{{question}}')))
 
   return (
     <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-4">
       <div>
-        <label className="block text-xs text-zinc-500 mb-1.5">{t.prompts.name}</label>
+        <label className="block text-xs text-zinc-500 mb-1.5">{isQuick ? t.prompts.quickLabel : t.prompts.name}</label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full bg-zinc-900/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/20"
-          placeholder={t.prompts.namePlaceholder}
+          placeholder={isQuick ? t.prompts.quickLabelPlaceholder : t.prompts.namePlaceholder}
         />
       </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-zinc-500">{t.prompts.type}</label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPromptType('base')}
-              className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'base' ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-            >
-              {t.prompts.typeBase}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPromptType('rag')}
-              className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'rag' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
-            >
-              {t.prompts.typeRag}
-            </button>
+      {!forceType && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs text-zinc-500">{t.prompts.type}</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPromptType('base')}
+                className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'base' ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+              >
+                {t.prompts.typeBase}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPromptType('rag')}
+                className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'rag' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+              >
+                {t.prompts.typeRag}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {promptType === 'rag' && (
         <div className="flex gap-2">
@@ -97,9 +102,9 @@ export function PromptFormModal({ prompt, onSave, onCancel }: PromptFormModalPro
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          rows={8}
+          rows={isQuick ? 4 : 8}
           className="w-full bg-zinc-900/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/20 resize-none font-mono"
-          placeholder={promptType === 'base' ? t.prompts.contentPlaceholderBase : t.prompts.contentPlaceholderRag}
+          placeholder={isQuick ? t.prompts.quickContentPlaceholder : (promptType === 'base' ? t.prompts.contentPlaceholderBase : t.prompts.contentPlaceholderRag)}
         />
         {promptType === 'rag' && (
           <p className="text-[10px] text-zinc-500 mt-1">{t.prompts.ragHint}</p>

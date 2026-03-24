@@ -64,16 +64,15 @@ export function SessionDetailView({
     <div className="flex-1 flex flex-col min-h-0 max-w-3xl mx-auto w-full relative">
       {/* Header */}
       <div className="shrink-0 px-8 pt-6 pb-0">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 text-xs text-white/30 hover:text-white/60 transition-colors mb-4"
-        >
-          <ChevronLeft size={14} />
-          {t.history.title}
-        </button>
-
-        <div className="flex items-center gap-2 mb-2 text-[13px] text-white/40">
-          <span>{dateStr}</span>
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-xs text-white/30 hover:text-white/60 transition-colors"
+          >
+            <ChevronLeft size={14} />
+            {t.history.title}
+          </button>
+          <span className="text-[13px] text-white/40">{dateStr}</span>
         </div>
         <div className="mb-2 w-full max-w-2xl relative group">
           <input

@@ -85,7 +85,8 @@ declare global {
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
             updatePrompt: (id: string, name: string, content: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
             deletePrompt: (id: string) => Promise<{ success: boolean; error?: string }>
-            selectPrompt: (id: string) => Promise<{ success: boolean; error?: string }>
+            selectPrompt: (id: string | null, type: string) => Promise<{ success: boolean; error?: string }>
+            togglePromptActive: (id: string, isActive: boolean) => Promise<{ success: boolean; error?: string }>
             // ── Permissions ──────────────────────────────────────────────────────────
             openSystemAudioSettings: () => Promise<void>
             requestMicPermission: () => Promise<boolean>
@@ -144,8 +145,9 @@ declare global {
         user_id: string
         name: string
         content: string
-        prompt_type: 'base' | 'rag'
+        prompt_type: 'base' | 'rag' | 'quick'
         is_default: boolean
+        is_active: boolean
         created_at: string
         updated_at: string
     }

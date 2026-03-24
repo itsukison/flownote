@@ -142,7 +142,7 @@ export default function SettingsPage({ user }: Props) {
 
     return (
         <div className="max-w-2xl mx-auto px-8 py-8">
-            <h1 className="text-lg font-semibold text-zinc-100 mb-8">{t.settings.title}</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100 mb-8">{t.settings.title}</h1>
 
             {/* Permissions Section */}
             <section className="space-y-1 mb-10">

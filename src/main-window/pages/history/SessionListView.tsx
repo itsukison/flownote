@@ -68,7 +68,7 @@ export const SessionListView = memo(function SessionListView({
 
   return (
     <div className="flex-1 flex flex-col min-h-full max-w-3xl mx-auto px-8 py-8 w-full">
-      <h1 className="text-lg font-semibold text-zinc-100 mb-6">{t.history.title}</h1>
+      <h1 className="text-2xl font-semibold text-zinc-100 mb-6">{t.history.title}</h1>
 
       {sessions.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white/20">

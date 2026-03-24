@@ -80,7 +80,7 @@ export default function DocumentsPage({
                   <ChevronLeft size={20} />
                 </button>
               )}
-              <h1 className="text-lg font-semibold text-zinc-100">
+              <h1 className="text-2xl font-semibold text-zinc-100">
                 {docs.selectedCol ? docs.selectedCol.name : t.documents.title}
               </h1>
             </div>

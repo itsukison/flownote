@@ -169,7 +169,15 @@ export const ja = {
     addPrompt: '新しいプロンプトを追加',
     maxReached: '作成できるカスタムプロンプトは最大3つまでです',
     errorMissingContext: 'RAGプロンプトには {{context}} を含める必要があります',
-    errorMissingQuestion: 'RAGプロンプトには {{question}} を含める必要があります'
+    errorMissingQuestion: 'RAGプロンプトには {{question}} を含める必要があります',
+    quickPrompts: 'クイックプロンプト',
+    quickPromptsHint: 'フローティング画面の文字起こしに表示されるショートカットボタン',
+    typeQuick: 'クイック',
+    quickLabel: 'ボタンラベル',
+    quickLabelPlaceholder: '例: 要約',
+    quickContentPlaceholder: 'ボタンを押した時にAIに送信されるプロンプト...',
+    addQuickPrompt: '新しいクイックプロンプトを追加',
+    maxQuickReached: '作成できるクイックプロンプトは最大10個までです',
   },
   permissions: {
     title: '権限',

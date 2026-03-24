@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
-import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle, MessageSquareMore, ArrowUp } from 'lucide-react'
+import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle, MessageSquareMore, ArrowUp, Zap } from 'lucide-react'
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
@@ -16,6 +16,7 @@ import { useListening } from '@/hooks/useListening'
 import { useResponseStream } from '@/hooks/useResponseStream'
 import { useTranscription } from '@/hooks/useTranscription'
 import { useTranscriptQA } from '@/hooks/useTranscriptQA'
+import { DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
 
 const t = ja
 
@@ -31,6 +32,7 @@ export default function OverlayApp() {
     const [questionDetectionOn, setQuestionDetectionOn] = useState(false)
     const [qaInput, setQaInput] = useState('')
     const [qdHovered, setQdHovered] = useState(false)
+    const [quickPrompts, setQuickPrompts] = useState<{ id: string; name: string; content: string }[]>([])
 
     const transcriptEndRef = useRef<HTMLDivElement>(null)
     const transcriptContainerRef = useRef<HTMLDivElement>(null)
@@ -92,6 +94,21 @@ export default function OverlayApp() {
         })
     }, [])
 
+    const refreshQuickPrompts = useCallback(() => {
+        window.electronAPI?.getPrompts().then((result) => {
+            const customActive = (result?.success && result.data)
+                ? result.data
+                    .filter((p: any) => p.prompt_type === 'quick' && p.is_active)
+                    .map((p: any) => ({ id: p.id, name: p.name, content: p.content }))
+                : []
+            // Hardcoded defaults always first, then active custom quick prompts
+            setQuickPrompts([
+                ...DEFAULT_QUICK_PROMPTS.map(p => ({ id: p.id, name: p.name, content: p.content })),
+                ...customActive,
+            ])
+        })
+    }, [])
+
     // Combined forceStop
     const forceStopAll = useCallback(async () => {
         await forceStopTranscription()
@@ -110,7 +127,7 @@ export default function OverlayApp() {
         return off
     }, [forceStopAll])
 
-    // Org membership + collections when authed
+    // Org membership + collections + quick prompts when authed
     useEffect(() => {
         if (!session) return
         const refreshMembership = () => {
@@ -125,7 +142,8 @@ export default function OverlayApp() {
         }
         refreshMembership()
         refreshCollections()
-    }, [session, refreshCollections])
+        refreshQuickPrompts()
+    }, [session, refreshCollections, refreshQuickPrompts])
 
     // Misc event listeners
     useEffect(() => {
@@ -458,7 +476,7 @@ export default function OverlayApp() {
                             </div>
                         )}
                         {segments.length > 0 && (
-                            <div className="px-4 pt-2 pb-[52px] space-y-4">
+                            <div className={`px-4 pt-2 space-y-4 ${quickPrompts.length > 0 ? 'pb-[80px]' : 'pb-[48px]'}`}>
                                 {groupedSegments.map((g, i) => (
                                     <div key={i}>
                                         <div className="flex items-baseline gap-2 mb-0.5">
@@ -567,29 +585,45 @@ export default function OverlayApp() {
                 {/* Transcript Q&A input bar — floating */}
                 {activeTab === 'transcript' && !qaViewActive && segments.length > 0 && (
                     <>
-                        <div className="absolute bottom-[52px] left-0 right-0 h-10 pointer-events-none bg-gradient-to-t from-zinc-950/90 to-transparent" />
-                        <form
-                            onSubmit={handleQASubmit}
-                            className="absolute bottom-0 left-0 right-0 px-3 py-2.5"
-                        >
-                            <div className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 rounded-xl px-3 py-2">
-                                <input
-                                    type="text"
-                                    value={qaInput}
-                                    onChange={(e) => setQaInput(e.target.value)}
-                                    placeholder={t.overlay.askAboutTranscript}
-                                    className="flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-600 outline-none"
-                                    disabled={qaGenerating}
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!qaInput.trim() || qaGenerating}
-                                    className="p-1 text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700 transition-colors"
-                                >
-                                    <ArrowUp size={12} />
-                                </button>
-                            </div>
-                        </form>
+                        <div className="absolute bottom-0 left-0 right-0 flex flex-col">
+                        <div className="h-8 pointer-events-none bg-gradient-to-t from-zinc-950/90 to-transparent" />
+                        <div className="bg-zinc-950/90">
+                            {quickPrompts.length > 0 && (
+                                <div className="px-3 pb-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+                                    <Zap size={10} className="shrink-0 text-zinc-700" />
+                                    {quickPrompts.map((qp) => (
+                                        <button
+                                            key={qp.id}
+                                            onClick={() => { askQuestion(qp.content) }}
+                                            disabled={qaGenerating}
+                                            className="shrink-0 px-1 py-1 text-[10px] text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
+                                        >
+                                            {qp.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <form onSubmit={handleQASubmit} className="px-3 pt-0 pb-3.5">
+                                <div className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 rounded-xl px-3 py-2">
+                                    <input
+                                        type="text"
+                                        value={qaInput}
+                                        onChange={(e) => setQaInput(e.target.value)}
+                                        placeholder={t.overlay.askAboutTranscript}
+                                        className="flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-600 outline-none"
+                                        disabled={qaGenerating}
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={!qaInput.trim() || qaGenerating}
+                                        className="p-1 text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700 transition-colors"
+                                    >
+                                        <ArrowUp size={12} />
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        </div>
                     </>
                 )}
             </div>
