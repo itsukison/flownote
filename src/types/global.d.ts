@@ -81,7 +81,7 @@ declare global {
             onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
             onCollectionsChanged: (cb: () => void) => () => void
             // ── Prompts ────────────────────────────────────────────────────────────────
-            getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; error?: string }>
+            getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; selectedTranscriptId?: string | null; selectedSummaryId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
             updatePrompt: (id: string, name: string, content: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
             deletePrompt: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -145,7 +145,7 @@ declare global {
         user_id: string
         name: string
         content: string
-        prompt_type: 'base' | 'rag' | 'quick'
+        prompt_type: 'base' | 'rag' | 'quick' | 'transcript' | 'summary'
         is_default: boolean
         is_active: boolean
         created_at: string

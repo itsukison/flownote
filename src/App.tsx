@@ -134,7 +134,7 @@ export default function App() {
             {listening ? 'Stop' : 'Listen'}
           </button>
           <button
-            onClick={() => window.electronAPI.quitApp()}
+            onClick={() => window.electronAPI.hideOverlay()}
             className="p-1.5 rounded-lg hover:bg-white/10 text-white/30 hover:text-white/60 transition-colors"
           >
             <X size={13} />

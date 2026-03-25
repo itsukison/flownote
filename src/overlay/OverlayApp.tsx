@@ -245,7 +245,7 @@ export default function OverlayApp() {
                     <div className="flex items-center">
                         <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                     </div>
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
@@ -274,7 +274,7 @@ export default function OverlayApp() {
                     <div className="flex items-center">
                         <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                     </div>
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
@@ -303,7 +303,7 @@ export default function OverlayApp() {
                     <div className="flex items-center">
                         <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                     </div>
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
@@ -392,7 +392,7 @@ export default function OverlayApp() {
                         <Settings size={13} />
                     </button>
 
-                    <button onClick={() => window.electronAPI.quitApp()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>

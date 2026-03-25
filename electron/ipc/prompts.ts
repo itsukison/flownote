@@ -23,23 +23,25 @@ async function getCustomPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
   }
 }
 
-async function getSelectedProfilePromptIds(getSupabase: GetSupabaseFn): Promise<{ baseId: string | null; ragId: string | null }> {
+async function getSelectedProfilePromptIds(getSupabase: GetSupabaseFn): Promise<{ baseId: string | null; ragId: string | null; transcriptId: string | null; summaryId: string | null }> {
   const supabase = getSupabase()
-  if (!supabase) return { baseId: null, ragId: null }
+  if (!supabase) return { baseId: null, ragId: null, transcriptId: null, summaryId: null }
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return { baseId: null, ragId: null }
+    if (!user) return { baseId: null, ragId: null, transcriptId: null, summaryId: null }
     const { data: profile } = await supabase
       .from('profiles')
-      .select('selected_base_prompt_id, selected_rag_prompt_id')
+      .select('selected_base_prompt_id, selected_rag_prompt_id, selected_transcript_prompt_id, selected_summary_prompt_id')
       .eq('id', user.id)
       .single()
     return {
       baseId: profile?.selected_base_prompt_id || null,
       ragId: profile?.selected_rag_prompt_id || null,
+      transcriptId: profile?.selected_transcript_prompt_id || null,
+      summaryId: profile?.selected_summary_prompt_id || null,
     }
   } catch (err) {
-    return { baseId: null, ragId: null }
+    return { baseId: null, ragId: null, transcriptId: null, summaryId: null }
   }
 }
 
@@ -47,7 +49,7 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
   ipcMain.handle('prompts:list', async () => {
     const prompts = await getCustomPrompts(getSupabase)
     const selectedIds = await getSelectedProfilePromptIds(getSupabase)
-    return { success: true, data: prompts, selectedBaseId: selectedIds.baseId, selectedRagId: selectedIds.ragId }
+    return { success: true, data: prompts, selectedBaseId: selectedIds.baseId, selectedRagId: selectedIds.ragId, selectedTranscriptId: selectedIds.transcriptId, selectedSummaryId: selectedIds.summaryId }
   })
 
   ipcMain.handle('prompts:create', async (_event, name: string, content: string, promptType: string) => {
@@ -118,14 +120,17 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
       // If deleted prompt was the selected one, reset to default (null)
       const { data: profile } = await supabase
         .from('profiles')
-        .select('selected_base_prompt_id, selected_rag_prompt_id')
+        .select('selected_base_prompt_id, selected_rag_prompt_id, selected_transcript_prompt_id, selected_summary_prompt_id')
         .eq('id', user.id)
         .single()
 
-      if (profile?.selected_base_prompt_id === id) {
-        await supabase.from('profiles').update({ selected_base_prompt_id: null }).eq('id', user.id)
-      } else if (profile?.selected_rag_prompt_id === id) {
-        await supabase.from('profiles').update({ selected_rag_prompt_id: null }).eq('id', user.id)
+      const resetFields: Record<string, null> = {}
+      if (profile?.selected_base_prompt_id === id) resetFields.selected_base_prompt_id = null
+      if (profile?.selected_rag_prompt_id === id) resetFields.selected_rag_prompt_id = null
+      if (profile?.selected_transcript_prompt_id === id) resetFields.selected_transcript_prompt_id = null
+      if (profile?.selected_summary_prompt_id === id) resetFields.selected_summary_prompt_id = null
+      if (Object.keys(resetFields).length > 0) {
+        await supabase.from('profiles').update(resetFields).eq('id', user.id)
       }
 
       return { success: true }
@@ -156,9 +161,15 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return { success: false, error: 'Not authenticated' }
 
-      const updateData = type === 'base'
-        ? { selected_base_prompt_id: id }
-        : { selected_rag_prompt_id: id }
+      const columnMap: Record<string, string> = {
+        base: 'selected_base_prompt_id',
+        rag: 'selected_rag_prompt_id',
+        transcript: 'selected_transcript_prompt_id',
+        summary: 'selected_summary_prompt_id',
+      }
+      const column = columnMap[type]
+      if (!column) return { success: false, error: 'Invalid prompt type' }
+      const updateData = { [column]: id }
 
       const { error } = await supabase.from('profiles').update(updateData).eq('id', user.id)
       if (error) return { success: false, error: error.message }

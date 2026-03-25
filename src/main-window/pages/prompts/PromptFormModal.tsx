@@ -4,9 +4,11 @@ import { Prompt } from '@/hooks/usePrompts'
 
 const t = ja
 
+type PromptType = Prompt['prompt_type']
+
 interface PromptFormModalProps {
   prompt?: Prompt
-  forceType?: 'base' | 'rag' | 'quick'
+  forceType?: PromptType
   onSave: (name: string, content: string, promptType: string) => void
   onCancel: () => void
 }
@@ -14,31 +16,49 @@ interface PromptFormModalProps {
 export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptFormModalProps) {
   const [name, setName] = useState(prompt?.name || '')
   const [content, setContent] = useState(prompt?.content || '')
-  const [promptType, setPromptType] = useState<'base' | 'rag' | 'quick'>(forceType || prompt?.prompt_type || 'base')
+  const [promptType, setPromptType] = useState<PromptType>(forceType || prompt?.prompt_type || 'base')
   const [error, setError] = useState('')
 
   const isQuick = promptType === 'quick'
+  const needsTranscript = promptType === 'transcript' || promptType === 'summary'
+  const needsContext = promptType === 'rag'
+  const needsQuestion = promptType === 'rag' || promptType === 'transcript'
 
   useEffect(() => {
-    if (promptType === 'rag') {
-      if (!content.includes('{{context}}')) {
-        setError(t.prompts.errorMissingContext)
-      } else if (!content.includes('{{question}}')) {
-        setError(t.prompts.errorMissingQuestion)
-      } else {
-        setError('')
-      }
+    if (needsContext && !content.includes('{{context}}')) {
+      setError(t.prompts.errorMissingContext)
+    } else if (needsQuestion && !content.includes('{{question}}')) {
+      setError(t.prompts.errorMissingQuestion)
+    } else if (needsTranscript && !content.includes('{{transcript}}')) {
+      setError(t.prompts.errorMissingTranscript)
     } else {
       setError('')
     }
-  }, [content, promptType])
+  }, [content, promptType, needsContext, needsQuestion, needsTranscript])
 
   const insertPlaceholder = (placeholder: string) => {
     setContent(content + placeholder)
   }
 
   const isValid = name.trim() && content.trim() &&
-    (promptType === 'base' || promptType === 'quick' || (content.includes('{{context}}') && content.includes('{{question}}')))
+    (!needsContext || content.includes('{{context}}')) &&
+    (!needsQuestion || content.includes('{{question}}')) &&
+    (!needsTranscript || content.includes('{{transcript}}'))
+
+  const getPlaceholderText = () => {
+    if (isQuick) return t.prompts.quickContentPlaceholder
+    if (promptType === 'transcript') return t.prompts.contentPlaceholderTranscript
+    if (promptType === 'summary') return t.prompts.contentPlaceholderSummary
+    if (promptType === 'rag') return t.prompts.contentPlaceholderRag
+    return t.prompts.contentPlaceholderBase
+  }
+
+  const getHintText = () => {
+    if (promptType === 'rag') return t.prompts.ragHint
+    if (promptType === 'transcript') return t.prompts.transcriptHint
+    if (promptType === 'summary') return t.prompts.summaryHint
+    return null
+  }
 
   return (
     <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-4">
@@ -68,7 +88,7 @@ export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptF
               <button
                 type="button"
                 onClick={() => setPromptType('rag')}
-                className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'rag' ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                className={`text-[10px] px-2 py-1 rounded-full transition-colors ${promptType === 'rag' ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
               >
                 {t.prompts.typeRag}
               </button>
@@ -77,22 +97,36 @@ export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptF
         </div>
       )}
 
-      {promptType === 'rag' && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => insertPlaceholder('{{context}}')}
-            className="text-[10px] px-2 py-1 bg-blue-500/15 text-blue-400 rounded-md hover:bg-blue-500/25 transition-colors"
-          >
-            {`{{context}}`}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertPlaceholder('{{question}}')}
-            className="text-[10px] px-2 py-1 bg-blue-500/15 text-blue-400 rounded-md hover:bg-blue-500/25 transition-colors"
-          >
-            {`{{question}}`}
-          </button>
+      {/* Placeholder insert buttons */}
+      {(needsContext || needsTranscript || needsQuestion) && (
+        <div className="flex gap-2 flex-wrap">
+          {needsTranscript && (
+            <button
+              type="button"
+              onClick={() => insertPlaceholder('{{transcript}}')}
+              className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-400 border border-white/[0.05] rounded-md hover:bg-zinc-700 transition-colors"
+            >
+              {`{{transcript}}`}
+            </button>
+          )}
+          {needsContext && (
+            <button
+              type="button"
+              onClick={() => insertPlaceholder('{{context}}')}
+              className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-400 border border-white/[0.05] rounded-md hover:bg-zinc-700 transition-colors"
+            >
+              {`{{context}}`}
+            </button>
+          )}
+          {needsQuestion && (
+            <button
+              type="button"
+              onClick={() => insertPlaceholder('{{question}}')}
+              className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-400 border border-white/[0.05] rounded-md hover:bg-zinc-700 transition-colors"
+            >
+              {`{{question}}`}
+            </button>
+          )}
           <span className="text-[10px] text-zinc-500 self-center">{t.prompts.clickToInsert}</span>
         </div>
       )}
@@ -104,10 +138,10 @@ export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptF
           onChange={(e) => setContent(e.target.value)}
           rows={isQuick ? 4 : 8}
           className="w-full bg-zinc-900/50 border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-white/20 resize-none font-mono"
-          placeholder={isQuick ? t.prompts.quickContentPlaceholder : (promptType === 'base' ? t.prompts.contentPlaceholderBase : t.prompts.contentPlaceholderRag)}
+          placeholder={getPlaceholderText()}
         />
-        {promptType === 'rag' && (
-          <p className="text-[10px] text-zinc-500 mt-1">{t.prompts.ragHint}</p>
+        {getHintText() && (
+          <p className="text-[10px] text-zinc-500 mt-1">{getHintText()}</p>
         )}
       </div>
 

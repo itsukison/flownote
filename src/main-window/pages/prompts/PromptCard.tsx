@@ -1,9 +1,31 @@
 import { useState } from 'react'
-import { Check, Edit2, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { 
+  Check, Edit2, Trash2, ChevronDown, ChevronUp,
+  FileText, List, CheckSquare, MessageCircleQuestion, Clock, ClipboardList, PenTool, Database, MessageSquareText, Zap
+} from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Prompt } from '@/hooks/usePrompts'
 
 const t = ja
+
+const getPromptIcon = (prompt: Prompt) => {
+  const iconClass = "text-zinc-500";
+  if (prompt.prompt_type === 'summary') {
+    switch (prompt.id) {
+      case '__default_summary_1__': return <FileText size={14} className={iconClass} />;
+      case '__default_summary_2__': return <List size={14} className={iconClass} />;
+      case '__default_summary_3__': return <CheckSquare size={14} className={iconClass} />;
+      case '__default_summary_4__': return <MessageCircleQuestion size={14} className={iconClass} />;
+      case '__default_summary_5__': return <Clock size={14} className={iconClass} />;
+      default: return <ClipboardList size={14} className={iconClass} />;
+    }
+  }
+  if (prompt.prompt_type === 'base') return <PenTool size={14} className={iconClass} />;
+  if (prompt.prompt_type === 'rag') return <Database size={14} className={iconClass} />;
+  if (prompt.prompt_type === 'transcript') return <MessageSquareText size={14} className={iconClass} />;
+  if (prompt.prompt_type === 'quick') return <Zap size={14} className={iconClass} />;
+  return null;
+}
 
 interface PromptCardProps {
   prompt: Prompt
@@ -31,18 +53,21 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-medium text-zinc-200 truncate">{prompt.name}</h3>
+            <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2 truncate">
+              {getPromptIcon(prompt)}
+              {prompt.name}
+            </h3>
             {prompt.is_default && (
               <span className="text-[9px] px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded-full">
                 {t.prompts.default}
               </span>
             )}
             {!isQuick && (
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${prompt.prompt_type === 'rag'
-                ? 'bg-blue-500/15 text-blue-400'
-                : 'bg-zinc-700 text-zinc-400'
-                }`}>
-                {prompt.prompt_type === 'rag' ? 'RAG' : 'Base'}
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+                {prompt.prompt_type === 'rag' ? 'RAG'
+                  : prompt.prompt_type === 'transcript' ? t.prompts.typeTranscript
+                  : prompt.prompt_type === 'summary' ? t.prompts.typeSummary
+                  : 'Base'}
               </span>
             )}
           </div>
@@ -64,7 +89,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             <button
               onClick={(e) => { e.stopPropagation(); onToggleActive?.(!prompt.is_active) }}
               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
-                prompt.is_active ? 'bg-emerald-500' : 'bg-zinc-700'
+                prompt.is_active ? 'bg-zinc-400' : 'bg-zinc-700'
               }`}
             >
               <span
@@ -75,7 +100,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             </button>
           ) : isSelected ? (
             <div className="flex-none">
-              <Check size={16} className="text-emerald-400" />
+              <Check size={16} className="text-zinc-200" />
             </div>
           ) : null}
         </div>

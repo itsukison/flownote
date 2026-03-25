@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { DEFAULT_BASE_PROMPT, DEFAULT_RAG_PROMPT, DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
+import { DEFAULT_BASE_PROMPT, DEFAULT_RAG_PROMPT, DEFAULT_QUICK_PROMPTS, DEFAULT_TRANSCRIPT_PROMPT, DEFAULT_SUMMARY_PROMPTS } from '@/constants/defaultPrompts'
 
 export interface Prompt {
   id: string
   name: string
   content: string
-  prompt_type: 'base' | 'rag' | 'quick'
+  prompt_type: 'base' | 'rag' | 'quick' | 'transcript' | 'summary'
   is_default: boolean
   is_active: boolean
 }
@@ -13,7 +13,7 @@ export interface Prompt {
 interface UsePromptsOptions {
   initialPrompts?: Prompt[]
   externalLoading?: boolean
-  selectedIds?: { base?: string; rag?: string }
+  selectedIds?: { base?: string; rag?: string; transcript?: string; summary?: string }
   onRefresh?: () => void
 }
 
@@ -24,6 +24,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
   const [customPrompts, setCustomPrompts] = useState<Prompt[]>([])
   const [selectedBaseId, setSelectedBaseId] = useState<string | null>(null)
   const [selectedRagId, setSelectedRagId] = useState<string | null>(null)
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null)
+  const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -32,6 +34,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
       setLoading(!!externalLoading)
       if (selectedIds?.base) setSelectedBaseId(selectedIds.base)
       if (selectedIds?.rag) setSelectedRagId(selectedIds.rag)
+      if (selectedIds?.transcript) setSelectedTranscriptId(selectedIds.transcript)
+      if (selectedIds?.summary) setSelectedSummaryId(selectedIds.summary)
     } else {
       loadPrompts()
     }
@@ -48,6 +52,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
       setCustomPrompts(initialPrompts)
       if (selectedIds?.base) setSelectedBaseId(selectedIds.base)
       if (selectedIds?.rag) setSelectedRagId(selectedIds.rag)
+      if (selectedIds?.transcript) setSelectedTranscriptId(selectedIds.transcript)
+      if (selectedIds?.summary) setSelectedSummaryId(selectedIds.summary)
     }
   }, [initialPrompts, externalLoading, selectedIds])
 
@@ -59,15 +65,19 @@ export function usePrompts(options: UsePromptsOptions = {}) {
       // null = hardcoded default selected
       setSelectedBaseId(result.selectedBaseId || null)
       setSelectedRagId(result.selectedRagId || null)
+      setSelectedTranscriptId(result.selectedTranscriptId || null)
+      setSelectedSummaryId(result.selectedSummaryId || null)
     }
     setLoading(false)
   }
 
-  const handleSelect = async (id: string | null, type: 'base' | 'rag') => {
+  const handleSelect = async (id: string | null, type: 'base' | 'rag' | 'transcript' | 'summary') => {
     const result = await window.electronAPI?.selectPrompt(id, type)
     if (result?.success) {
       if (type === 'base') setSelectedBaseId(id)
-      else setSelectedRagId(id)
+      else if (type === 'rag') setSelectedRagId(id)
+      else if (type === 'transcript') setSelectedTranscriptId(id)
+      else if (type === 'summary') setSelectedSummaryId(id)
     }
   }
 
@@ -98,12 +108,14 @@ export function usePrompts(options: UsePromptsOptions = {}) {
     }
   }
 
-  const handleDelete = async (id: string, type: 'base' | 'rag' | 'quick') => {
+  const handleDelete = async (id: string, type: 'base' | 'rag' | 'quick' | 'transcript' | 'summary') => {
     const result = await window.electronAPI?.deletePrompt(id)
     if (result?.success) {
       // If deleted prompt was selected, reset to default (null)
       if (type === 'base' && selectedBaseId === id) setSelectedBaseId(null)
       else if (type === 'rag' && selectedRagId === id) setSelectedRagId(null)
+      else if (type === 'transcript' && selectedTranscriptId === id) setSelectedTranscriptId(null)
+      else if (type === 'summary' && selectedSummaryId === id) setSelectedSummaryId(null)
       loadPrompts()
       onRefresh?.()
     }
@@ -114,27 +126,41 @@ export function usePrompts(options: UsePromptsOptions = {}) {
   const ragPrompts = useMemo(() => [DEFAULT_RAG_PROMPT, ...customPrompts.filter(p => p.prompt_type === 'rag' && !p.is_default)], [customPrompts])
   const quickPrompts = useMemo(() => [...DEFAULT_QUICK_PROMPTS, ...customPrompts.filter(p => p.prompt_type === 'quick' && !p.is_default)], [customPrompts])
   const activeQuickPrompts = useMemo(() => quickPrompts.filter(p => p.is_active), [quickPrompts])
+  const transcriptPrompts = useMemo(() => [DEFAULT_TRANSCRIPT_PROMPT, ...customPrompts.filter(p => p.prompt_type === 'transcript' && !p.is_default)], [customPrompts])
+  const summaryPrompts = useMemo(() => [...DEFAULT_SUMMARY_PROMPTS, ...customPrompts.filter(p => p.prompt_type === 'summary' && !p.is_default)], [customPrompts])
 
   const customBaseRagCount = customPrompts.filter(p => p.prompt_type === 'base' || p.prompt_type === 'rag').length
   const customQuickCount = customPrompts.filter(p => p.prompt_type === 'quick').length
+  const customTranscriptCount = customPrompts.filter(p => p.prompt_type === 'transcript').length
+  const customSummaryCount = customPrompts.filter(p => p.prompt_type === 'summary').length
   const canAddMore = customBaseRagCount < 3
   const canAddMoreQuick = customQuickCount < 10
+  const canAddMoreTranscript = customTranscriptCount < 3
+  const canAddMoreSummary = customSummaryCount < 3
 
-  // null selectedBaseId/selectedRagId = hardcoded default is selected
+  // null selectedId = hardcoded default is selected
   const effectiveBaseId = selectedBaseId || DEFAULT_BASE_PROMPT.id
   const effectiveRagId = selectedRagId || DEFAULT_RAG_PROMPT.id
+  const effectiveTranscriptId = selectedTranscriptId || DEFAULT_TRANSCRIPT_PROMPT.id
+  const effectiveSummaryId = selectedSummaryId || DEFAULT_SUMMARY_PROMPTS[0].id
 
   return {
-    prompts: [...basePrompts, ...ragPrompts, ...quickPrompts],
+    prompts: [...basePrompts, ...ragPrompts, ...quickPrompts, ...transcriptPrompts, ...summaryPrompts],
     loading,
     selectedBaseId: effectiveBaseId,
     selectedRagId: effectiveRagId,
+    selectedTranscriptId: effectiveTranscriptId,
+    selectedSummaryId: effectiveSummaryId,
     basePrompts,
     ragPrompts,
     quickPrompts,
     activeQuickPrompts,
+    transcriptPrompts,
+    summaryPrompts,
     canAddMore,
     canAddMoreQuick,
+    canAddMoreTranscript,
+    canAddMoreSummary,
     handleSelect,
     handleCreate,
     handleUpdate,

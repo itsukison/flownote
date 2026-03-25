@@ -15,6 +15,7 @@ let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
 let supabase: SupabaseClient | null = null
 let supabaseConfigErrorMsg: string | null = null
+let isQuitting = false
 
 const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
 const BASE_URL = 'http://localhost:5182'
@@ -79,6 +80,13 @@ function createOverlayWindow() {
 
   overlayWindow.loadURL(devUrl('/overlay'))
 
+  overlayWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      overlayWindow?.hide()
+    }
+  })
+
   overlayWindow.on('closed', () => {
     overlayWindow = null
   })
@@ -116,6 +124,13 @@ function createMainWindow() {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (isMainFrame) {
       console.error('[Main] did-fail-load:', { errorCode, errorDescription, validatedURL })
+    }
+  })
+
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault()
+      mainWindow?.hide()
     }
   })
 
@@ -265,16 +280,21 @@ async function init() {
   })
 
   app.on('activate', () => {
-    if (mainWindow === null) createMainWindow()
+    if (mainWindow === null) {
+      createMainWindow()
+    } else {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.on('before-quit', () => {
+    isQuitting = true
   })
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
   })
-
-  if (process.platform === 'darwin') {
-    app.dock?.hide()
-  }
 }
 
 init().catch(console.error)

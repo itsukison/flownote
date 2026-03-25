@@ -6,6 +6,143 @@ import { getCurrentSegments } from './transcription-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
+const HARDCODED_TRANSCRIPT_PROMPT = `以下は会議のトランスクリプトです。ユーザーの質問に日本語で簡潔に答えてください。
+
+【トランスクリプト】
+{{transcript}}
+
+【質問】
+{{question}}`
+
+const DEFAULT_SUMMARY_TEMPLATES: Record<string, string> = {
+  '__default_summary_1__': `以下のミーティングのトランスクリプトから、議事録形式で日本語の要約を作成してください。
+マークダウン形式で、以下のセクションを含めてください：
+
+## 概要
+会議の目的と参加者の概要を1〜2文で記述
+
+## 議題と決定事項
+- 各議題について議論された内容と決定事項を箇条書き
+
+## アクションアイテム
+- **担当者**: タスク内容（期限があれば記載）
+
+## 備考
+その他の重要な情報やメモ
+
+簡潔で読みやすい要約にしてください。
+
+【トランスクリプト】
+{{transcript}}`,
+  '__default_summary_2__': `以下のミーティングのトランスクリプトを日本語で要約してください。
+マークダウン形式で、以下のセクションを含めてください：
+
+## 要点
+- 主要なポイントを箇条書きで簡潔にまとめる
+
+## 議論の内容
+話し合われた主な内容を段落形式で記述
+
+## 次のステップ
+- アクションアイテムや次のステップ（もしあれば）
+
+簡潔で読みやすい要約にしてください。
+
+【トランスクリプト】
+{{transcript}}`,
+  '__default_summary_3__': `以下のミーティングのトランスクリプトから、アクションアイテムを中心に日本語で要約してください。
+マークダウン形式で、以下のセクションを含めてください：
+
+## 決定事項
+- 会議で決まったことを箇条書き
+
+## アクションアイテム
+| 担当 | タスク | 期限 |
+|------|--------|------|
+| （名前/役割） | （具体的なタスク） | （期限があれば） |
+
+## 未解決事項
+- 結論が出なかった議題や持ち越し事項
+
+簡潔で実用的な要約にしてください。
+
+【トランスクリプト】
+{{transcript}}`,
+  '__default_summary_4__': `以下のミーティングのトランスクリプトから、議論された質問と結論をQ&A形式で日本語でまとめてください。
+マークダウン形式で記述してください：
+
+## 議論のQ&A
+
+各トピックについて以下の形式でまとめてください：
+
+### Q: （議論されたテーマ・質問）
+**A:** （結論・合意内容を簡潔に記述）
+
+---
+
+## まとめ
+会議全体の総括を2〜3文で記述
+
+【トランスクリプト】
+{{transcript}}`,
+  '__default_summary_5__': `以下のミーティングのトランスクリプトを、時系列に沿って日本語で要約してください。
+マークダウン形式で記述してください：
+
+## タイムライン
+
+会議の流れを時系列で記述してください：
+
+### 序盤
+- 冒頭で話された内容・導入
+
+### 中盤
+- メインの議論内容を順番に記述
+
+### 終盤
+- 締めくくり・まとめの内容
+
+## 結論
+会議の最終的な結論やまとめを簡潔に記述
+
+【トランスクリプト】
+{{transcript}}`,
+}
+
+const HARDCODED_SUMMARY_PROMPT = DEFAULT_SUMMARY_TEMPLATES['__default_summary_1__']
+
+async function fetchSelectedPromptContent(
+  getSupabase: GetSupabaseFn,
+  profileColumn: string,
+  fallback: string,
+  defaultTemplates?: Record<string, string>
+): Promise<string> {
+  try {
+    const supabase = getSupabase()
+    if (!supabase) return fallback
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return fallback
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select(profileColumn)
+      .eq('id', user.id)
+      .single()
+    const promptId = profile?.[profileColumn]
+    if (!promptId) return fallback
+    // Check if it's a hardcoded default template ID
+    if (defaultTemplates && promptId in defaultTemplates) {
+      return defaultTemplates[promptId]
+    }
+    const { data: prompt } = await supabase
+      .from('prompts')
+      .select('content')
+      .eq('id', promptId)
+      .single()
+    return prompt?.content || fallback
+  } catch {
+    return fallback
+  }
+}
+
 export function registerSessionAIHandlers(
   getMainWindow: GetWindowFn,
   getSupabase: GetSupabaseFn,
@@ -26,13 +163,14 @@ export function registerSessionAIHandlers(
       const transcriptText = segments.map((s) => `[${s.speaker}]: ${s.text}`).join('\n')
       const contextWindow = transcriptText.slice(-15000)
 
-      const prompt = `以下は会議のトランスクリプトです。ユーザーの質問に日本語で簡潔に答えてください。
-
-【トランスクリプト】
-${contextWindow}
-
-【質問】
-${question}`
+      const promptTemplate = await fetchSelectedPromptContent(
+        getSupabase,
+        'selected_transcript_prompt_id',
+        HARDCODED_TRANSCRIPT_PROMPT
+      )
+      const prompt = promptTemplate
+        .replace('{{transcript}}', contextWindow)
+        .replace('{{question}}', question)
 
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash-lite',
@@ -97,16 +235,13 @@ ${question}`
         .map((s: any) => `[${s.speaker}]: ${s.text}`)
         .join('\n')
 
-      const prompt = `以下のミーティングのトランスクリプトを日本語で要約してください。
-マークダウン形式で、以下のセクションを含めてください：
-- **要点**: 主要なポイントを箇条書き
-- **議論の内容**: 話し合われた主な内容
-- **次のステップ**: アクションアイテムや次のステップ（もしあれば）
-
-簡潔で読みやすい要約にしてください。
-
-【トランスクリプト】
-${transcriptText.slice(-20000)}`
+      const summaryTemplate = await fetchSelectedPromptContent(
+        getSupabase,
+        'selected_summary_prompt_id',
+        HARDCODED_SUMMARY_PROMPT,
+        DEFAULT_SUMMARY_TEMPLATES
+      )
+      const prompt = summaryTemplate.replace('{{transcript}}', transcriptText.slice(-20000))
 
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash-lite',
