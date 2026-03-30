@@ -1,0 +1,1441 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X Agent</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,600;12..96,800&family=Noto+Sans+JP:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #09090b;
+  --s1: #111114;
+  --s2: #18181d;
+  --border: #27272e;
+  --border2: #3a3a44;
+  --text: #f0f0f4;
+  --sub: #8888a0;
+  --dim: #44444f;
+  --pink: #ff4f8b;
+  --pink-dim: rgba(255,79,139,0.12);
+  --cyan: #00d4c8;
+  --cyan-dim: rgba(0,212,200,0.1);
+  --amber: #ffaa00;
+  --amber-dim: rgba(255,170,0,0.1);
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.1);
+  --red: #ef4444;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Noto Sans JP', sans-serif;
+  min-height: 100vh;
+}
+
+/* ── LAYOUT ── */
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background: var(--s1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-logo {
+  padding: 1.5rem 1.25rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo-mark {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--pink) 0%, var(--amber) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.logo-sub {
+  font-size: 0.6rem;
+  color: var(--dim);
+  letter-spacing: 0.15em;
+  margin-top: 0.3rem;
+  text-transform: uppercase;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 0.75rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.82rem;
+  color: var(--sub);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.nav-item:hover { background: var(--s2); color: var(--text); }
+
+.nav-item.active {
+  background: var(--pink-dim);
+  color: var(--pink);
+  border-color: rgba(255,79,139,0.2);
+}
+
+.nav-icon { font-size: 0.9rem; width: 18px; text-align: center; }
+
+.sidebar-bottom {
+  padding: 0.75rem 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.persona-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--s2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.persona-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--pink), var(--amber));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.persona-info { overflow: hidden; }
+.persona-name { font-size: 0.75rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.persona-status { font-size: 0.6rem; color: var(--sub); }
+.persona-status.live { color: var(--green); }
+
+/* ── MAIN ── */
+.main {
+  overflow-y: auto;
+  min-height: 100vh;
+}
+
+.page { display: none; padding: 2rem 2.5rem; max-width: 860px; }
+.page.active { display: block; animation: fadeUp 0.2s ease; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── TYPOGRAPHY ── */
+.page-title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.35rem;
+}
+
+.page-sub {
+  font-size: 0.78rem;
+  color: var(--sub);
+  margin-bottom: 2rem;
+}
+
+/* ── CARDS ── */
+.card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sub);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-body { padding: 1.25rem; }
+
+/* ── FORM ── */
+label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--sub);
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+textarea, input[type=text], input[type=password], select {
+  width: 100%;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 0.85rem;
+  padding: 0.7rem 0.9rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  resize: vertical;
+}
+
+textarea:focus, input:focus, select:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px var(--pink-dim);
+}
+
+textarea { min-height: 90px; line-height: 1.7; }
+
+select {
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238888a0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+}
+
+select option { background: var(--s2); }
+
+.field { margin-bottom: 1rem; }
+.field:last-child { margin-bottom: 0; }
+
+/* ── TOGGLE PILLS ── */
+.pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+.pill {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  color: var(--sub);
+  background: transparent;
+  user-select: none;
+}
+
+.pill:hover { border-color: var(--border2); color: var(--text); }
+.pill.on { background: var(--pink-dim); border-color: rgba(255,79,139,0.4); color: var(--pink); }
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1.4rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: -0.01em;
+  transition: all 0.15s;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--pink), #d4007a);
+  color: #fff;
+}
+.btn-primary:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(255,79,139,0.3); }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-ghost {
+  background: var(--s2);
+  color: var(--sub);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  padding: 0.45rem 0.9rem;
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--border2); }
+
+.btn-cyan {
+  background: var(--cyan-dim);
+  color: var(--cyan);
+  border: 1px solid rgba(0,212,200,0.25);
+}
+.btn-cyan:hover { background: rgba(0,212,200,0.18); }
+.btn-cyan:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-full { width: 100%; }
+
+.btn-sm { padding: 0.35rem 0.75rem; font-size: 0.72rem; }
+
+/* ── COOK BUTTON (the star of the show) ── */
+.cook-btn {
+  width: 100%;
+  padding: 1.1rem;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--pink) 0%, var(--amber) 100%);
+  color: #fff;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.cook-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.cook-btn:hover::before { opacity: 1; }
+.cook-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(255,79,139,0.35); }
+.cook-btn:active { transform: translateY(0); }
+.cook-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.cook-btn.cooking {
+  background: linear-gradient(135deg, #2a1520, #1a1500);
+  color: var(--amber);
+  border: 1px solid rgba(255,170,0,0.3);
+}
+
+/* ── STATUS ── */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.status-pill.generating { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(255,170,0,0.25); }
+.status-pill.ok { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.status-pill.err { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+
+.dot-pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1s ease infinite;
+}
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── TWEET CARDS ── */
+.tweet-list { display: flex; flex-direction: column; gap: 0.85rem; }
+
+.tw-card {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+  animation: fadeUp 0.2s ease;
+}
+
+.tw-card:hover { border-color: var(--border2); }
+.tw-card.approved { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.03); }
+.tw-card.sent { border-color: rgba(0,212,200,0.3); opacity: 0.55; }
+
+.tw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tw-badge {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.tw-actions { display: flex; gap: 0.3rem; align-items: center; }
+
+.tw-body { padding: 0.9rem; }
+
+.tw-text {
+  font-size: 0.9rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.tw-text:focus { background: rgba(255,255,255,0.04); }
+
+.tw-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.char-count {
+  font-size: 0.65rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.char-count.warn { color: var(--amber); }
+.char-count.over { color: var(--red); }
+
+.sched-input {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  min-width: 0;
+  width: 160px;
+}
+
+/* ── SETTINGS ── */
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.key-row input { flex: 1; }
+
+.key-led {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.key-led.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* ── COOK PAGE SPECIAL ── */
+.cook-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 640px) { .cook-area { grid-template-columns: 1fr; } }
+
+.quick-config {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.quick-stat {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.quick-stat-icon { font-size: 1.4rem; }
+
+.quick-stat-info .num {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.quick-stat-info .lbl {
+  font-size: 0.65rem;
+  color: var(--sub);
+  margin-top: 0.1rem;
+}
+
+/* empty state */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--sub);
+  font-size: 0.82rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.empty-state .ico { font-size: 2rem; margin-bottom: 0.75rem; }
+
+/* toast */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.6rem 1.25rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  z-index: 999;
+  animation: fadeUp 0.2s ease;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.toast.info { background: var(--s2); color: var(--text); border: 1px solid var(--border2); }
+.toast.err { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+.toast.ok { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+
+/* auto-post toggle */
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s;
+}
+
+.auto-toggle:hover { border-color: var(--border2); }
+.auto-toggle.on { border-color: rgba(34,197,94,0.35); background: var(--green-dim); }
+
+.toggle-switch {
+  width: 36px; height: 20px;
+  background: var(--dim);
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  transition: left 0.2s;
+}
+
+.auto-toggle.on .toggle-switch { background: var(--green); }
+.auto-toggle.on .toggle-switch::after { left: 19px; }
+
+.toggle-info .t-label { font-size: 0.82rem; font-weight: 500; }
+.toggle-info .t-sub { font-size: 0.68rem; color: var(--sub); margin-top: 0.1rem; }
+.auto-toggle.on .toggle-info .t-label { color: var(--green); }
+
+/* queue */
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--s2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+}
+
+.queue-time {
+  font-size: 0.65rem;
+  color: var(--sub);
+  min-width: 70px;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sub);
+}
+
+.queue-status { font-size: 0.65rem; color: var(--green); }
+
+/* Gemini badge */
+.gemini-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(66,133,244,0.15), rgba(234,67,53,0.1));
+  border: 1px solid rgba(66,133,244,0.25);
+  font-size: 0.62rem;
+  color: #7aadff;
+  font-weight: 500;
+}
+
+/* divider */
+.divider { height: 1px; background: var(--border); margin: 1.25rem 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">X Agent</div>
+      <div class="logo-sub">Hybrid Method</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPage('cook')" id="nav-cook">
+        <span class="nav-icon">🔥</span> Let it Cook
+      </div>
+      <div class="nav-item" onclick="showPage('setup')" id="nav-setup">
+        <span class="nav-icon">🧠</span> Persona Setup
+      </div>
+      <div class="nav-item" onclick="showPage('queue')" id="nav-queue">
+        <span class="nav-icon">📅</span> Queue
+        <span id="queue-badge" style="margin-left:auto;font-size:0.65rem;background:var(--pink-dim);color:var(--pink);padding:0.1rem 0.45rem;border-radius:999px;display:none;"></span>
+      </div>
+      <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="persona-chip">
+        <div class="persona-avatar">👧</div>
+        <div class="persona-info">
+          <div class="persona-name" id="sidebar-persona-name">AI大学生</div>
+          <div class="persona-status" id="sidebar-status">設定してください</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- ══ COOK PAGE ══ -->
+    <div class="page active" id="page-cook">
+      <div class="page-title">Let it Cook 🔥</div>
+      <div class="page-sub">ネタを投げてワンクリック生成。あとはレビューして送るだけ。</div>
+
+      <div class="cook-area">
+        <!-- Left: input -->
+        <div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-head">
+              <span class="card-title">💬 今日のネタ</span>
+              <span class="gemini-badge">✦ Gemini</span>
+            </div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:0.85rem;">
+              <div class="field">
+                <label>IDEA DUMP（なんでも）</label>
+                <textarea id="ideaDump" placeholder="音声メモ、Redditスレ、気になったニュース、頭の中のモヤモヤ何でも。空のままでもOK — ペルソナから自動生成します。" style="min-height:120px;"></textarea>
+              </div>
+
+              <div class="field">
+                <label>POST TYPE</label>
+                <div class="pills" id="ptPills">
+                  <div class="pill on" data-v="single">シングル</div>
+                  <div class="pill" data-v="thread">スレッド</div>
+                  <div class="pill" data-v="leadmagnet">リードマグネット</div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>PILLAR</label>
+                <div class="pills" id="plPills">
+                  <div class="pill on" data-v="ai">🤖 AIトレンド</div>
+                  <div class="pill" data-v="japan">🗾 Japan tech</div>
+                  <div class="pill" data-v="hottake">🌶 Hot take</div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>HOOK</label>
+                <select id="hookSel">
+                  <option value="curiosity">Curiosity loop</option>
+                  <option value="controversial">Controversial</option>
+                  <option value="list">List hook</option>
+                  <option value="story">Story hook</option>
+                  <option value="question">Question hook</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>COUNT</label>
+                <div class="pills" id="cntPills">
+                  <div class="pill" data-v="3">3本</div>
+                  <div class="pill on" data-v="5">5本</div>
+                  <div class="pill" data-v="8">8本</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: stats + auto -->
+        <div class="quick-config">
+          <div class="quick-stat">
+            <div class="quick-stat-icon">📊</div>
+            <div class="quick-stat-info">
+              <div class="num" id="stat-total">0</div>
+              <div class="lbl">tweets generated today</div>
+            </div>
+          </div>
+          <div class="quick-stat">
+            <div class="quick-stat-icon">✅</div>
+            <div class="quick-stat-info">
+              <div class="num" id="stat-sent">0</div>
+              <div class="lbl">sent to Typefully</div>
+            </div>
+          </div>
+
+          <div class="auto-toggle" id="autoToggle" onclick="toggleAuto()">
+            <div class="toggle-switch" id="autoSwitch"></div>
+            <div class="toggle-info">
+              <div class="t-label">Auto-approve & send</div>
+              <div class="t-sub">生成後そのままTypefullyへ</div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-head"><span class="card-title">⏰ Post times (JST)</span></div>
+            <div class="card-body" style="display:flex;flex-direction:column;gap:0.5rem;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                <input type="time" id="t1" value="09:00" style="font-size:0.8rem;padding:0.45rem 0.65rem;">
+                <input type="time" id="t2" value="12:30" style="font-size:0.8rem;padding:0.45rem 0.65rem;">
+                <input type="time" id="t3" value="18:00" style="font-size:0.8rem;padding:0.45rem 0.65rem;">
+                <input type="time" id="t4" value="21:00" style="font-size:0.8rem;padding:0.45rem 0.65rem;">
+              </div>
+              <div style="font-size:0.65rem;color:var(--sub);">今日以降に自動で割り当てます</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COOK BUTTON -->
+      <button class="cook-btn" id="cookBtn" onclick="cook()">
+        🔥 Generate & Cook
+      </button>
+
+      <!-- Status -->
+      <div id="cookStatus" style="margin-top:1rem;display:none;"></div>
+
+      <!-- Results -->
+      <div id="cookResults" style="margin-top:1.5rem;"></div>
+    </div>
+
+    <!-- ══ SETUP PAGE ══ -->
+    <div class="page" id="page-setup">
+      <div class="page-title">Persona Setup 🧠</div>
+      <div class="page-sub">一回だけ設定。AIのブレインを作る。</div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">👧 ペルソナ定義</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+          <div class="field">
+            <label>PERSONA NAME / HANDLE</label>
+            <input type="text" id="personaName" placeholder="例：AI大学生、SaaSおじさん..." value="AI大学生" />
+          </div>
+          <div class="field">
+            <label>PERSONA DESCRIPTION</label>
+            <textarea id="personaDesc" style="min-height:80px;">日本の理系大学生の女の子。AIとSaaSが好きで、自分でプロダクト作ってる。クールだけど鋭いツッコミとユーモアがある。業界のバズワード消費や建前が嫌い。</textarea>
+          </div>
+          <div class="field">
+            <label>TARGET AUDIENCE</label>
+            <textarea id="audience" style="min-height:60px;">日本のAI・SaaS興味層。エンジニア、PM、スタートアップ関係者。AIに興味があるビジネスパーソン。</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">🗣️ Voice Examples（声のサンプル）</span>
+          <button class="btn btn-ghost btn-sm" onclick="addVoiceSample()">+ 追加</button>
+        </div>
+        <div class="card-body">
+          <div style="font-size:0.72rem;color:var(--sub);margin-bottom:0.85rem;">バイラルした、または自分らしいと思うツイートを入れてください。AIがこのトーンを学習します。</div>
+          <div id="voiceList" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">📊 High-perf Reference Posts（任意）</span>
+          <button class="btn btn-ghost btn-sm" onclick="addRefPost()">+ 追加</button>
+        </div>
+        <div class="card-body">
+          <div style="font-size:0.72rem;color:var(--sub);margin-bottom:0.85rem;">75k+ impressions のポスト。構造・フック・エンゲージメントのパターンを学習させます。</div>
+          <div id="refList" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="savePersona()" style="min-width:180px;">
+        💾 ペルソナを保存
+      </button>
+    </div>
+
+    <!-- ══ QUEUE PAGE ══ -->
+    <div class="page" id="page-queue">
+      <div class="page-title">Queue 📅</div>
+      <div class="page-sub">承認済み・送信済みのツイート一覧</div>
+
+      <div id="queueList">
+        <div class="empty-state">
+          <div class="ico">📭</div>
+          まだキューにツイートがありません。<br>「Let it Cook」で生成して承認してください。
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SETTINGS PAGE ══ -->
+    <div class="page" id="page-settings">
+      <div class="page-title">Settings ⚙️</div>
+      <div class="page-sub">APIキーとスケジューラー設定</div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">🔑 API Keys</span></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:1rem;">
+          <div class="field">
+            <label>GEMINI API KEY</label>
+            <div class="key-row">
+              <div class="key-led" id="geminiLed"></div>
+              <input type="password" id="geminiKey" placeholder="AIza..." oninput="checkLeds()" />
+              <a href="https://aistudio.google.com/app/apikey" target="_blank">
+                <button class="btn btn-ghost btn-sm">取得 →</button>
+              </a>
+            </div>
+            <div style="font-size:0.65rem;color:var(--sub);margin-top:0.4rem;">Google AI Studio → API keys。無料で使えます。</div>
+          </div>
+          <div class="field">
+            <label>TYPEFULLY API KEY（任意）</label>
+            <div class="key-row">
+              <div class="key-led" id="typefullyLed"></div>
+              <input type="text" id="typefullyKey" placeholder="Typefully API key" oninput="checkLeds()" />
+              <a href="https://typefully.com" target="_blank">
+                <button class="btn btn-ghost btn-sm">取得 →</button>
+              </a>
+            </div>
+            <div style="font-size:0.65rem;color:var(--sub);margin-top:0.4rem;">Typefully → Settings → API。なしの場合はコピー&ペースト手動投稿。</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveKeys()" style="align-self:flex-start;">保存</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">🤖 Gemini Model</span></div>
+        <div class="card-body">
+          <div class="field">
+            <label>MODEL</label>
+            <select id="geminiModel">
+              <option value="gemini-2.0-flash">gemini-2.0-flash（速い・無料）</option>
+              <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-flash-thinking（高品質）</option>
+              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast" class="toast" style="display:none;"></div>
+
+<script>
+// ── STATE ──
+const ST = {
+  postType: 'single',
+  pillar: 'ai',
+  count: '5',
+  autoMode: false,
+  todayGenerated: 0,
+  todaySent: 0,
+  queue: [],
+  tweets: [],
+};
+
+// ── INIT ──
+window.onload = () => {
+  loadAll();
+  setupPills();
+  initSetupPage();
+  updateStats();
+  renderQueue();
+};
+
+function loadAll() {
+  // Keys
+  const gk = localStorage.getItem('gemini_key');
+  const tk = localStorage.getItem('typefully_key');
+  if (gk) document.getElementById('geminiKey').value = gk;
+  if (tk) document.getElementById('typefullyKey').value = tk;
+
+  // Model
+  const model = localStorage.getItem('gemini_model');
+  if (model) document.getElementById('geminiModel').value = model;
+
+  // Persona
+  const pn = localStorage.getItem('persona_name');
+  const pd = localStorage.getItem('persona_desc');
+  const aud = localStorage.getItem('audience');
+  if (pn) document.getElementById('personaName').value = pn;
+  if (pd) document.getElementById('personaDesc').value = pd;
+  if (aud) document.getElementById('audience').value = aud;
+
+  // Queue
+  const q = localStorage.getItem('tweet_queue');
+  if (q) ST.queue = JSON.parse(q);
+
+  // Stats
+  const stats = localStorage.getItem('today_stats');
+  if (stats) {
+    const s = JSON.parse(stats);
+    const today = new Date().toDateString();
+    if (s.date === today) {
+      ST.todayGenerated = s.gen || 0;
+      ST.todaySent = s.sent || 0;
+    }
+  }
+
+  // Auto mode
+  ST.autoMode = localStorage.getItem('auto_mode') === 'true';
+  if (ST.autoMode) document.getElementById('autoToggle').classList.add('on');
+
+  checkLeds();
+  updateSidebarPersona();
+}
+
+function saveKeys() {
+  const gk = document.getElementById('geminiKey').value.trim();
+  const tk = document.getElementById('typefullyKey').value.trim();
+  const model = document.getElementById('geminiModel').value;
+  if (gk) localStorage.setItem('gemini_key', gk);
+  if (tk) localStorage.setItem('typefully_key', tk);
+  localStorage.setItem('gemini_model', model);
+  checkLeds();
+  toast('✓ 保存しました', 'ok');
+}
+
+function checkLeds() {
+  const gk = document.getElementById('geminiKey').value.trim();
+  const tk = document.getElementById('typefullyKey').value.trim();
+  document.getElementById('geminiLed').className = 'key-led' + (gk ? ' on' : '');
+  document.getElementById('typefullyLed').className = 'key-led' + (tk ? ' on' : '');
+}
+
+function savePersona() {
+  localStorage.setItem('persona_name', document.getElementById('personaName').value);
+  localStorage.setItem('persona_desc', document.getElementById('personaDesc').value);
+  localStorage.setItem('audience', document.getElementById('audience').value);
+
+  // Voice samples
+  const voices = [...document.querySelectorAll('.voice-input')].map(t => t.value.trim()).filter(Boolean);
+  localStorage.setItem('voice_samples', JSON.stringify(voices));
+
+  // Ref posts
+  const refs = [...document.querySelectorAll('.ref-input')].map(t => t.value.trim()).filter(Boolean);
+  localStorage.setItem('ref_posts', JSON.stringify(refs));
+
+  updateSidebarPersona();
+  toast('🧠 ペルソナを保存しました！', 'ok');
+}
+
+function updateSidebarPersona() {
+  const name = localStorage.getItem('persona_name') || 'AI大学生';
+  document.getElementById('sidebar-persona-name').textContent = name;
+  const hasKey = !!localStorage.getItem('gemini_key');
+  const st = document.getElementById('sidebar-status');
+  st.textContent = hasKey ? '準備OK' : '設定してください';
+  st.className = 'persona-status' + (hasKey ? ' live' : '');
+}
+
+// ── SETUP PAGE ──
+function initSetupPage() {
+  // Default voice samples
+  const saved = localStorage.getItem('voice_samples');
+  const defaults = [
+    'AI研修やってるだけでAIスタートアップって自分たちの子と呼んでる人どうなの',
+    '「AIエージェントで全部自動化できます」って言ってる人、自分のSlack通知すら自動化できてないのでは',
+    'プロダクト触れてもいないのにAIの未来について語る会議、時間を返してほしい',
+  ];
+  const voices = saved ? JSON.parse(saved) : defaults;
+  voices.forEach(v => addVoiceSample(v));
+
+  const savedRefs = localStorage.getItem('ref_posts');
+  if (savedRefs) JSON.parse(savedRefs).forEach(r => addRefPost(r));
+}
+
+function addVoiceSample(val = '') {
+  const list = document.getElementById('voiceList');
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex'; wrap.style.gap = '0.4rem';
+  wrap.innerHTML = `<textarea class="voice-input" style="min-height:50px;font-size:0.82rem;" placeholder="このトーンで書いたツイートを入れてください...">${val}</textarea>
+    <button class="btn btn-ghost btn-sm" style="flex-shrink:0;align-self:flex-start;padding:0.4rem;" onclick="this.parentElement.remove()">✕</button>`;
+  list.appendChild(wrap);
+}
+
+function addRefPost(val = '') {
+  const list = document.getElementById('refList');
+  const wrap = document.createElement('div');
+  wrap.style.display = 'flex'; wrap.style.gap = '0.4rem';
+  wrap.innerHTML = `<textarea class="ref-input" style="min-height:60px;font-size:0.82rem;" placeholder="バイラルしたポストをここにペースト。インプレッション数も書いておくと◎">${val}</textarea>
+    <button class="btn btn-ghost btn-sm" style="flex-shrink:0;align-self:flex-start;padding:0.4rem;" onclick="this.parentElement.remove()">✕</button>`;
+  list.appendChild(wrap);
+}
+
+// ── NAVIGATION ──
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.getElementById('nav-' + id).classList.add('active');
+}
+
+// ── PILLS ──
+function setupPills() {
+  setupGroup('ptPills', v => ST.postType = v);
+  setupGroup('plPills', v => ST.pillar = v);
+  setupGroup('cntPills', v => ST.count = v);
+}
+
+function setupGroup(id, cb) {
+  document.getElementById(id)?.querySelectorAll('.pill').forEach(p => {
+    p.addEventListener('click', () => {
+      document.getElementById(id).querySelectorAll('.pill').forEach(x => x.classList.remove('on'));
+      p.classList.add('on');
+      cb(p.dataset.v);
+    });
+  });
+}
+
+// ── AUTO TOGGLE ──
+function toggleAuto() {
+  ST.autoMode = !ST.autoMode;
+  document.getElementById('autoToggle').classList.toggle('on', ST.autoMode);
+  localStorage.setItem('auto_mode', ST.autoMode);
+}
+
+// ── STATS ──
+function updateStats() {
+  document.getElementById('stat-total').textContent = ST.todayGenerated;
+  document.getElementById('stat-sent').textContent = ST.todaySent;
+}
+
+function bumpGen(n) {
+  ST.todayGenerated += n;
+  saveStats();
+  updateStats();
+}
+
+function bumpSent() {
+  ST.todaySent++;
+  saveStats();
+  updateStats();
+}
+
+function saveStats() {
+  localStorage.setItem('today_stats', JSON.stringify({ date: new Date().toDateString(), gen: ST.todayGenerated, sent: ST.todaySent }));
+}
+
+// ── COOK ──
+async function cook() {
+  const apiKey = localStorage.getItem('gemini_key') || document.getElementById('geminiKey')?.value.trim();
+  if (!apiKey) {
+    toast('⚠️ Settings で Gemini APIキーを設定してください', 'err');
+    showPage('settings');
+    return;
+  }
+
+  const model = localStorage.getItem('gemini_model') || 'gemini-2.0-flash';
+  const idea = document.getElementById('ideaDump').value.trim();
+  const hook = document.getElementById('hookSel').value;
+  const count = parseInt(ST.count);
+
+  // Build persona context
+  const personaName = localStorage.getItem('persona_name') || 'AI大学生';
+  const personaDesc = localStorage.getItem('persona_desc') || '日本の理系大学生の女の子。AIとSaaSが好きで、自分でプロダクト作ってる。クールだけど鋭い。';
+  const audience = localStorage.getItem('audience') || 'AIとSaaS興味層';
+  const voices = JSON.parse(localStorage.getItem('voice_samples') || '[]');
+  const refs = JSON.parse(localStorage.getItem('ref_posts') || '[]');
+
+  const pillarMap = { ai: 'AIツール・エージェント・トレンド', japan: '日本のテックシーン・スタートアップ事情', hottake: '辛口Hot take・業界への鋭い批評' };
+  const hookMap = { curiosity: 'Curiosity loop（最初の一文で続きが気になるようにする）', controversial: 'Controversial opener（物議を醸す書き出し）', list: 'List hook（番号リスト形式）', story: 'Story hook（自分の体験談から始める）', question: 'Question hook（問いかけ）' };
+  const isThread = ST.postType === 'thread';
+  const isLead = ST.postType === 'leadmagnet';
+
+  const prompt = `あなたはX（旧Twitter）のバイラルコンテンツ専門家です。
+
+## ペルソナ：${personaName}
+${personaDesc}
+
+ターゲット：${audience}
+
+## 声のサンプル（このトーンを再現してください）
+${voices.length ? voices.map(v => `- ${v}`).join('\n') : '- AI研修やってるだけでAIスタートアップって自分たちの子と呼んでる人どうなの\n- プロダクト触れてもいないのにAIの未来について語る会議、時間を返してほしい'}
+
+${refs.length ? `## 高パフォーマンス参考ポスト（構造・フックを学習）\n${refs.map(r => `---\n${r}`).join('\n')}` : ''}
+
+## 設定
+- コンテンツ柱：${pillarMap[ST.pillar]}
+- フック手法：${hookMap[hook]}
+- タイプ：${isThread ? 'スレッド（3〜4ツイート連続）' : isLead ? 'リードマグネット（コメント→DM型）' : 'シングルツイート'}
+
+${idea ? `## 今日のネタ\n${idea}` : '## 指示\nペルソナと柱に基づいて、今旬なネタで自然なツイートを生成してください。'}
+
+## 出力形式（厳守）
+ツイートを${count}パターン生成。
+各ツイートを必ず ===START=== と ===END=== で囲む。
+
+例：
+===START===
+ツイート本文
+===END===
+
+## ルール
+- 1ツイート = 140文字以内（日本語）
+- ハッシュタグ禁止
+- 先頭に番号・ラベル不要
+- 改行でリズムを作る
+- ペルソナのトーン徹底：クールで知的、たまに毒がある
+- 説明・前置き不要。本文のみ出力`;
+
+  // UI: cooking state
+  const btn = document.getElementById('cookBtn');
+  btn.classList.add('cooking');
+  btn.textContent = '⏳ Cooking...';
+  btn.disabled = true;
+
+  const statusEl = document.getElementById('cookStatus');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = `<span class="status-pill generating"><span class="dot-pulse"></span>Gemini が生成中...</span>`;
+  document.getElementById('cookResults').innerHTML = '';
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9, maxOutputTokens: 3000 }
+        })
+      }
+    );
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const blocks = raw.split('===START===').slice(1).map(b => b.split('===END===')[0].trim()).filter(Boolean);
+
+    if (!blocks.length) throw new Error('ツイートが生成されませんでした。もう一度試してください。');
+
+    ST.tweets = blocks.map(text => ({ text, type: ST.postType, approved: false, sent: false }));
+    bumpGen(blocks.length);
+
+    statusEl.innerHTML = `<span class="status-pill ok">✓ ${blocks.length}パターン生成完了</span>`;
+    setTimeout(() => statusEl.style.display = 'none', 3000);
+
+    renderCookResults();
+
+    // Auto-mode: approve all and send
+    if (ST.autoMode) {
+      setTimeout(() => {
+        ST.tweets.forEach((_, i) => approveTweet(i, true));
+        toast('🤖 Auto-mode: 全ツイートをキューに追加しました', 'ok');
+      }, 300);
+    }
+
+  } catch (err) {
+    statusEl.innerHTML = `<span class="status-pill err">⚠️ ${err.message}</span>`;
+  } finally {
+    btn.classList.remove('cooking');
+    btn.textContent = '🔥 Generate & Cook';
+    btn.disabled = false;
+  }
+}
+
+function renderCookResults() {
+  const container = document.getElementById('cookResults');
+  container.innerHTML = '';
+
+  if (!ST.tweets.length) return;
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:0.85rem;';
+  header.innerHTML = `
+    <div style="font-size:0.75rem;color:var(--sub);">クリックで編集、✓で承認してキューへ</div>
+    <div style="display:flex;gap:0.5rem;">
+      <button class="btn btn-ghost btn-sm" onclick="approveAll()">全部承認</button>
+      <button class="btn btn-ghost btn-sm" onclick="cook()">↻ 再生成</button>
+    </div>`;
+  container.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'tweet-list';
+  list.id = 'tweetList';
+
+  ST.tweets.forEach((tw, i) => {
+    list.appendChild(makeTweetCard(tw, i));
+  });
+
+  container.appendChild(list);
+}
+
+function makeTweetCard(tw, i) {
+  const card = document.createElement('div');
+  card.className = 'tw-card' + (tw.approved ? ' approved' : '');
+  card.id = `twc-${i}`;
+
+  const typeLabel = { single: 'SINGLE', thread: 'THREAD', leadmagnet: 'LEAD MAGNET' }[tw.type] || 'SINGLE';
+
+  card.innerHTML = `
+    <div class="tw-head">
+      <span class="tw-badge">${typeLabel} · ${i + 1}</span>
+      <div class="tw-actions">
+        <button class="btn btn-ghost btn-sm" onclick="copyTw(${i})">📋</button>
+        <button class="btn btn-ghost btn-sm" onclick="openX(${i})">𝕏</button>
+        <button class="btn btn-sm ${tw.approved ? 'btn-cyan' : 'btn-ghost'}" id="aprbtn-${i}" onclick="approveTweet(${i})" style="${tw.approved ? 'color:var(--cyan);border-color:rgba(0,212,200,0.4)' : ''}">
+          ${tw.approved ? '✓ 承認済' : '✓ 承認'}
+        </button>
+      </div>
+    </div>
+    <div class="tw-body">
+      <div class="tw-text" contenteditable="true" id="twt-${i}" oninput="updateChar(${i})">${escHtml(tw.text)}</div>
+    </div>
+    <div class="tw-foot">
+      <span class="char-count" id="cc-${i}"></span>
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <input type="datetime-local" class="sched-input" id="sct-${i}" value="${nextSlotISO(i)}" />
+        <button class="btn btn-ghost btn-sm" onclick="sendToTypefully(${i})" ${!localStorage.getItem('typefully_key') ? 'disabled title="Typefully key needed"' : ''}>📅</button>
+      </div>
+    </div>`;
+
+  setTimeout(() => updateChar(i), 0);
+  return card;
+}
+
+function updateChar(i) {
+  const el = document.getElementById(`twt-${i}`);
+  const cc = document.getElementById(`cc-${i}`);
+  if (!el || !cc) return;
+  const n = el.innerText.length;
+  cc.textContent = `${n} / 140`;
+  cc.className = 'char-count' + (n > 140 ? ' over' : n > 120 ? ' warn' : '');
+}
+
+function approveTweet(i, silent = false) {
+  ST.tweets[i].approved = true;
+  const card = document.getElementById(`twc-${i}`);
+  const btn = document.getElementById(`aprbtn-${i}`);
+  if (card) card.classList.add('approved');
+  if (btn) {
+    btn.textContent = '✓ 承認済';
+    btn.className = 'btn btn-sm btn-cyan';
+    btn.style.color = 'var(--cyan)';
+    btn.style.borderColor = 'rgba(0,212,200,0.4)';
+  }
+
+  // Add to queue
+  const el = document.getElementById(`twt-${i}`);
+  const text = el ? el.innerText : ST.tweets[i].text;
+  const schedEl = document.getElementById(`sct-${i}`);
+  const schedTime = schedEl ? schedEl.value : '';
+
+  addToQueue({ text, type: ST.tweets[i].type, schedTime, status: 'approved' });
+  if (!silent) toast('✓ キューに追加しました', 'ok');
+}
+
+function approveAll() {
+  ST.tweets.forEach((_, i) => { if (!ST.tweets[i].approved) approveTweet(i, true); });
+  toast('✓ 全ツイートをキューに追加しました', 'ok');
+}
+
+function copyTw(i) {
+  const el = document.getElementById(`twt-${i}`);
+  if (el) navigator.clipboard.writeText(el.innerText).then(() => toast('📋 コピーしました', 'info'));
+}
+
+function openX(i) {
+  const el = document.getElementById(`twt-${i}`);
+  if (el) window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(el.innerText.substring(0, 280))}`, '_blank');
+}
+
+async function sendToTypefully(i) {
+  const tk = localStorage.getItem('typefully_key');
+  if (!tk) { toast('⚠️ Typefully APIキーが必要です', 'err'); return; }
+
+  const el = document.getElementById(`twt-${i}`);
+  const text = el ? el.innerText : ST.tweets[i].text;
+  const schedEl = document.getElementById(`sct-${i}`);
+  const schedTime = schedEl ? new Date(schedEl.value).toISOString() : new Date().toISOString();
+
+  try {
+    const res = await fetch('https://api.typefully.com/v1/drafts/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-KEY': `Bearer ${tk}` },
+      body: JSON.stringify({ content: text, 'schedule-date': schedTime, threadify: ST.postType === 'thread' })
+    });
+
+    if (res.ok) {
+      bumpSent();
+      ST.tweets[i].sent = true;
+      document.getElementById(`twc-${i}`)?.classList.add('sent');
+      toast('📅 Typefullyに送信しました！', 'ok');
+      updateQueueItem(i, 'sent');
+    } else {
+      const e = await res.json();
+      throw new Error(e.message || res.statusText);
+    }
+  } catch (err) {
+    toast('⚠️ ' + err.message, 'err');
+  }
+}
+
+// ── QUEUE ──
+function addToQueue(item) {
+  ST.queue.unshift({ ...item, id: Date.now(), addedAt: new Date().toISOString() });
+  localStorage.setItem('tweet_queue', JSON.stringify(ST.queue.slice(0, 50)));
+  renderQueue();
+  updateQueueBadge();
+}
+
+function updateQueueItem(tweetIdx, status) {
+  // mark in queue by text match (simple)
+  const el = document.getElementById(`twt-${tweetIdx}`);
+  const text = el ? el.innerText : '';
+  const q = ST.queue.find(i => i.text === text);
+  if (q) { q.status = status; localStorage.setItem('tweet_queue', JSON.stringify(ST.queue)); renderQueue(); }
+}
+
+function renderQueue() {
+  const el = document.getElementById('queueList');
+  if (!ST.queue.length) {
+    el.innerHTML = `<div class="empty-state"><div class="ico">📭</div>まだキューにツイートがありません。<br>「Let it Cook」で生成して承認してください。</div>`;
+    return;
+  }
+
+  el.innerHTML = ST.queue.map((item, i) => {
+    const dt = item.schedTime ? new Date(item.schedTime).toLocaleString('ja-JP', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    const statusColor = item.status === 'sent' ? 'var(--green)' : item.status === 'approved' ? 'var(--cyan)' : 'var(--sub)';
+    const statusLabel = item.status === 'sent' ? '✓ 送信済' : item.status === 'approved' ? '✓ 承認済' : '下書き';
+    return `
+      <div class="queue-item">
+        <div class="queue-time">${dt}</div>
+        <div class="queue-text">${escHtml(item.text)}</div>
+        <div style="font-size:0.65rem;color:${statusColor};flex-shrink:0;">${statusLabel}</div>
+        <button class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:0.2rem 0.5rem;" onclick="removeQueueItem(${i})">✕</button>
+      </div>`;
+  }).join('');
+
+  updateQueueBadge();
+}
+
+function removeQueueItem(i) {
+  ST.queue.splice(i, 1);
+  localStorage.setItem('tweet_queue', JSON.stringify(ST.queue));
+  renderQueue();
+}
+
+function updateQueueBadge() {
+  const badge = document.getElementById('queue-badge');
+  const count = ST.queue.filter(i => i.status !== 'sent').length;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? 'block' : 'none';
+}
+
+// ── TIME SLOTS ──
+function getTimeSlots() {
+  const slots = ['t1','t2','t3','t4'].map(id => {
+    const val = document.getElementById(id)?.value || '09:00';
+    const [h, m] = val.split(':').map(Number);
+    return { h, m };
+  });
+  return slots;
+}
+
+function nextSlotISO(offset = 0) {
+  const slots = getTimeSlots();
+  const now = new Date();
+  const slot = slots[offset % slots.length];
+  const dayOff = Math.floor(offset / slots.length);
+  const dt = new Date(now);
+  dt.setDate(dt.getDate() + dayOff);
+  dt.setHours(slot.h, slot.m, 0, 0);
+  if (dt <= now) dt.setDate(dt.getDate() + 1);
+  // Format for datetime-local
+  const pad = n => String(n).padStart(2,'0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(slot.h)}:${pad(slot.m)}`;
+}
+
+// ── UTILS ──
+function escHtml(t) {
+  return (t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+let toastT;
+function toast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type}`;
+  el.style.display = 'block';
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.style.display = 'none', 2800);
+}
+</script>
+</body>
+</html>

@@ -87,9 +87,23 @@ declare global {
             deletePrompt: (id: string) => Promise<{ success: boolean; error?: string }>
             selectPrompt: (id: string | null, type: string) => Promise<{ success: boolean; error?: string }>
             togglePromptActive: (id: string, isActive: boolean) => Promise<{ success: boolean; error?: string }>
+            // ── Workflows ──────────────────────────────────────────────────────────
+            listWorkflows: () => Promise<{ success: boolean; data?: any[]; error?: string }>
+            createWorkflow: (workflow: any) => Promise<{ success: boolean; data?: any; error?: string }>
+            updateWorkflow: (id: string, updates: any) => Promise<{ success: boolean; data?: any; error?: string }>
+            deleteWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
+            toggleWorkflow: (id: string, isActive: boolean) => Promise<{ success: boolean; data?: any; error?: string }>
+            runWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
+            // ── Integrations ──────────────────────────────────────────────────────────
+            getIntegration: (provider: string) => Promise<{ success: boolean; connected: boolean; data?: any; error?: string }>
+            slackConnect: () => Promise<{ success: boolean; error?: string }>
+            slackPoll: () => Promise<{ success: boolean; connected: boolean; team_name?: string }>
+            slackDisconnect: () => Promise<{ success: boolean; error?: string }>
+            slackChannels: () => Promise<{ success: boolean; data?: { id: string; name: string; is_private: boolean }[]; error?: string }>
+            onWorkflowRunCompleted: (cb: (data: { workflowId: string; workflowName: string; success: boolean; error?: string }) => void) => () => void
             // ── Permissions ──────────────────────────────────────────────────────────
             openSystemAudioSettings: () => Promise<void>
-            requestMicPermission: () => Promise<boolean>
+            requestMicPermission: () => Promise<{ granted: boolean; status: string } | boolean>
             // ── Onboarding ─────────────────────────────────────────────────────────
             getOnboardingCompleted: () => Promise<boolean>
             setOnboardingCompleted: () => Promise<void>

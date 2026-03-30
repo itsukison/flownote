@@ -5,13 +5,25 @@ import { checkBudget, recordUsage, isUserInOrg, maybeRefreshCache } from '../ser
 
 export type GetSupabaseFn = () => SupabaseClient | null
 
+let cachedUserId: string | null = null
+let userIdCachedAt = 0
+const USER_ID_CACHE_TTL = 60_000
+
 export async function getCurrentUserId(getSupabase: GetSupabaseFn): Promise<string | null> {
+  if (cachedUserId && Date.now() - userIdCachedAt < USER_ID_CACHE_TTL) return cachedUserId
   const supabase = getSupabase()
   if (!supabase) return null
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    return user?.id ?? null
+    cachedUserId = user?.id ?? null
+    userIdCachedAt = Date.now()
+    return cachedUserId
   } catch { return null }
+}
+
+export function clearUserIdCache() {
+  cachedUserId = null
+  userIdCachedAt = 0
 }
 
 export async function ensureBudget(getSupabase: GetSupabaseFn): Promise<{ allowed: boolean; error?: string }> {

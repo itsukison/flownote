@@ -12,6 +12,8 @@ export function useResponseStream() {
   const [generating, setGenerating] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
   const responseRef = useRef('')
+  const rafRef = useRef<number | null>(null)
+  const dirtyRef = useRef(false)
 
   useEffect(() => {
     if (!window.electronAPI) return
@@ -20,10 +22,26 @@ export function useResponseStream() {
     )
     const offChunk = window.electronAPI.onResponseChunk((chunk: string) => {
       responseRef.current += chunk
-      setResponse(responseRef.current)
+      dirtyRef.current = true
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          if (dirtyRef.current) {
+            setResponse(responseRef.current)
+            dirtyRef.current = false
+          }
+          rafRef.current = null
+        })
+      }
     })
-    const offDone = window.electronAPI.onResponseDone(() => setGenerating(false))
-    return () => { offQ(); offChunk(); offDone() }
+    const offDone = window.electronAPI.onResponseDone(() => {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+      setResponse(responseRef.current)
+      setGenerating(false)
+    })
+    return () => {
+      offQ(); offChunk(); offDone()
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
   }, [])
 
   const selectQuestion = useCallback(async (q: Question, collectionId: string | null) => {

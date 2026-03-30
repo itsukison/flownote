@@ -40,7 +40,7 @@ export default function OverlayApp() {
 
     const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
     const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream()
-    const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription } = useTranscription()
+    const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription, resetSession } = useTranscription()
     const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA()
 
     const error = transcriptionError || listenError
@@ -116,6 +116,14 @@ export default function OverlayApp() {
         setQuestionDetectionOn(false)
     }, [forceStopTranscription, forceStopListening])
 
+    // Close overlay: stop everything, reset UI, then hide (main process saves session)
+    const handleClose = useCallback(async () => {
+        await forceStopAll()
+        resetSession()
+        clearAll()
+        window.electronAPI.hideOverlay()
+    }, [forceStopAll, resetSession, clearAll])
+
     // Session check
     useEffect(() => {
         if (!window.electronAPI) { setSession(null); return }
@@ -186,28 +194,24 @@ export default function OverlayApp() {
     }, [viewMode, goBack, qaViewActive, goBackQA])
 
     // Toggle question detection (secondary feature)
-    const handleToggleQuestionDetection = useCallback(async () => {
+    const handleToggleQuestionDetection = useCallback(() => {
         if (!transcribing) return
-        if (!questionDetectionOn) {
-            await toggleListening()
-            setQuestionDetectionOn(true)
-        } else {
-            await toggleListening()
-            setQuestionDetectionOn(false)
-        }
+        const next = !questionDetectionOn
+        setQuestionDetectionOn(next)
+        toggleListening().catch(() => setQuestionDetectionOn(!next))
     }, [transcribing, questionDetectionOn, toggleListening])
 
     // Listen button now controls transcription
-    const handleToggleListen = useCallback(async () => {
+    const handleToggleListen = useCallback(() => {
         if (!transcribing) {
-            await toggleTranscription({ onStarted: () => setSettingsOpen(false) })
+            setSettingsOpen(false)
+            toggleTranscription({ onStarted: () => {} }).catch(() => {})
         } else {
-            // Stop both transcription and question detection
             if (questionDetectionOn) {
-                await toggleListening()
+                toggleListening().catch(() => {})
                 setQuestionDetectionOn(false)
             }
-            await toggleTranscription()
+            toggleTranscription().catch(() => {})
         }
     }, [transcribing, questionDetectionOn, toggleTranscription, toggleListening])
 
@@ -392,7 +396,7 @@ export default function OverlayApp() {
                         <Settings size={13} />
                     </button>
 
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
                         <X size={13} />
                     </button>
                 </div>
@@ -587,7 +591,7 @@ export default function OverlayApp() {
                     <>
                         <div className="absolute bottom-0 left-0 right-0 flex flex-col">
                         <div className="h-8 pointer-events-none bg-gradient-to-t from-zinc-950/90 to-transparent" />
-                        <div className="bg-zinc-950/90">
+                        <div className="bg-zinc-950">
                             {quickPrompts.length > 0 && (
                                 <div className="px-3 pb-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
                                     <Zap size={10} className="shrink-0 text-zinc-700" />

@@ -110,12 +110,20 @@ const DEFAULT_SUMMARY_TEMPLATES: Record<string, string> = {
 
 const HARDCODED_SUMMARY_PROMPT = DEFAULT_SUMMARY_TEMPLATES['__default_summary_1__']
 
+const promptContentCache = new Map<string, { content: string; cachedAt: number }>()
+const PROMPT_CONTENT_CACHE_TTL = 30_000
+
+export function invalidatePromptContentCache() { promptContentCache.clear() }
+
 async function fetchSelectedPromptContent(
   getSupabase: GetSupabaseFn,
   profileColumn: string,
   fallback: string,
   defaultTemplates?: Record<string, string>
 ): Promise<string> {
+  const cached = promptContentCache.get(profileColumn)
+  if (cached && Date.now() - cached.cachedAt < PROMPT_CONTENT_CACHE_TTL) return cached.content
+
   try {
     const supabase = getSupabase()
     if (!supabase) return fallback
@@ -130,14 +138,18 @@ async function fetchSelectedPromptContent(
     if (!promptId) return fallback
     // Check if it's a hardcoded default template ID
     if (defaultTemplates && promptId in defaultTemplates) {
-      return defaultTemplates[promptId]
+      const content = defaultTemplates[promptId]
+      promptContentCache.set(profileColumn, { content, cachedAt: Date.now() })
+      return content
     }
     const { data: prompt } = await supabase
       .from('prompts')
       .select('content')
       .eq('id', promptId)
       .single()
-    return prompt?.content || fallback
+    const content = prompt?.content || fallback
+    promptContentCache.set(profileColumn, { content, cachedAt: Date.now() })
+    return content
   } catch {
     return fallback
   }
@@ -148,26 +160,28 @@ export function registerSessionAIHandlers(
   getSupabase: GetSupabaseFn,
   genAI: GoogleGenerativeAI | null
 ) {
-  ipcMain.handle('ask-transcript-question', async (_event, question: string) => {
-    const win = getMainWindow()
-    if (!genAI || !win) return { success: false, error: 'AI not available' }
+  ipcMain.handle('ask-transcript-question', async (event, question: string) => {
+    const sender = event.sender
+    if (!genAI || !sender) return { success: false, error: 'AI not available' }
 
     try {
-      const budgetCheck = await ensureBudget(getSupabase)
+      const [budgetCheck, promptTemplate] = await Promise.all([
+        ensureBudget(getSupabase),
+        fetchSelectedPromptContent(
+          getSupabase,
+          'selected_transcript_prompt_id',
+          HARDCODED_TRANSCRIPT_PROMPT
+        ),
+      ])
+
       if (!budgetCheck.allowed) {
-        win.webContents.send('transcript-response-done')
+        sender.send('transcript-response-done')
         return { success: false, error: budgetCheck.error || 'limit_exceeded' }
       }
 
       const segments = getCurrentSegments()
       const transcriptText = segments.map((s) => `[${s.speaker}]: ${s.text}`).join('\n')
       const contextWindow = transcriptText.slice(-15000)
-
-      const promptTemplate = await fetchSelectedPromptContent(
-        getSupabase,
-        'selected_transcript_prompt_id',
-        HARDCODED_TRANSCRIPT_PROMPT
-      )
       const prompt = promptTemplate
         .replace('{{transcript}}', contextWindow)
         .replace('{{question}}', question)
@@ -182,7 +196,7 @@ export function registerSessionAIHandlers(
       let lastUsageMetadata: any = null
       for await (const chunk of result.stream) {
         const text = chunk.text()
-        if (text) win.webContents.send('transcript-response-chunk', text)
+        if (text) sender.send('transcript-response-chunk', text)
         if (chunk.usageMetadata) lastUsageMetadata = chunk.usageMetadata
       }
 
@@ -194,11 +208,11 @@ export function registerSessionAIHandlers(
         }
       }
 
-      win.webContents.send('transcript-response-done')
+      sender.send('transcript-response-done')
       return { success: true }
     } catch (err: any) {
       console.error('[AI] ask-transcript-question error:', err)
-      win?.webContents.send('transcript-response-done')
+      sender?.send('transcript-response-done')
       return { success: false, error: err.message }
     }
   })

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
-import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle, ChevronLeft, ChevronRight, AlignJustify } from 'lucide-react'
+import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle, ChevronLeft, ChevronRight, AlignJustify, Zap } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import AuthPage from './pages/AuthPage'
 import ActivationPage from './pages/ActivationPage'
@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage'
 import PromptsPage from './pages/PromptsPage'
 import TutorialPage from './pages/TutorialPage'
 import HelpPage from './pages/HelpPage'
+import WorkflowPage from './pages/WorkflowPage'
 import { UpdateToast } from '@/components/UpdateToast'
 import CommandPalette from '@/components/CommandPalette'
 
@@ -23,6 +24,7 @@ function Sidebar({ user, collapsed, onToggle }: { user: any; collapsed: boolean;
         { to: '/documents', icon: FileText, label: t.sidebar.documents },
         { to: '/prompts', icon: MessageSquare, label: t.sidebar.prompts },
         { to: '/history', icon: History, label: t.sidebar.history },
+        { to: '/workflow', icon: Zap, label: t.sidebar.workflow },
         { to: '/help', icon: HelpCircle, label: t.sidebar.help },
         { to: '/settings', icon: Settings, label: t.sidebar.settings },
     ]
@@ -305,6 +307,7 @@ export default function MainApp() {
                                             <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
                                             <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
                                             <Route path="/history" element={<HistoryPage />} />
+                                            <Route path="/workflow/*" element={<WorkflowPage />} />
                                             <Route path="/settings" element={<SettingsPage user={user} />} />
                                             <Route path="/help" element={<HelpPage />} />
                                         </Routes>

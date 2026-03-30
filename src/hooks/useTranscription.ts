@@ -56,6 +56,12 @@ export function useTranscription() {
         setError(res.error || 'Failed to start transcription')
         return
       }
+      const micResult = await window.electronAPI.requestMicPermission()
+      const micGranted = typeof micResult === 'object' ? micResult.granted : micResult
+      if (!micGranted) {
+        setError('マイクのアクセス許可が必要です。システム設定 > プライバシーとセキュリティ > マイク から許可してください。')
+        return
+      }
       await startMicCapture()
       setTranscribing(true)
       setTranscriptId(res.transcriptId ?? null)
@@ -84,6 +90,14 @@ export function useTranscription() {
     setSegments([])
   }, [])
 
+  /** Reset all session state — called when overlay closes */
+  const resetSession = useCallback(() => {
+    setSegments([])
+    setTranscriptId(null)
+    setPartialSegment(null)
+    setTranscribing(false)
+  }, [])
+
   const forceStop = useCallback(async () => {
     stopMicCapture()
     setTranscribing(false)
@@ -102,6 +116,7 @@ export function useTranscription() {
     startTranscription,
     stopTranscription,
     clearSegments,
+    resetSession,
     forceStop,
   }
 }

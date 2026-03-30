@@ -103,7 +103,7 @@ export function registerListeningHandlers(
     }
   })
 
-  ipcMain.handle('process-mic-chunk', (_event, float32Array: Float32Array) => {
+  ipcMain.on('process-mic-chunk', (_event, float32Array: Float32Array) => {
     if (!detector?.active) return
     const buf = Buffer.alloc(float32Array.length * 2)
     for (let i = 0; i < float32Array.length; i++) {

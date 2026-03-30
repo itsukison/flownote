@@ -63,8 +63,13 @@ export function registerOnboardingHandlers(
   })
 
   ipcMain.handle('permissions:request-mic', async () => {
-    if (process.platform !== 'darwin') return true
-    return systemPreferences.askForMediaAccess('microphone')
+    if (process.platform !== 'darwin') return { granted: true, status: 'granted' }
+    const status = systemPreferences.getMediaAccessStatus('microphone')
+    if (status === 'granted') return { granted: true, status }
+    if (status === 'denied') return { granted: false, status }
+    // 'not-determined' — show the system dialog
+    const granted = await systemPreferences.askForMediaAccess('microphone')
+    return { granted, status: granted ? 'granted' : 'denied' }
   })
 
   ipcMain.handle('permissions:open-system-audio-settings', () => {

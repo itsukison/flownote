@@ -5,6 +5,7 @@ import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { generateSessionTitle } from './ai-handlers'
+import { workflowEvents } from '../services/workflow-engine'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -44,20 +45,43 @@ export async function stopTranscriptionAndSave(): Promise<void> {
   speakerSession = null
   sysAudioChunkCount = 0
 
-  // Save to Supabase
+  // Emit beforeSessionSave so workflow engine can capture session data
+  if (currentTranscriptId && segments.length > 0) {
+    workflowEvents.emit('beforeSessionSave', {
+      transcriptId: currentTranscriptId,
+      segments: [...segments], // Copy before reset clears them
+    })
+  }
+
+  // Save and reset session
+  await saveAndResetSession()
+}
+
+/** Save current session to Supabase and reset state. Called on overlay close and app quit. */
+export async function saveAndResetSession(): Promise<void> {
   const supabase = _getSupabase()
-  if (supabase && currentTranscriptId) {
+  if (!supabase || !currentTranscriptId) return
+
+  if (segments.length === 0) {
+    await supabase
+      .from('transcripts')
+      .delete()
+      .eq('id', currentTranscriptId)
+  } else {
     await supabase
       .from('transcripts')
       .update({ ended_at: new Date().toISOString(), segments })
       .eq('id', currentTranscriptId)
 
-    if (segments.length > 0 && _genAI) {
+    if (_genAI) {
       generateSessionTitle(_genAI, _getSupabase, currentTranscriptId, segments).catch(
-        (err) => console.error('[Transcription] Auto-title error on quit:', err)
+        (err) => console.error('[Transcription] Auto-title error:', err)
       )
     }
   }
+
+  segments = []
+  currentTranscriptId = null
 }
 
 export function registerTranscriptionHandlers(
@@ -80,19 +104,22 @@ export function registerTranscriptionHandlers(
 
       if (micSession?.active) return { success: true, transcriptId: currentTranscriptId }
 
-      segments = []
       sysAudioChunkCount = 0
 
-      const supabase = getSupabase()
-      const userId = await getCurrentUserId(getSupabase)
-      if (supabase && userId) {
-        const { data, error } = await supabase
-          .from('transcripts')
-          .insert({ user_id: userId, started_at: new Date().toISOString() })
-          .select('id')
-          .single()
-        if (!error && data) {
-          currentTranscriptId = data.id
+      // Only create a new DB row if no active session (first start or after save/reset)
+      if (!currentTranscriptId) {
+        segments = []
+        const supabase = getSupabase()
+        const userId = await getCurrentUserId(getSupabase)
+        if (supabase && userId) {
+          const { data, error } = await supabase
+            .from('transcripts')
+            .insert({ user_id: userId, started_at: new Date().toISOString() })
+            .select('id')
+            .single()
+          if (!error && data) {
+            currentTranscriptId = data.id
+          }
         }
       }
 
@@ -160,31 +187,14 @@ export function registerTranscriptionHandlers(
   ipcMain.handle('stop-transcription', async () => {
     try {
       await stopTranscription()
-
-      const supabase = getSupabase()
-      if (supabase && currentTranscriptId) {
-        await supabase
-          .from('transcripts')
-          .update({
-            ended_at: new Date().toISOString(),
-            segments: segments,
-          })
-          .eq('id', currentTranscriptId)
-
-        if (segments.length > 0 && genAI) {
-          generateSessionTitle(genAI, getSupabase, currentTranscriptId, segments).catch(
-            (err) => console.error('[Transcription] Auto-title error:', err)
-          )
-        }
-      }
-
+      // Session data (segments, currentTranscriptId) preserved for resume or save on overlay close
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err.message }
     }
   })
 
-  ipcMain.handle('process-mic-chunk-transcription', (_event, float32Array: Float32Array) => {
+  ipcMain.on('process-mic-chunk-transcription', (_event, float32Array: Float32Array) => {
     if (!micSession?.active) return
     const buf = Buffer.alloc(float32Array.length * 2)
     for (let i = 0; i < float32Array.length; i++) {

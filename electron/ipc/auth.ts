@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { saveSession, clearSession } from '../services/tokenStorage'
+import { clearUserIdCache } from './shared'
+import { stopTranscriptionAndSave } from './transcription-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -75,6 +77,7 @@ export function registerAuthHandlers(
       const { error } = await supabase.auth.signOut()
       if (error) return { success: false, error: error.message }
       clearSession()
+      clearUserIdCache()
       getOverlayWindow()?.hide()
       return { success: true }
     } catch (err: any) {
@@ -110,7 +113,11 @@ export function registerAuthHandlers(
     if (win) { win.show(); win.focus() }
   })
 
-  ipcMain.handle('window:hide-overlay', () => {
+  ipcMain.handle('window:hide-overlay', async () => {
+    // Stop transcription and save session before hiding
+    await stopTranscriptionAndSave().catch((err) =>
+      console.error('[Overlay] stopTranscriptionAndSave error on hide:', err)
+    )
     getOverlayWindow()?.hide()
   })
 

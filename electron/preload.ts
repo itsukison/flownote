@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startListening: () => ipcRenderer.invoke('start-listening'),
   stopListening: () => ipcRenderer.invoke('stop-listening'),
   processMicChunk: (data: Float32Array) =>
-    ipcRenderer.invoke('process-mic-chunk', data),
+    ipcRenderer.send('process-mic-chunk', data),
   getQuestions: () => ipcRenderer.invoke('get-questions'),
   clearQuestions: () => ipcRenderer.invoke('clear-questions'),
   generateResponse: (question: string, collectionId?: string) =>
@@ -69,7 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startTranscription: () => ipcRenderer.invoke('start-transcription'),
   stopTranscription: () => ipcRenderer.invoke('stop-transcription'),
   processMicChunkTranscription: (data: Float32Array) =>
-    ipcRenderer.invoke('process-mic-chunk-transcription', data),
+    ipcRenderer.send('process-mic-chunk-transcription', data),
   getTranscriptSegments: () => ipcRenderer.invoke('get-transcript-segments'),
   askTranscriptQuestion: (question: string) =>
     ipcRenderer.invoke('ask-transcript-question', question),
@@ -192,6 +192,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('prompts:select', id, type),
   togglePromptActive: (id: string, isActive: boolean) =>
     ipcRenderer.invoke('prompts:toggle-active', id, isActive),
+
+  // ── Workflows ────────────────────────────────────────────────────────────
+  listWorkflows: () => ipcRenderer.invoke('workflows:list'),
+  createWorkflow: (workflow: any) => ipcRenderer.invoke('workflows:create', workflow),
+  updateWorkflow: (id: string, updates: any) => ipcRenderer.invoke('workflows:update', id, updates),
+  deleteWorkflow: (id: string) => ipcRenderer.invoke('workflows:delete', id),
+  toggleWorkflow: (id: string, isActive: boolean) => ipcRenderer.invoke('workflows:toggle', id, isActive),
+  runWorkflow: (id: string) => ipcRenderer.invoke('workflows:run', id),
+
+  // ── Integrations ────────────────────────────────────────────────────────
+  getIntegration: (provider: string) => ipcRenderer.invoke('integrations:get', provider),
+  slackConnect: () => ipcRenderer.invoke('integrations:slack-connect'),
+  slackPoll: () => ipcRenderer.invoke('integrations:slack-poll'),
+  slackDisconnect: () => ipcRenderer.invoke('integrations:slack-disconnect'),
+  slackChannels: () => ipcRenderer.invoke('integrations:slack-channels'),
+
+  onWorkflowRunCompleted: (cb: (data: { workflowId: string; workflowName: string; success: boolean; error?: string }) => void) => {
+    const fn = (_: any, data: any) => cb(data)
+    ipcRenderer.on('workflow:run-completed', fn)
+    return () => ipcRenderer.removeListener('workflow:run-completed', fn)
+  },
 
   // ── Permissions ────────────────────────────────────────────────────────────
   openSystemAudioSettings: () => ipcRenderer.invoke('permissions:open-system-audio-settings'),

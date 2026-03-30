@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol, Tray, Menu } from 'electron'
 import * as path from 'path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
@@ -13,6 +13,7 @@ import { getCacheRoot } from './services/documentCache'
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let supabase: SupabaseClient | null = null
 let supabaseConfigErrorMsg: string | null = null
 let isQuitting = false
@@ -167,6 +168,42 @@ function toggleMainWindow() {
   }
 }
 
+function createTray() {
+  const iconPath = path.join(__dirname, '../public/tray-icon.png')
+  tray = new Tray(iconPath)
+  tray.setToolTip('Flownote')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Flownote',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Flownote',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      },
+    },
+  ])
+
+  tray.setContextMenu(contextMenu)
+
+  // Left-click also opens the main window
+  tray.on('click', () => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 async function init() {
   app.setName('Flownote')
 
@@ -246,6 +283,7 @@ async function init() {
 
     createMainWindow()
     createOverlayWindow()
+    createTray()
     mainWindow?.show()
     mainWindow?.focus()
 
@@ -295,6 +333,10 @@ async function init() {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
   })
+
+  if (process.platform === 'darwin') {
+    app.dock?.hide()
+  }
 }
 
 init().catch(console.error)

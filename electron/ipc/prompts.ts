@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron'
 import { GetSupabaseFn } from './shared'
+import { invalidatePromptCache } from './response'
+import { invalidatePromptContentCache } from './ai-handlers'
 
 async function getCustomPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
   const supabase = getSupabase()
@@ -173,6 +175,8 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
 
       const { error } = await supabase.from('profiles').update(updateData).eq('id', user.id)
       if (error) return { success: false, error: error.message }
+      invalidatePromptCache()
+      invalidatePromptContentCache()
       return { success: true }
     } catch (err: any) {
       return { success: false, error: err.message }

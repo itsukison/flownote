@@ -38,18 +38,26 @@ const HARDCODED_RAG_PROMPT = `ビジネス会話をリアルタイムでサポ�
 {{context}}
 質問: {{question}}`
 
+let promptCache: { basePrompt: any; ragPrompt: any; cachedAt: number } | null = null
+const PROMPT_CACHE_TTL = 30_000
+
+export function invalidatePromptCache() { promptCache = null }
+
 async function getSelectedPrompts(getSupabase: GetSupabaseFn): Promise<{ basePrompt: any; ragPrompt: any }> {
-  const supabase = getSupabase()
-  if (!supabase) return {
+  if (promptCache && Date.now() - promptCache.cachedAt < PROMPT_CACHE_TTL) {
+    return { basePrompt: promptCache.basePrompt, ragPrompt: promptCache.ragPrompt }
+  }
+
+  const defaults = {
     basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
     ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
   }
+
+  const supabase = getSupabase()
+  if (!supabase) return defaults
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return {
-      basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
-      ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
-    }
+    if (!user) return defaults
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -63,22 +71,20 @@ async function getSelectedPrompts(getSupabase: GetSupabaseFn): Promise<{ basePro
       const { data } = await supabase.from('prompts').select('*').eq('id', profile.selected_base_prompt_id).single()
       basePrompt = data
     }
-    if (!basePrompt) basePrompt = { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' }
+    if (!basePrompt) basePrompt = defaults.basePrompt
 
     let ragPrompt: any = null
     if (profile?.selected_rag_prompt_id) {
       const { data } = await supabase.from('prompts').select('*').eq('id', profile.selected_rag_prompt_id).single()
       ragPrompt = data
     }
-    if (!ragPrompt) ragPrompt = { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' }
+    if (!ragPrompt) ragPrompt = defaults.ragPrompt
 
+    promptCache = { basePrompt, ragPrompt, cachedAt: Date.now() }
     return { basePrompt, ragPrompt }
   } catch (err) {
     console.error('[Handlers] getSelectedPrompts error:', err)
-    return {
-      basePrompt: { content: HARDCODED_BASE_PROMPT, prompt_type: 'base' },
-      ragPrompt: { content: HARDCODED_RAG_PROMPT, prompt_type: 'rag' },
-    }
+    return defaults
   }
 }
 
@@ -98,31 +104,32 @@ export function registerResponseHandlers(
     if (!genAI || !win) return { success: false, error: 'AI not available' }
 
     try {
-      const budgetCheck = await ensureBudget(getSupabase)
+      const isRag = !!collectionId
+      const supabase = getSupabase()
+
+      const [budgetCheck, { basePrompt, ragPrompt }, ragResult] = await Promise.all([
+        ensureBudget(getSupabase),
+        getSelectedPrompts(getSupabase),
+        (collectionId && supabase)
+          ? searchSimilar(supabase, question, collectionId).catch((e) => {
+              console.warn('[Handlers] RAG search failed, proceeding without context:', e)
+              return { chunks: [] as string[], tokensUsed: 0 }
+            })
+          : Promise.resolve({ chunks: [] as string[], tokensUsed: 0 }),
+      ])
+
       if (!budgetCheck.allowed) {
         win.webContents.send('response-done')
         return { success: false, error: budgetCheck.error || 'limit_exceeded' }
       }
 
-      const isRag = !!collectionId
-      const { basePrompt, ragPrompt } = await getSelectedPrompts(getSupabase)
       const selectedPrompt = isRag ? ragPrompt : basePrompt
 
       let contextBlock = ''
-      if (collectionId) {
-        const supabase = getSupabase()
-        if (supabase) {
-          try {
-            const { chunks, tokensUsed: ragTokens } = await searchSimilar(supabase, question, collectionId)
-            if (chunks.length > 0) {
-              contextBlock = chunks.join('\n\n') + '\n\n'
-            }
-            if (ragTokens > 0) trackTypedTokenUsage(getSupabase, ragTokens, 'embedding_tokens')
-          } catch (e) {
-            console.warn('[Handlers] RAG search failed, proceeding without context:', e)
-          }
-        }
+      if (ragResult.chunks.length > 0) {
+        contextBlock = ragResult.chunks.join('\n\n') + '\n\n'
       }
+      if (ragResult.tokensUsed > 0) trackTypedTokenUsage(getSupabase, ragResult.tokensUsed, 'embedding_tokens')
 
       let prompt: string
       if (isRag) {

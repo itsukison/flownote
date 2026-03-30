@@ -8,6 +8,7 @@ import { registerOnboardingHandlers } from './onboarding'
 import { registerTranscriptionHandlers } from './transcription-handlers'
 import { registerSessionHandlers } from './session-handlers'
 import { registerSessionAIHandlers } from './ai-handlers'
+import { registerWorkflowHandlers } from './workflow-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -28,4 +29,5 @@ export function registerHandlers(
   registerTranscriptionHandlers(getOverlayWindow, getMainWindow, getSupabaseFn, openaiApiKey, genAI)
   registerSessionHandlers(getSupabaseFn)
   registerSessionAIHandlers(getMainWindow, getSupabaseFn, genAI)
+  registerWorkflowHandlers(getOverlayWindow, getMainWindow, getSupabaseFn, genAI)
 }
