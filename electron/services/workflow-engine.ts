@@ -7,7 +7,7 @@ import { EventEmitter } from 'events'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { sendSlackMessage, formatSlackMessage } from './slack-service'
-import cron from 'node-cron'
+import cron, { ScheduledTask } from 'node-cron'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -318,7 +318,7 @@ export async function executeWorkflow(
 
 // ── Cron Manager ─────────────────────────────────────────────────────────────
 
-const cronJobs = new Map<string, cron.ScheduledTask>()
+const cronJobs = new Map<string, ScheduledTask>()
 
 export function clearAllCronJobs() {
   for (const [id, job] of cronJobs) {
