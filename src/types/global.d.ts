@@ -98,6 +98,11 @@ declare global {
             deleteWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
             toggleWorkflow: (id: string, isActive: boolean) => Promise<{ success: boolean; data?: any; error?: string }>
             runWorkflow: (id: string, transcriptId?: string) => Promise<{ success: boolean; error?: string }>
+            // ── Workflow History ──────────────────────────────────────────────────
+            listWorkflowRuns: (opts?: { page?: number; pageSize?: number; statusFilter?: string }) =>
+                Promise<{ success: boolean; data?: WorkflowRunSummary[]; total?: number; error?: string }>
+            getWorkflowRunDetail: (runId: string) =>
+                Promise<{ success: boolean; data?: WorkflowRunDetail; error?: string }>
             // ── Integrations ──────────────────────────────────────────────────────────
             getIntegration: (provider: string) => Promise<{ success: boolean; connected: boolean; data?: any; error?: string }>
             slackConnect: () => Promise<{ success: boolean; error?: string }>
@@ -193,6 +198,36 @@ declare global {
         question_text: string
         created_at: string
         responses: { response_text: string }[]
+    }
+
+    interface WorkflowRunStep {
+        id: string
+        run_id: string
+        step_index: number
+        step_type: 'ai_process' | 'slack_send'
+        step_label: string | null
+        status: 'running' | 'success' | 'error' | 'skipped'
+        output: string | null
+        error_message: string | null
+        started_at: string | null
+        completed_at: string | null
+        config_snapshot: Record<string, any> | null
+    }
+
+    interface WorkflowRunSummary {
+        id: string
+        workflow_id: string | null
+        workflow_name: string | null
+        trigger_type: string | null
+        status: 'running' | 'success' | 'error'
+        error_message: string | null
+        started_at: string
+        completed_at: string | null
+    }
+
+    interface WorkflowRunDetail extends WorkflowRunSummary {
+        user_id: string
+        steps: WorkflowRunStep[]
     }
 
     interface MonthlyUsage {

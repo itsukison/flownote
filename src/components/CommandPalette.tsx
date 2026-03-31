@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, FileText, History, Settings, HelpCircle, PlayCircle, MessageSquare } from 'lucide-react'
+import { Search, FileText, History, Settings, HelpCircle, PlayCircle, MessageSquare, ListChecks } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ja } from '@/i18n/ja'
 
@@ -24,6 +24,7 @@ export default function CommandPalette({ isOpen, onClose }: { isOpen: boolean, o
     { id: 'docs', label: t.commandPalette.commands.documents, icon: FileText, category: t.commandPalette.categories.navigation, action: () => navigate('/documents') },
     { id: 'prompts', label: t.commandPalette.commands.prompts, icon: MessageSquare, category: t.commandPalette.categories.navigation, action: () => navigate('/prompts') },
     { id: 'history', label: t.commandPalette.commands.history, icon: History, category: t.commandPalette.categories.navigation, action: () => navigate('/history') },
+    { id: 'workflow-history', label: t.commandPalette.commands.workflowHistory, icon: ListChecks, category: t.commandPalette.categories.navigation, action: () => navigate('/workflow/history') },
     { id: 'settings', label: t.commandPalette.commands.settings, icon: Settings, category: t.commandPalette.categories.navigation, action: () => navigate('/settings') },
     { id: 'help', label: t.commandPalette.commands.help, icon: HelpCircle, category: t.commandPalette.categories.navigation, action: () => navigate('/help') },
     { id: 'tutorial', label: t.commandPalette.commands.tutorial, icon: PlayCircle, category: t.commandPalette.categories.actions, action: () => navigate('/tutorial') },

@@ -206,6 +206,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleWorkflow: (id: string, isActive: boolean) => ipcRenderer.invoke('workflows:toggle', id, isActive),
   runWorkflow: (id: string, transcriptId?: string) => ipcRenderer.invoke('workflows:run', id, transcriptId),
 
+  // ── Workflow History ──────────────────────────────────────────────────────
+  listWorkflowRuns: (opts?: { page?: number; pageSize?: number; statusFilter?: string }) =>
+    ipcRenderer.invoke('workflow-runs:list', opts ?? {}),
+  getWorkflowRunDetail: (runId: string) =>
+    ipcRenderer.invoke('workflow-runs:detail', runId),
+
   // ── Integrations ────────────────────────────────────────────────────────
   getIntegration: (provider: string) => ipcRenderer.invoke('integrations:get', provider),
   slackConnect: () => ipcRenderer.invoke('integrations:slack-connect'),

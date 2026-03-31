@@ -133,6 +133,66 @@ export function registerWorkflowHandlers(
     return { success: true, data }
   })
 
+  // ── Workflow Run History ────────────────────────────────────────────────────
+
+  ipcMain.handle('workflow-runs:list', async (_event, opts: {
+    page?: number
+    pageSize?: number
+    statusFilter?: string
+  }) => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'no_database' }
+    const userId = await getCurrentUserId(getSupabase)
+    if (!userId) return { success: false, error: 'not_authenticated' }
+
+    const page = opts?.page ?? 0
+    const pageSize = opts?.pageSize ?? 20
+    const from = page * pageSize
+    const to = from + pageSize - 1
+
+    let query = supabase
+      .from('workflow_runs')
+      .select('id, workflow_id, workflow_name, trigger_type, status, error_message, started_at, completed_at', { count: 'exact' })
+      .eq('user_id', userId)
+      .gte('started_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
+      .order('started_at', { ascending: false })
+      .range(from, to)
+
+    if (opts?.statusFilter === 'error') {
+      query = query.eq('status', 'error')
+    }
+
+    const { data, error, count } = await query
+    if (error) return { success: false, error: error.message }
+    return { success: true, data: data ?? [], total: count ?? 0 }
+  })
+
+  ipcMain.handle('workflow-runs:detail', async (_event, runId: string) => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'no_database' }
+    const userId = await getCurrentUserId(getSupabase)
+    if (!userId) return { success: false, error: 'not_authenticated' }
+
+    const { data: run, error: runError } = await supabase
+      .from('workflow_runs')
+      .select('*')
+      .eq('id', runId)
+      .eq('user_id', userId)
+      .single()
+
+    if (runError || !run) return { success: false, error: 'Run not found' }
+
+    const { data: steps, error: stepsError } = await supabase
+      .from('workflow_run_steps')
+      .select('*')
+      .eq('run_id', runId)
+      .order('step_index', { ascending: true })
+
+    if (stepsError) return { success: false, error: stepsError.message }
+
+    return { success: true, data: { ...run, steps: steps ?? [] } }
+  })
+
   // ── Manual Run ─────────────────────────────────────────────────────────────
 
   ipcMain.handle('workflows:run', async (_event, id: string, transcriptId?: string) => {

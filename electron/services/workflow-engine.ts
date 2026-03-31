@@ -6,7 +6,7 @@
 import { EventEmitter } from 'events'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { SupabaseClient } from '@supabase/supabase-js'
-import { sendSlackMessage } from './slack-service'
+import { sendSlackMessage, formatSlackMessage } from './slack-service'
 import cron from 'node-cron'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -154,13 +154,15 @@ export async function executeWorkflow(
 ): Promise<{ success: boolean; error?: string }> {
   const stepOutputs: Record<string, string> = {}
 
-  // Insert run record
+  // Insert run record with workflow snapshot
   const { data: runRow } = await supabase
     .from('workflow_runs')
     .insert({
       workflow_id: workflow.id,
       user_id: userId,
       status: 'running',
+      workflow_name: workflow.name,
+      trigger_type: workflow.trigger_type,
     })
     .select('id')
     .single()
@@ -182,41 +184,92 @@ export async function executeWorkflow(
       // Merge step outputs into vars so later steps can reference earlier ones
       Object.assign(vars, stepOutputs)
 
-      if (step.type === 'ai_process') {
-        if (!genAI) throw new Error('AI (Gemini) が設定されていません')
-        if (!step.config.prompt) throw new Error(`ステップ${i + 1}: プロンプトが空です`)
-
-        const prompt = interpolateTemplate(step.config.prompt, vars)
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-2.5-flash-lite',
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
-        })
-        const result = await model.generateContent(prompt)
-        const text = result.response.text()
-        stepOutputs[stepKey] = text
-      } else if (step.type === 'slack_send') {
-        if (!step.config.channel_id) throw new Error(`ステップ${i + 1}: Slackチャンネルが未選択です`)
-        if (!step.config.message) throw new Error(`ステップ${i + 1}: メッセージが空です`)
-
-        // Fetch Slack token
-        const { data: integration } = await supabase
-          .from('user_integrations')
-          .select('config')
-          .eq('user_id', userId)
-          .eq('provider', 'slack')
+      // Insert step-in-progress row
+      const stepStartedAt = new Date().toISOString()
+      let stepRowId: string | undefined
+      if (runId) {
+        const { data: stepRow } = await supabase
+          .from('workflow_run_steps')
+          .insert({
+            run_id: runId,
+            step_index: i,
+            step_type: step.type,
+            step_label: step.label || null,
+            status: 'running',
+            started_at: stepStartedAt,
+            config_snapshot: step.type === 'slack_send'
+              ? { channel_name: step.config.channel_name, channel_id: step.config.channel_id }
+              : null,
+          })
+          .select('id')
           .single()
+        stepRowId = stepRow?.id
+      }
 
-        if (!integration?.config?.access_token) {
-          throw new Error('Slackが連携されていません')
+      try {
+        if (step.type === 'ai_process') {
+          if (!genAI) throw new Error('AI (Gemini) が設定されていません')
+          if (!step.config.prompt) throw new Error(`ステップ${i + 1}: プロンプトが空です`)
+
+          const prompt = interpolateTemplate(step.config.prompt, vars)
+          const model = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash-lite',
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2000 },
+          })
+          const result = await model.generateContent(prompt)
+          const text = result.response.text()
+          stepOutputs[stepKey] = text
+        } else if (step.type === 'slack_send') {
+          if (!step.config.channel_id) throw new Error(`ステップ${i + 1}: Slackチャンネルが未選択です`)
+          if (!step.config.message) throw new Error(`ステップ${i + 1}: メッセージが空です`)
+
+          // Fetch Slack token
+          const { data: integration } = await supabase
+            .from('user_integrations')
+            .select('config')
+            .eq('user_id', userId)
+            .eq('provider', 'slack')
+            .single()
+
+          if (!integration?.config?.access_token) {
+            throw new Error('Slackが連携されていません')
+          }
+
+          const message = interpolateTemplate(step.config.message, { ...vars, ...stepOutputs })
+          const formatted = formatSlackMessage(message)
+          await sendSlackMessage(
+            integration.config.access_token,
+            step.config.channel_id,
+            formatted
+          )
+          // Keep the original (pre-format) message for downstream variable use.
+          stepOutputs[stepKey] = message
         }
 
-        const message = interpolateTemplate(step.config.message, { ...vars, ...stepOutputs })
-        await sendSlackMessage(
-          integration.config.access_token,
-          step.config.channel_id,
-          message
-        )
-        stepOutputs[stepKey] = message
+        // Mark step as success
+        if (stepRowId) {
+          await supabase
+            .from('workflow_run_steps')
+            .update({
+              status: 'success',
+              output: stepOutputs[stepKey] ?? null,
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', stepRowId)
+        }
+      } catch (stepErr: any) {
+        // Record step-level error then re-throw to trigger run-level error handling
+        if (stepRowId) {
+          await supabase
+            .from('workflow_run_steps')
+            .update({
+              status: 'error',
+              error_message: stepErr.message,
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', stepRowId)
+        }
+        throw stepErr
       }
     }
 

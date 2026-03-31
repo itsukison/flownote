@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, Plus, Loader2 } from 'lucide-react'
+import { ChevronRight, Plus, Loader2, ArrowLeft } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { ja } from '@/i18n/ja'
 import { Workflow, useWorkflows } from '@/hooks/useWorkflows'
@@ -130,13 +130,21 @@ export default function WorkflowEditor({
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-white/30 mb-6">
-        <button onClick={() => navigate('/workflow')} className="hover:text-white/60 transition-colors">
-          {t.editor.breadcrumb}
+      {/* Back & Breadcrumb */}
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => navigate('/workflow')}
+          className="p-1.5 rounded-lg bg-white/[0.04] hover:bg-white/10 text-white/60 hover:text-white/90 transition-colors"
+        >
+          <ArrowLeft size={16} />
         </button>
-        <ChevronRight size={11} />
-        <span className="text-white/60">{name || t.editor.namePlaceholder}</span>
+        <div className="flex items-center gap-1.5 text-xs text-white/30">
+          <button onClick={() => navigate('/workflow')} className="hover:text-white/60 transition-colors">
+            {t.editor.breadcrumb}
+          </button>
+          <ChevronRight size={11} />
+          <span className="text-white/60">{name || t.editor.namePlaceholder}</span>
+        </div>
       </div>
 
       {/* Header */}
@@ -156,20 +164,22 @@ export default function WorkflowEditor({
           {saving && <Loader2 size={12} className="animate-spin" />}
           {saving ? t.editor.saving : t.editor.save}
         </button>
-        <button
-          onClick={handleToggleActive}
-          disabled={!savedId}
-          className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-            !savedId
-              ? 'bg-white/[0.04] text-white/20 cursor-not-allowed'
-              : isActive
-                ? 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
-                : 'bg-white/[0.06] text-white/50 hover:bg-white/10'
-          }`}
-          title={!savedId ? t.editor.activateHint : undefined}
-        >
-          {isActive ? t.editor.deactivate : t.editor.activate}
-        </button>
+        {triggerType !== 'manual' && (
+          <button
+            onClick={handleToggleActive}
+            disabled={!savedId}
+            className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              !savedId
+                ? 'bg-white/[0.04] text-white/20 cursor-not-allowed'
+                : isActive
+                  ? 'bg-green-500/20 text-green-300 hover:bg-green-500/30'
+                  : 'bg-white/[0.06] text-white/50 hover:bg-white/10'
+            }`}
+            title={!savedId ? t.editor.activateHint : undefined}
+          >
+            {isActive ? t.editor.deactivate : t.editor.activate}
+          </button>
+        )}
       </div>
 
       {/* Trigger Block */}

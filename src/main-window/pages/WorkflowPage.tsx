@@ -1,9 +1,10 @@
 import { Routes, Route, useNavigate } from 'react-router-dom'
-import { Plus, Zap, Hand, Clock, Play, Loader2 } from 'lucide-react'
+import { Plus, Zap, Hand, Clock, Play, Loader2, ListChecks } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { useWorkflows, Workflow } from '@/hooks/useWorkflows'
 import { WORKFLOW_TEMPLATES } from './workflow/templates'
 import WorkflowEditor from './workflow/WorkflowEditor'
+import WorkflowHistoryPage from './WorkflowHistoryPage'
 import MeetingPickerModal from './workflow/components/MeetingPickerModal'
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
@@ -103,15 +104,25 @@ function WorkflowList() {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-base font-semibold text-white/90">{t.title}</h2>
-        <button
-          onClick={() => navigate('/workflow/new')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
-        >
-          <Plus size={13} />
-          {t.newWorkflow}
-        </button>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.title}</h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/workflow/history')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] text-xs font-medium transition-colors"
+            title={ja.workflowHistory.title}
+          >
+            <ListChecks size={13} />
+            {ja.workflowHistory.title}
+          </button>
+          <button
+            onClick={() => navigate('/workflow/new')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
+          >
+            <Plus size={13} />
+            {t.newWorkflow}
+          </button>
+        </div>
       </div>
 
       {workflows.length === 0 ? (
@@ -162,19 +173,21 @@ function WorkflowList() {
                   </button>
                 )}
 
-                {/* Toggle */}
-                <button
-                  onClick={() => toggleWorkflow(wf.id, !wf.is_active)}
-                  className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
-                    wf.is_active ? 'bg-green-500/40' : 'bg-white/[0.08]'
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                      wf.is_active ? 'left-[18px]' : 'left-0.5'
+                {/* Toggle (Auto only) */}
+                {wf.trigger_type !== 'manual' && (
+                  <button
+                    onClick={() => toggleWorkflow(wf.id, !wf.is_active)}
+                    className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
+                      wf.is_active ? 'bg-green-500/40' : 'bg-white/[0.08]'
                     }`}
-                  />
-                </button>
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                        wf.is_active ? 'left-[18px]' : 'left-0.5'
+                      }`}
+                    />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -228,6 +241,7 @@ export default function WorkflowPage() {
   return (
     <Routes>
       <Route index element={<WorkflowList />} />
+      <Route path="history" element={<WorkflowHistoryPage />} />
       <Route
         path="new"
         element={
