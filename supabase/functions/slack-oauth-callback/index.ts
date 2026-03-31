@@ -5,36 +5,21 @@ const SLACK_CLIENT_SECRET = Deno.env.get('SLACK_CLIENT_SECRET') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-const HTML_SUCCESS = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Flownote</title>
-<style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0e0e10;color:#fff}
-.card{text-align:center;padding:40px;border-radius:16px;background:#1a1a1e}
-h2{margin:0 0 8px}p{color:#888;margin:0}</style></head>
-<body><div class="card"><h2>Slackの連携が完了しました</h2><p>このウィンドウを閉じてください。</p></div></body></html>`
+function textPage(title: string, subtitle: string): string {
+  return title + '\n\n' + subtitle + '\n\nThis window can be closed.'
+}
 
-const HTML_ERROR = (msg: string) => `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Flownote</title>
-<style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0e0e10;color:#fff}
-.card{text-align:center;padding:40px;border-radius:16px;background:#1a1a1e}
-h2{margin:0 0 8px;color:#ef4444}p{color:#888;margin:0}</style></head>
-<body><div class="card"><h2>エラーが発生しました</h2><p>${msg}</p></div></body></html>`
-
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   const code = url.searchParams.get('code')
   const stateToken = url.searchParams.get('state')
 
   if (!code || !stateToken) {
-    return new Response(HTML_ERROR('パラメータが不足しています'), {
-      status: 400,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    return new Response(textPage('Error', 'Missing required parameters.'), { status: 400 })
   }
 
-  // Service role client to bypass RLS
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-  // Verify state token (CSRF protection)
   const { data: stateRow, error: stateError } = await supabase
     .from('oauth_states')
     .select('user_id, created_at')
@@ -43,27 +28,18 @@ Deno.serve(async (req) => {
     .single()
 
   if (stateError || !stateRow) {
-    return new Response(HTML_ERROR('無効または期限切れのリクエストです。もう一度お試しください。'), {
-      status: 403,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    return new Response(textPage('Authentication Error', 'Invalid or expired request. Please try again.'), { status: 403 })
   }
 
-  // Check expiry (10 minutes)
   const createdAt = new Date(stateRow.created_at).getTime()
   if (Date.now() - createdAt > 10 * 60 * 1000) {
     await supabase.from('oauth_states').delete().eq('state_token', stateToken)
-    return new Response(HTML_ERROR('リクエストの有効期限が切れました。もう一度お試しください。'), {
-      status: 403,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    return new Response(textPage('Expired', 'This request has expired. Please try again.'), { status: 403 })
   }
 
-  // Delete used state token
   await supabase.from('oauth_states').delete().eq('state_token', stateToken)
 
-  // Exchange code for Slack token
-  const redirectUri = `${SUPABASE_URL}/functions/v1/slack-oauth-callback`
+  const redirectUri = SUPABASE_URL + '/functions/v1/slack-oauth-callback'
   const tokenRes = await fetch('https://slack.com/api/oauth.v2.access', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -79,13 +55,9 @@ Deno.serve(async (req) => {
 
   if (!tokenData.ok) {
     console.error('[SlackOAuth] Token exchange failed:', tokenData.error)
-    return new Response(HTML_ERROR(`Slack認証に失敗しました: ${tokenData.error}`), {
-      status: 400,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    return new Response(textPage('Slack Auth Failed', tokenData.error || 'Unknown error'), { status: 400 })
   }
 
-  // Store integration
   const config = {
     access_token: tokenData.access_token,
     team_name: tokenData.team?.name ?? '',
@@ -108,14 +80,8 @@ Deno.serve(async (req) => {
 
   if (upsertError) {
     console.error('[SlackOAuth] Upsert error:', upsertError)
-    return new Response(HTML_ERROR('データの保存に失敗しました。もう一度お試しください。'), {
-      status: 500,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+    return new Response(textPage('Save Error', 'Failed to save data. Please try again.'), { status: 500 })
   }
 
-  return new Response(HTML_SUCCESS, {
-    status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
-  })
+  return new Response(textPage('Slack Connected', 'Flownote has been successfully connected to Slack.'), { status: 200 })
 })

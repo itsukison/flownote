@@ -102,6 +102,7 @@ export default function TriggerBlock({ triggerType, triggerConfig, onChange }: T
           )}
 
           <p className="text-[10px] text-white/20 mt-1">{t.appMustBeRunning}</p>
+          <p className="text-[10px] text-white/20">{ja.workflow.scheduledNote}</p>
         </div>
       )}
     </div>

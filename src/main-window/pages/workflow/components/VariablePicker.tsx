@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react'
 import { ja } from '@/i18n/ja'
+import { useAutoSummaryEnabled } from '@/hooks/useAutoSummaryEnabled'
 
 const t = ja.workflow.variables
 
@@ -8,7 +8,7 @@ interface VariablePickerProps {
   stepIndex: number  // current step index (0-based), to determine available step_N_result vars
   totalSteps: number
   onInsert: (variable: string) => void
-  onClose: () => void
+  templateText?: string  // current step template text, used to detect orphaned {summary} references
 }
 
 export default function VariablePicker({
@@ -16,17 +16,9 @@ export default function VariablePicker({
   stepIndex,
   totalSteps,
   onInsert,
-  onClose,
+  templateText,
 }: VariablePickerProps) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
+  const { autoSummaryEnabled } = useAutoSummaryEnabled()
 
   // Build available variables based on context
   const variables: { key: string; label: string; color: string }[] = [
@@ -34,7 +26,8 @@ export default function VariablePicker({
     { key: 'questions', label: t.questions, color: 'bg-purple-500/20 text-purple-300' },
   ]
 
-  if (triggerType !== 'scheduled') {
+  // Summary available only when auto-summary is enabled AND not meeting_end (timing issue)
+  if (autoSummaryEnabled && triggerType !== 'meeting_end') {
     variables.push({ key: 'summary', label: t.summary, color: 'bg-green-500/20 text-green-300' })
   }
 
@@ -49,59 +42,32 @@ export default function VariablePicker({
     })
   }
 
+  // Warn if template uses {summary} but auto-summary is disabled
+  const hasSummaryRef = templateText?.includes('{summary}')
+  const showSummaryWarning = hasSummaryRef && !autoSummaryEnabled
+
   return (
-    <div
-      ref={ref}
-      className="absolute z-50 mt-1 p-2 rounded-lg border border-white/[0.1] bg-[#1a1a1e] shadow-xl min-w-[180px]"
-    >
-      <div className="text-[10px] text-white/30 uppercase tracking-wider px-2 py-1 mb-1">
+    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full px-2 pb-1 pt-1">
+      <div className="text-[10px] text-white/30 uppercase tracking-wider whitespace-nowrap hidden sm:block">
         {ja.workflow.step.insertVariable}
       </div>
       {variables.map((v) => (
         <button
           key={v.key}
-          onClick={() => {
-            onInsert(`{${v.key}}`)
-            onClose()
-          }}
-          className="w-full text-left px-2 py-1.5 rounded-md hover:bg-white/[0.06] transition-colors flex items-center gap-2"
+          onClick={() => onInsert(`{${v.key}}`)}
+          draggable
+          onDragStart={(e) => e.dataTransfer.setData('text/plain', `{${v.key}}`)}
+          className={`flex-none text-[10px] px-2 py-0.5 rounded-full cursor-grab active:cursor-grabbing hover:opacity-80 transition-opacity ${v.color}`}
+          title={v.key}
         >
-          <span className={`text-[10px] px-1.5 py-0.5 rounded ${v.color}`}>{v.label}</span>
+          {v.label}
         </button>
       ))}
-    </div>
-  )
-}
-
-/**
- * Renders a preview of a template string with variable pills.
- */
-export function VariablePreview({ template }: { template: string }) {
-  const varColors: Record<string, string> = {
-    transcript: 'bg-blue-500/20 text-blue-300',
-    questions: 'bg-purple-500/20 text-purple-300',
-    summary: 'bg-green-500/20 text-green-300',
-    date: 'bg-yellow-500/20 text-yellow-300',
-  }
-
-  const parts = template.split(/(\{[^}]+\})/g)
-
-  return (
-    <div className="text-xs text-white/50 leading-relaxed whitespace-pre-wrap">
-      {parts.map((part, i) => {
-        const match = part.match(/^\{(\w+)\}$/)
-        if (match) {
-          const key = match[1]
-          const color = varColors[key] ?? 'bg-orange-500/20 text-orange-300'
-          const label = (ja.workflow.variables as any)[key] ?? key
-          return (
-            <span key={i} className={`inline-block text-[10px] px-1.5 py-0.5 rounded ${color} mx-0.5`}>
-              {label}
-            </span>
-          )
-        }
-        return <span key={i}>{part}</span>
-      })}
+      {showSummaryWarning && (
+        <span className="flex-none text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">
+          サマリー自動生成が無効です
+        </span>
+      )}
     </div>
   )
 }

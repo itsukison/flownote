@@ -45,6 +45,7 @@ declare global {
             onTranscriptResponseDone: (cb: () => void) => () => void
             // ── Session History ──────────────────────────────────────────────────────
             getSessions: () => Promise<{ success: boolean; data: SessionTranscript[]; error?: string }>
+            getRecentSessions: () => Promise<{ success: boolean; data: { id: string; title: string | null; started_at: string }[]; error?: string }>
             getSessionDetail: (id: string) => Promise<{ success: boolean; data?: SessionTranscript; error?: string }>
             deleteSession: (id: string) => Promise<{ success: boolean; error?: string }>
             updateSessionTitle: (id: string, title: string) => Promise<{ success: boolean; error?: string }>
@@ -80,6 +81,9 @@ declare global {
             onUsageLimitExceeded: (cb: () => void) => () => void
             onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
             onCollectionsChanged: (cb: () => void) => () => void
+            // ── Profile Settings ────────────────────────────────────────────────────
+            getProfileSettings: () => Promise<{ success: boolean; auto_summary_enabled: boolean; error?: string }>
+            setAutoSummary: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
             // ── Prompts ────────────────────────────────────────────────────────────────
             getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; selectedTranscriptId?: string | null; selectedSummaryId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
@@ -93,7 +97,7 @@ declare global {
             updateWorkflow: (id: string, updates: any) => Promise<{ success: boolean; data?: any; error?: string }>
             deleteWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
             toggleWorkflow: (id: string, isActive: boolean) => Promise<{ success: boolean; data?: any; error?: string }>
-            runWorkflow: (id: string) => Promise<{ success: boolean; error?: string }>
+            runWorkflow: (id: string, transcriptId?: string) => Promise<{ success: boolean; error?: string }>
             // ── Integrations ──────────────────────────────────────────────────────────
             getIntegration: (provider: string) => Promise<{ success: boolean; connected: boolean; data?: any; error?: string }>
             slackConnect: () => Promise<{ success: boolean; error?: string }>

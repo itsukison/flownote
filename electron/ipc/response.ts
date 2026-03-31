@@ -133,9 +133,20 @@ export function registerResponseHandlers(
 
       let prompt: string
       if (isRag) {
-        prompt = selectedPrompt.content
-          .replace(/{{context}}/g, contextBlock || '参考資料はありません')
-          .replace(/{{question}}/g, question)
+        const template = selectedPrompt.content
+        const hasContext = template.includes('{{context}}')
+        const hasQuestion = template.includes('{{question}}')
+        const hasAny = hasContext || hasQuestion
+        const contextText = contextBlock || '参考資料はありません'
+        if (hasAny) {
+          prompt = template
+            .replace(/{{context}}/g, contextText)
+            .replace(/{{question}}/g, question)
+          if (!hasContext) prompt = `${prompt}\n\n${contextText}`
+          if (!hasQuestion) prompt = `${prompt}\n\n質問: ${question}`
+        } else {
+          prompt = `${template}\n\n${contextText}\n\n質問: ${question}`
+        }
       } else {
         prompt = `${selectedPrompt.content}\n\n質問: ${question}`
       }

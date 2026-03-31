@@ -4,7 +4,7 @@ import { TranscriptionSession, TranscriptSegment } from '../audio/TranscriptionS
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
-import { generateSessionTitle } from './ai-handlers'
+import { generateSessionTitle, generateSummaryForTranscript } from './ai-handlers'
 import { workflowEvents } from '../services/workflow-engine'
 
 type GetWindowFn = () => BrowserWindow | null
@@ -73,10 +73,27 @@ export async function saveAndResetSession(): Promise<void> {
       .update({ ended_at: new Date().toISOString(), segments })
       .eq('id', currentTranscriptId)
 
+    const savedTranscriptId = currentTranscriptId
+
     if (_genAI) {
-      generateSessionTitle(_genAI, _getSupabase, currentTranscriptId, segments).catch(
+      generateSessionTitle(_genAI, _getSupabase, savedTranscriptId, segments).catch(
         (err) => console.error('[Transcription] Auto-title error:', err)
       )
+
+      // Auto-generate summary if enabled in user profile
+      const userId = await getCurrentUserId(_getSupabase)
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('auto_summary_enabled')
+          .eq('id', userId)
+          .single()
+        if (profile?.auto_summary_enabled) {
+          generateSummaryForTranscript(_genAI, _getSupabase, savedTranscriptId).catch(
+            (err) => console.error('[Transcription] Auto-summary error:', err)
+          )
+        }
+      }
     }
   }
 

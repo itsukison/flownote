@@ -49,19 +49,25 @@ export default function StepCard({
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06]">
-        {/* Type tabs */}
-        <div className="flex gap-0.5 p-0.5 rounded-md bg-white/[0.04]">
-          <button
-            onClick={() => onUpdate({ ...step, type: 'ai_process' })}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all ${
-              step.type === 'ai_process'
-                ? 'bg-white/10 text-white'
-                : 'text-white/35 hover:text-white/55'
-            }`}
-          >
-            <Bot size={12} />
-            {t.aiProcess}
-          </button>
+        <div className="flex items-center gap-3">
+          {/* Step indicator */}
+          <span className="text-[11px] font-bold text-white/40 tracking-wider">
+            STEP {stepIndex + 1}
+          </span>
+          
+          {/* Type tabs */}
+          <div className="flex gap-0.5 p-0.5 rounded-md bg-white/[0.04]">
+            <button
+              onClick={() => onUpdate({ ...step, type: 'ai_process' })}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all ${
+                step.type === 'ai_process'
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/35 hover:text-white/55'
+              }`}
+            >
+              <Bot size={12} />
+              {t.aiProcess}
+            </button>
           <button
             onClick={() => onUpdate({ ...step, type: 'slack_send' })}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-all ${
@@ -74,8 +80,9 @@ export default function StepCard({
             {t.slackSend}
           </button>
         </div>
+      </div>
 
-        {/* Actions */}
+      {/* Actions */}
         <div className="flex items-center gap-0.5">
           <button
             onClick={onMoveUp}

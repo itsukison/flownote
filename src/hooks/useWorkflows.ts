@@ -103,8 +103,8 @@ export function useWorkflows() {
     return result
   }, [])
 
-  const runWorkflow = useCallback(async (id: string) => {
-    return await window.electronAPI?.runWorkflow(id)
+  const runWorkflow = useCallback(async (id: string, transcriptId?: string) => {
+    return await window.electronAPI?.runWorkflow(id, transcriptId)
   }, [])
 
   const connectSlack = useCallback(async () => {

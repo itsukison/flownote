@@ -182,9 +182,19 @@ export function registerSessionAIHandlers(
       const segments = getCurrentSegments()
       const transcriptText = segments.map((s) => `[${s.speaker}]: ${s.text}`).join('\n')
       const contextWindow = transcriptText.slice(-15000)
-      const prompt = promptTemplate
-        .replace('{{transcript}}', contextWindow)
-        .replace('{{question}}', question)
+      const hasTranscript = promptTemplate.includes('{{transcript}}')
+      const hasQuestion = promptTemplate.includes('{{question}}')
+      const hasAny = hasTranscript || hasQuestion
+      let prompt = promptTemplate
+      if (hasAny) {
+        prompt = prompt
+          .replace(/{{transcript}}/g, contextWindow)
+          .replace(/{{question}}/g, question)
+        if (!hasTranscript) prompt = `${prompt}\n\n【文字起こし】\n${contextWindow}`
+        if (!hasQuestion) prompt = `${prompt}\n\n【質問】\n${question}`
+      } else {
+        prompt = `${prompt}\n\n【文字起こし】\n${contextWindow}\n\n【質問】\n${question}`
+      }
 
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash-lite',
@@ -220,83 +230,7 @@ export function registerSessionAIHandlers(
   ipcMain.handle('session:generate-summary', async (_event, transcriptId: string) => {
     const win = getMainWindow()
     if (!genAI || !win) return { success: false, error: 'AI not available' }
-
-    try {
-      const budgetCheck = await ensureBudget(getSupabase)
-      if (!budgetCheck.allowed) {
-        win.webContents.send('session-summary-done')
-        return { success: false, error: budgetCheck.error || 'limit_exceeded' }
-      }
-
-      const supabase = getSupabase()
-      if (!supabase) {
-        win.webContents.send('session-summary-done')
-        return { success: false, error: 'no_database' }
-      }
-
-      const { data } = await supabase
-        .from('transcripts')
-        .select('segments')
-        .eq('id', transcriptId)
-        .single()
-
-      if (!data?.segments || (data.segments as any[]).length === 0) {
-        win.webContents.send('session-summary-done')
-        return { success: false, error: 'no_segments' }
-      }
-
-      const transcriptText = (data.segments as any[])
-        .map((s: any) => `[${s.speaker}]: ${s.text}`)
-        .join('\n')
-
-      const summaryTemplate = await fetchSelectedPromptContent(
-        getSupabase,
-        'selected_summary_prompt_id',
-        HARDCODED_SUMMARY_PROMPT,
-        DEFAULT_SUMMARY_TEMPLATES
-      )
-      const prompt = summaryTemplate.replace('{{transcript}}', transcriptText.slice(-20000))
-
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash-lite',
-        generationConfig: { temperature: 0.5, maxOutputTokens: 2000 },
-      })
-
-      const result = await model.generateContentStream(prompt)
-      let fullText = ''
-      let lastUsageMetadata: any = null
-
-      for await (const chunk of result.stream) {
-        const text = chunk.text()
-        if (text) {
-          fullText += text
-          win.webContents.send('session-summary-chunk', text)
-        }
-        if (chunk.usageMetadata) lastUsageMetadata = chunk.usageMetadata
-      }
-
-      if (fullText) {
-        await supabase
-          .from('transcripts')
-          .update({ summary: fullText })
-          .eq('id', transcriptId)
-      }
-
-      if (lastUsageMetadata) {
-        const promptTokens = lastUsageMetadata.promptTokenCount || 0
-        const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
-        if (promptTokens > 0 || responseTokens > 0) {
-          trackNormalizedAndRecord(getSupabase, 'gemini', promptTokens, responseTokens)
-        }
-      }
-
-      win.webContents.send('session-summary-done')
-      return { success: true }
-    } catch (err: any) {
-      console.error('[AI] generate-summary error:', err)
-      getMainWindow()?.webContents.send('session-summary-done')
-      return { success: false, error: err.message }
-    }
+    return generateSummaryForTranscript(genAI, getSupabase, transcriptId, { streamTo: win })
   })
 
   ipcMain.handle('session:ask-question', async (_event, transcriptId: string, question: string) => {
@@ -395,6 +329,103 @@ ${question}`
       return { success: false, error: err.message }
     }
   })
+}
+
+// Auto-generate summary for a transcript (standalone, optionally streams to window)
+export async function generateSummaryForTranscript(
+  genAI: GoogleGenerativeAI,
+  getSupabase: GetSupabaseFn,
+  transcriptId: string,
+  opts?: { streamTo?: BrowserWindow }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const budgetCheck = await ensureBudget(getSupabase)
+    if (!budgetCheck.allowed) {
+      opts?.streamTo?.webContents.send('session-summary-done')
+      return { success: false, error: budgetCheck.error || 'limit_exceeded' }
+    }
+
+    const supabase = getSupabase()
+    if (!supabase) {
+      opts?.streamTo?.webContents.send('session-summary-done')
+      return { success: false, error: 'no_database' }
+    }
+
+    // Skip if summary already exists (avoid overwriting manually generated ones)
+    const { data } = await supabase
+      .from('transcripts')
+      .select('segments, summary')
+      .eq('id', transcriptId)
+      .single()
+
+    if (data?.summary) {
+      opts?.streamTo?.webContents.send('session-summary-done')
+      return { success: true }
+    }
+
+    if (!data?.segments || (data.segments as any[]).length === 0) {
+      opts?.streamTo?.webContents.send('session-summary-done')
+      return { success: false, error: 'no_segments' }
+    }
+
+    const transcriptText = (data.segments as any[])
+      .map((s: any) => `[${s.speaker}]: ${s.text}`)
+      .join('\n')
+
+    const summaryTemplate = await fetchSelectedPromptContent(
+      getSupabase,
+      'selected_summary_prompt_id',
+      HARDCODED_SUMMARY_PROMPT,
+      DEFAULT_SUMMARY_TEMPLATES
+    )
+    const summaryText = transcriptText.slice(-20000)
+    const hasTranscript = summaryTemplate.includes('{{transcript}}')
+    const prompt = hasTranscript
+      ? summaryTemplate.replace(/{{transcript}}/g, summaryText)
+      : `${summaryTemplate}\n\n【文字起こし】\n${summaryText}`
+
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-lite',
+      generationConfig: { temperature: 0.5, maxOutputTokens: 2000 },
+    })
+
+    const result = await model.generateContentStream(prompt)
+    let fullText = ''
+    let lastUsageMetadata: any = null
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text()
+      if (text) {
+        fullText += text
+        if (opts?.streamTo) {
+          opts.streamTo.webContents.send('session-summary-chunk', text)
+        }
+      }
+      if (chunk.usageMetadata) lastUsageMetadata = chunk.usageMetadata
+    }
+
+    if (fullText) {
+      await supabase
+        .from('transcripts')
+        .update({ summary: fullText })
+        .eq('id', transcriptId)
+    }
+
+    if (lastUsageMetadata) {
+      const promptTokens = lastUsageMetadata.promptTokenCount || 0
+      const responseTokens = lastUsageMetadata.candidatesTokenCount || lastUsageMetadata.responseTokenCount || 0
+      if (promptTokens > 0 || responseTokens > 0) {
+        trackNormalizedAndRecord(getSupabase, 'gemini', promptTokens, responseTokens)
+      }
+    }
+
+    opts?.streamTo?.webContents.send('session-summary-done')
+    return { success: true }
+  } catch (err: any) {
+    console.error('[AI] generate-summary error:', err)
+    opts?.streamTo?.webContents.send('session-summary-done')
+    return { success: false, error: err.message }
+  }
 }
 
 // Auto-generate session title from transcript (fire-and-forget)

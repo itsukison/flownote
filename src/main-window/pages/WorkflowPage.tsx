@@ -4,6 +4,7 @@ import { ja } from '@/i18n/ja'
 import { useWorkflows, Workflow } from '@/hooks/useWorkflows'
 import { WORKFLOW_TEMPLATES } from './workflow/templates'
 import WorkflowEditor from './workflow/WorkflowEditor'
+import MeetingPickerModal from './workflow/components/MeetingPickerModal'
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 
@@ -56,6 +57,7 @@ function WorkflowList() {
     createWorkflow, updateWorkflow,
   } = useWorkflows()
   const [runningId, setRunningId] = useState<string | null>(null)
+  const [pendingRunId, setPendingRunId] = useState<string | null>(null)
 
   // Listen for workflow run completion toasts
   useEffect(() => {
@@ -69,10 +71,17 @@ function WorkflowList() {
     return () => { unsub?.() }
   }, [])
 
-  const handleRun = async (id: string) => {
+  const handleRunClick = (id: string) => {
+    setPendingRunId(id)
+  }
+
+  const handleRunConfirm = async (transcriptId: string) => {
+    const id = pendingRunId
+    setPendingRunId(null)
+    if (!id) return
     setRunningId(id)
     try {
-      await runWorkflow(id)
+      await runWorkflow(id, transcriptId)
     } finally {
       setRunningId(null)
     }
@@ -92,15 +101,96 @@ function WorkflowList() {
     )
   }
 
-  // Empty state
-  if (workflows.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <div className="text-center mb-8">
-          <h2 className="text-lg font-semibold text-white/90 mb-2">{t.emptyTitle}</h2>
-          <p className="text-sm text-white/40">{t.emptyDescription}</p>
-        </div>
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-8">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-base font-semibold text-white/90">{t.title}</h2>
+        <button
+          onClick={() => navigate('/workflow/new')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
+        >
+          <Plus size={13} />
+          {t.newWorkflow}
+        </button>
+      </div>
 
+      {workflows.length === 0 ? (
+        <div className="text-center py-12 border border-dashed border-white/10 bg-white/[0.01] rounded-xl mb-12">
+          <h2 className="text-sm font-medium text-white/60 mb-2">{t.emptyTitle}</h2>
+          <p className="text-xs text-white/30">{t.emptyDescription}</p>
+        </div>
+      ) : (
+        <div className="space-y-2 mb-12">
+          {workflows.map((wf) => (
+            <div
+              key={wf.id}
+              className="rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
+            >
+              <div className="flex items-center gap-3 px-4 py-3">
+                {/* Status dot */}
+                <div className={`w-2 h-2 rounded-full flex-none ${statusDot(wf.last_run_status)}`} />
+
+                {/* Name + meta */}
+                <button
+                  onClick={() => navigate(`/workflow/edit/${wf.id}`)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <div className="text-sm font-medium text-white/80 truncate">{wf.name}</div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="flex items-center gap-1 text-[11px] text-white/30">
+                      {triggerIcon(wf.trigger_type)}
+                      {triggerLabel(wf.trigger_type)}
+                    </span>
+                    <span className="text-[11px] text-white/20">
+                      {t.card.steps.replace('{count}', String(wf.steps?.length ?? 0))}
+                    </span>
+                    <span className="text-[11px] text-white/20">
+                      {formatLastRun(wf.last_run_at)}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Run button (manual only) */}
+                {wf.trigger_type === 'manual' && (
+                  <button
+                    onClick={() => handleRunClick(wf.id)}
+                    disabled={runningId === wf.id}
+                    className="p-2 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                    title={t.card.run}
+                  >
+                    {runningId === wf.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                  </button>
+                )}
+
+                {/* Toggle */}
+                <button
+                  onClick={() => toggleWorkflow(wf.id, !wf.is_active)}
+                  className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
+                    wf.is_active ? 'bg-green-500/40' : 'bg-white/[0.08]'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      wf.is_active ? 'left-[18px]' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Meeting picker modal for manual run */}
+      {pendingRunId && (
+        <MeetingPickerModal
+          onConfirm={handleRunConfirm}
+          onCancel={() => setPendingRunId(null)}
+        />
+      )}
+
+      {/* Templates section always shown */}
+      <div>
         <div className="text-xs text-white/30 uppercase tracking-wider mb-4">
           {t.startFromTemplate}
         </div>
@@ -122,92 +212,6 @@ function WorkflowList() {
             </button>
           ))}
         </div>
-
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={() => navigate('/workflow/new')}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-white/[0.08] text-white/40 hover:text-white/70 hover:border-white/15 text-xs transition-colors"
-          >
-            <Plus size={13} />
-            {t.newWorkflow}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Populated list
-  return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-base font-semibold text-white/90">{t.title}</h2>
-        <button
-          onClick={() => navigate('/workflow/new')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
-        >
-          <Plus size={13} />
-          {t.newWorkflow}
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {workflows.map((wf) => (
-          <div
-            key={wf.id}
-            className="rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
-          >
-            <div className="flex items-center gap-3 px-4 py-3">
-              {/* Status dot */}
-              <div className={`w-2 h-2 rounded-full flex-none ${statusDot(wf.last_run_status)}`} />
-
-              {/* Name + meta */}
-              <button
-                onClick={() => navigate(`/workflow/edit/${wf.id}`)}
-                className="flex-1 min-w-0 text-left"
-              >
-                <div className="text-sm font-medium text-white/80 truncate">{wf.name}</div>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="flex items-center gap-1 text-[11px] text-white/30">
-                    {triggerIcon(wf.trigger_type)}
-                    {triggerLabel(wf.trigger_type)}
-                  </span>
-                  <span className="text-[11px] text-white/20">
-                    {t.card.steps.replace('{count}', String(wf.steps?.length ?? 0))}
-                  </span>
-                  <span className="text-[11px] text-white/20">
-                    {formatLastRun(wf.last_run_at)}
-                  </span>
-                </div>
-              </button>
-
-              {/* Run button (manual only) */}
-              {wf.trigger_type === 'manual' && (
-                <button
-                  onClick={() => handleRun(wf.id)}
-                  disabled={runningId === wf.id}
-                  className="p-2 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] transition-colors disabled:opacity-50"
-                  title={t.card.run}
-                >
-                  {runningId === wf.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                </button>
-              )}
-
-              {/* Toggle */}
-              <button
-                onClick={() => toggleWorkflow(wf.id, !wf.is_active)}
-                className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
-                  wf.is_active ? 'bg-green-500/40' : 'bg-white/[0.08]'
-                }`}
-              >
-                <div
-                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
-                    wf.is_active ? 'left-[18px]' : 'left-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   )

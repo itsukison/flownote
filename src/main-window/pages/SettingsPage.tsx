@@ -127,6 +127,8 @@ interface Props {
 export default function SettingsPage({ user }: Props) {
     const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage | null>(null)
     const [loadingUsage, setLoadingUsage] = useState(true)
+    const [autoSummaryEnabled, setAutoSummaryEnabled] = useState(false)
+    const [autoSummaryLoading, setAutoSummaryLoading] = useState(true)
 
     useEffect(() => {
         setLoadingUsage(true)
@@ -134,6 +136,9 @@ export default function SettingsPage({ user }: Props) {
             setMonthlyUsage(u)
             setLoadingUsage(false)
         })
+        window.electronAPI?.getProfileSettings().then((result) => {
+            if (result?.success) setAutoSummaryEnabled(result.auto_summary_enabled)
+        }).finally(() => setAutoSummaryLoading(false))
     }, [])
 
     const usagePercent = monthlyUsage && monthlyUsage.token_limit > 0
@@ -223,6 +228,34 @@ export default function SettingsPage({ user }: Props) {
                     </div>
                     <LogOut size={16} className="text-zinc-500" />
                 </button>
+            </section>
+
+            {/* Auto-Summary Section */}
+            <section className="space-y-1 mb-10">
+                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">{t.settings.autoSummary.title}</h2>
+                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                    <div>
+                        <p className="text-sm text-zinc-300">{t.settings.autoSummary.title}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5 max-w-sm leading-relaxed">{t.settings.autoSummary.description}</p>
+                    </div>
+                    <button
+                        onClick={async () => {
+                            const next = !autoSummaryEnabled
+                            setAutoSummaryEnabled(next)
+                            await window.electronAPI?.setAutoSummary(next)
+                        }}
+                        disabled={autoSummaryLoading}
+                        className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
+                            autoSummaryEnabled ? 'bg-green-500/40' : 'bg-zinc-700'
+                        }`}
+                    >
+                        <div
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                                autoSummaryEnabled ? 'left-[18px]' : 'left-0.5'
+                            }`}
+                        />
+                    </button>
+                </div>
             </section>
 
             {/* Monthly Usage Section */}

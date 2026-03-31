@@ -17,6 +17,22 @@ export function registerSessionHandlers(getSupabase: GetSupabaseFn) {
     return { success: true, data: data ?? [] }
   })
 
+  ipcMain.handle('session:list-recent', async () => {
+    const supabase = getSupabase()
+    const userId = await getCurrentUserId(getSupabase)
+    if (!supabase || !userId) return { success: false, error: 'not_authenticated', data: [] }
+
+    const { data, error } = await supabase
+      .from('transcripts')
+      .select('id, title, started_at')
+      .eq('user_id', userId)
+      .order('started_at', { ascending: false })
+      .limit(20)
+
+    if (error) return { success: false, error: error.message, data: [] }
+    return { success: true, data: data ?? [] }
+  })
+
   ipcMain.handle('session:get', async (_event, transcriptId: string) => {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'no_database' }

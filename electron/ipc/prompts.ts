@@ -156,6 +156,42 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     }
   })
 
+  // ── Profile Settings ─────────────────────────────────────────────────────
+
+  ipcMain.handle('profiles:get-settings', async () => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'no_database' }
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: 'not_authenticated' }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('auto_summary_enabled')
+        .eq('id', user.id)
+        .single()
+      return { success: true, auto_summary_enabled: profile?.auto_summary_enabled ?? false }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('profiles:set-auto-summary', async (_event, enabled: boolean) => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'no_database' }
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: 'not_authenticated' }
+      const { error } = await supabase
+        .from('profiles')
+        .update({ auto_summary_enabled: enabled })
+        .eq('id', user.id)
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
+  })
+
   ipcMain.handle('prompts:select', async (_event, id: string | null, type: string) => {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }

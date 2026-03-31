@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Session History ──────────────────────────────────────────────────────
   getSessions: () => ipcRenderer.invoke('session:list'),
+  getRecentSessions: () => ipcRenderer.invoke('session:list-recent'),
   getSessionDetail: (id: string) => ipcRenderer.invoke('session:get', id),
   deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
   updateSessionTitle: (id: string, title: string) =>
@@ -181,6 +182,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('collections-changed', fn)
   },
 
+  // ── Profile Settings ────────────────────────────────────────────────────
+  getProfileSettings: () => ipcRenderer.invoke('profiles:get-settings'),
+  setAutoSummary: (enabled: boolean) => ipcRenderer.invoke('profiles:set-auto-summary', enabled),
+
   // ── Prompts ────────────────────────────────────────────────────────────────
   getPrompts: () => ipcRenderer.invoke('prompts:list'),
   createPrompt: (name: string, content: string, promptType: string) =>
@@ -199,7 +204,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateWorkflow: (id: string, updates: any) => ipcRenderer.invoke('workflows:update', id, updates),
   deleteWorkflow: (id: string) => ipcRenderer.invoke('workflows:delete', id),
   toggleWorkflow: (id: string, isActive: boolean) => ipcRenderer.invoke('workflows:toggle', id, isActive),
-  runWorkflow: (id: string) => ipcRenderer.invoke('workflows:run', id),
+  runWorkflow: (id: string, transcriptId?: string) => ipcRenderer.invoke('workflows:run', id, transcriptId),
 
   // ── Integrations ────────────────────────────────────────────────────────
   getIntegration: (provider: string) => ipcRenderer.invoke('integrations:get', provider),

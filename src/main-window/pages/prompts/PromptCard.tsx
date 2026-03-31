@@ -9,8 +9,9 @@ import { Prompt } from '@/hooks/usePrompts'
 const t = ja
 
 const getPromptIcon = (prompt: Prompt) => {
-  const iconClass = "text-zinc-500";
+  const commonIconClass = "text-white/60";
   if (prompt.prompt_type === 'summary') {
+    const iconClass = "text-purple-400/70";
     switch (prompt.id) {
       case '__default_summary_1__': return <FileText size={14} className={iconClass} />;
       case '__default_summary_2__': return <List size={14} className={iconClass} />;
@@ -20,10 +21,10 @@ const getPromptIcon = (prompt: Prompt) => {
       default: return <ClipboardList size={14} className={iconClass} />;
     }
   }
-  if (prompt.prompt_type === 'base') return <PenTool size={14} className={iconClass} />;
-  if (prompt.prompt_type === 'rag') return <Database size={14} className={iconClass} />;
-  if (prompt.prompt_type === 'transcript') return <MessageSquareText size={14} className={iconClass} />;
-  if (prompt.prompt_type === 'quick') return <Zap size={14} className={iconClass} />;
+  if (prompt.prompt_type === 'base') return <PenTool size={14} className={commonIconClass} />;
+  if (prompt.prompt_type === 'rag') return <Database size={14} className={commonIconClass} />;
+  if (prompt.prompt_type === 'transcript') return <MessageSquareText size={14} className={commonIconClass} />;
+  if (prompt.prompt_type === 'quick') return <Zap size={14} className="text-yellow-400/60" />;
   return null;
 }
 
@@ -45,25 +46,25 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
   return (
     <div
       className={`group relative p-4 border rounded-xl transition-all cursor-pointer ${isSelected
-        ? 'bg-white/[0.06] border-white/20'
-        : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1]'
+        ? 'bg-white/[0.06] border-white/[0.15]'
+        : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.12]'
         }`}
       onClick={toggleMode ? () => onToggleActive?.(!prompt.is_active) : onSelect}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2 truncate">
+            <h3 className="text-sm font-medium text-white/90 flex items-center gap-2 truncate">
               {getPromptIcon(prompt)}
               {prompt.name}
             </h3>
             {prompt.is_default && (
-              <span className="text-[9px] px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded-full">
+              <span className="text-[9px] px-1.5 py-0.5 bg-white/[0.06] text-white/40 rounded-full font-medium">
                 {t.prompts.default}
               </span>
             )}
             {!isQuick && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/[0.04] text-white/40 font-medium">
                 {prompt.prompt_type === 'rag' ? 'RAG'
                   : prompt.prompt_type === 'transcript' ? t.prompts.typeTranscript
                   : prompt.prompt_type === 'summary' ? t.prompts.typeSummary
@@ -71,7 +72,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
               </span>
             )}
           </div>
-          <p className={`text-xs text-zinc-500 font-mono whitespace-pre-wrap ${!isExpanded ? 'line-clamp-2' : ''}`}>
+          <p className={`text-xs text-white/50 font-mono whitespace-pre-wrap leading-relaxed ${!isExpanded ? 'line-clamp-2' : ''}`}>
             {prompt.content}
           </p>
         </div>
@@ -80,7 +81,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
           {prompt.is_default && !isQuick && (
             <button
               onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded) }}
-              className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="p-1 text-white/30 hover:text-white/60 transition-colors"
             >
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
@@ -89,7 +90,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             <button
               onClick={(e) => { e.stopPropagation(); onToggleActive?.(!prompt.is_active) }}
               className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
-                prompt.is_active ? 'bg-zinc-400' : 'bg-zinc-700'
+                prompt.is_active ? 'bg-green-500/40' : 'bg-white/[0.08]'
               }`}
             >
               <span
@@ -100,7 +101,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             </button>
           ) : isSelected ? (
             <div className="flex-none">
-              <Check size={16} className="text-zinc-200" />
+              <Check size={16} className="text-white/80" />
             </div>
           ) : null}
         </div>
@@ -110,17 +111,17 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
         <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit() }}
-            className="p-1.5 bg-zinc-800 rounded-md hover:bg-zinc-700 transition-colors"
+            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
             title={t.common.rename}
           >
-            <Edit2 size={12} className="text-zinc-400" />
+            <Edit2 size={12} className="text-white/60" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="p-1.5 bg-zinc-800 rounded-md hover:bg-red-900/50 transition-colors"
+            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-red-500/20 transition-colors"
             title={t.common.delete}
           >
-            <Trash2 size={12} className="text-zinc-400 hover:text-red-400" />
+            <Trash2 size={12} className="text-white/60 hover:text-red-400" />
           </button>
         </div>
       )}

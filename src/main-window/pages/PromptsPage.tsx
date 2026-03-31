@@ -54,7 +54,7 @@ export default function PromptsPage({
 
   const renderForm = (forceType: Prompt['prompt_type']) => (
     <div className="mt-4">
-      <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">
+      <h2 className="text-[11px] font-semibold text-white/40 uppercase tracking-widest mb-3 pl-1">
         {editingPrompt ? t.prompts.editPrompt : t.prompts.createPrompt}
       </h2>
       <PromptFormModal
@@ -74,25 +74,18 @@ export default function PromptsPage({
     </div>
   )
 
-  const renderAddButton = (type: CreatingType, canAdd: boolean, label: string, maxLabel?: string) => {
+  const renderHeaderAddButton = (type: CreatingType, canAdd: boolean, label: string, maxLabel?: string) => {
     if (isFormOpenFor(type!)) return null
     return (
-      <>
-        <button
-          onClick={() => startCreating(type)}
-          disabled={!canAdd}
-          className={`w-full mt-3 flex items-center justify-center gap-2 py-2.5 border border-dashed rounded-xl transition-colors ${canAdd
-            ? 'border-white/[0.1] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.2] hover:bg-white/[0.02]'
-            : 'border-white/[0.05] text-zinc-700 cursor-not-allowed'
-            }`}
-        >
-          <Plus size={14} />
-          <span className="text-sm">{label}</span>
-        </button>
-        {!canAdd && maxLabel && (
-          <p className="text-xs text-zinc-600 text-center mt-2">{maxLabel}</p>
-        )}
-      </>
+      <button
+        onClick={() => startCreating(type)}
+        disabled={!canAdd}
+        title={!canAdd ? maxLabel : undefined}
+        className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/10 text-white/70 text-[10px] font-medium transition-colors disabled:opacity-30 disabled:pointer-events-none"
+      >
+        <Plus size={12} />
+        {label}
+      </button>
     )
   }
 
@@ -107,20 +100,23 @@ export default function PromptsPage({
   return (
     <div className="flex-1 flex flex-col min-h-full max-w-4xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold text-zinc-100">{t.prompts.title}</h1>
+        <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.prompts.title}</h1>
       </div>
 
       {/* ═══ Section 1: System Prompts ═══ */}
       <section className="mb-10">
         <div className="flex items-center gap-2 mb-1">
-          <FileText size={16} className="text-zinc-400" />
-          <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-widest">{t.prompts.systemPrompts}</h2>
+          <FileText size={16} className="text-white/60" />
+          <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.systemPrompts}</h2>
         </div>
-        <p className="text-[10px] text-zinc-600 mb-6 ml-[22px]">{t.prompts.systemPromptsHint}</p>
+        <p className="text-[10px] text-white/40 mb-6 ml-[24px] leading-relaxed">{t.prompts.systemPromptsHint}</p>
 
         {/* Base Prompts */}
-        <div className="mb-6">
-          <h3 className="text-xs font-medium text-zinc-400 mb-3 ml-1">{t.prompts.basePrompts}</h3>
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-xs font-semibold text-white/50">{t.prompts.basePrompts}</h3>
+            {renderHeaderAddButton('base', canAddMore, t.prompts.addBasePrompt, t.prompts.maxReached)}
+          </div>
           <div className="space-y-2">
             {basePrompts.map((prompt) => (
               <PromptCard
@@ -134,12 +130,14 @@ export default function PromptsPage({
             ))}
           </div>
           {isFormOpenFor('base') && renderForm('base')}
-          {renderAddButton('base', canAddMore, t.prompts.addBasePrompt, t.prompts.maxReached)}
         </div>
 
         {/* RAG Prompts */}
-        <div className="mb-6">
-          <h3 className="text-xs font-medium text-zinc-400 mb-3 ml-1">{t.prompts.ragPrompts}</h3>
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-xs font-semibold text-white/50">{t.prompts.ragPrompts}</h3>
+            {renderHeaderAddButton('rag', canAddMore, t.prompts.addRagPrompt, t.prompts.maxReached)}
+          </div>
           <div className="space-y-2">
             {ragPrompts.map((prompt) => (
               <PromptCard
@@ -153,12 +151,14 @@ export default function PromptsPage({
             ))}
           </div>
           {isFormOpenFor('rag') && renderForm('rag')}
-          {renderAddButton('rag', canAddMore, t.prompts.addRagPrompt, t.prompts.maxReached)}
         </div>
 
         {/* Transcript Prompts */}
         <div>
-          <h3 className="text-xs font-medium text-zinc-400 mb-3 ml-1">{t.prompts.transcriptPrompts}</h3>
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h3 className="text-xs font-semibold text-white/50">{t.prompts.transcriptPrompts}</h3>
+            {renderHeaderAddButton('transcript', canAddMoreTranscript, t.prompts.addTranscriptPrompt, t.prompts.maxTranscriptReached)}
+          </div>
           <div className="space-y-2">
             {transcriptPrompts.map((prompt) => (
               <PromptCard
@@ -172,77 +172,60 @@ export default function PromptsPage({
             ))}
           </div>
           {isFormOpenFor('transcript') && renderForm('transcript')}
-          {renderAddButton('transcript', canAddMoreTranscript, t.prompts.addTranscriptPrompt, t.prompts.maxTranscriptReached)}
         </div>
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-8">
         {/* ═══ Section 2: Quick Prompts ═══ */}
         <section>
-          <div className="flex items-center gap-2 mb-1">
-            <Zap size={16} className="text-zinc-400" />
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-widest">{t.prompts.quickPrompts}</h2>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Zap size={16} className="text-white/60" />
+              <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.quickPrompts}</h2>
+            </div>
+            {renderHeaderAddButton('quick', canAddMoreQuick, t.prompts.addQuickPrompt, t.prompts.maxQuickReached)}
           </div>
-        <p className="text-[10px] text-zinc-600 mb-4 ml-[22px]">{t.prompts.quickPromptsHint}</p>
-        <div className="space-y-2">
-          {quickPrompts.map((prompt) => (
-            <PromptCard
-              key={prompt.id}
-              prompt={prompt}
-              isSelected={false}
-              toggleMode
-              onToggleActive={(isActive) => handleToggleActive(prompt.id, isActive)}
-              onSelect={() => {}}
-              onEdit={() => startEditing(prompt)}
-              onDelete={() => handleDelete(prompt.id, 'quick')}
-            />
-          ))}
-        </div>
-
-        {isFormOpenFor('quick') && renderForm('quick')}
-
-        {!isFormOpenFor('quick') && (
-          <>
-            <button
-              onClick={() => startCreating('quick')}
-              disabled={!canAddMoreQuick}
-              className={`w-full mt-3 flex items-center justify-center gap-2 py-2.5 border border-dashed rounded-xl transition-colors ${canAddMoreQuick
-                ? 'border-white/[0.1] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.2] hover:bg-white/[0.02]'
-                : 'border-white/[0.05] text-zinc-700 cursor-not-allowed'
-                }`}
-            >
-              <Plus size={14} />
-              <span className="text-sm">{t.prompts.addQuickPrompt}</span>
-            </button>
-            {!canAddMoreQuick && (
-              <p className="text-xs text-zinc-600 text-center mt-2">{t.prompts.maxQuickReached}</p>
-            )}
-          </>
-        )}
+          <p className="text-[10px] text-white/40 mb-4 ml-[24px] leading-relaxed pr-2">{t.prompts.quickPromptsHint}</p>
+          <div className="space-y-2">
+            {quickPrompts.map((prompt) => (
+              <PromptCard
+                key={prompt.id}
+                prompt={prompt}
+                isSelected={false}
+                toggleMode
+                onToggleActive={(isActive) => handleToggleActive(prompt.id, isActive)}
+                onSelect={() => {}}
+                onEdit={() => startEditing(prompt)}
+                onDelete={() => handleDelete(prompt.id, 'quick')}
+              />
+            ))}
+          </div>
+          {isFormOpenFor('quick') && renderForm('quick')}
         </section>
 
         {/* ═══ Section 3: Summary Prompts ═══ */}
         <section>
-          <div className="flex items-center gap-2 mb-1">
-            <ClipboardList size={16} className="text-zinc-400" />
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-widest">{t.prompts.summaryPrompts}</h2>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <ClipboardList size={16} className="text-white/60" />
+              <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.summaryPrompts}</h2>
+            </div>
+            {renderHeaderAddButton('summary', canAddMoreSummary, t.prompts.addSummaryPrompt, t.prompts.maxSummaryReached)}
           </div>
-        <p className="text-[10px] text-zinc-600 mb-4 ml-[22px]">{t.prompts.summaryPromptsHint}</p>
-        <div className="space-y-2">
-          {summaryPrompts.map((prompt) => (
-            <PromptCard
-              key={prompt.id}
-              prompt={prompt}
-              isSelected={selectedSummaryId === prompt.id}
-              onSelect={() => handleSelect(prompt.id, 'summary')}
-              onEdit={() => startEditing(prompt)}
-              onDelete={() => handleDelete(prompt.id, 'summary')}
-            />
-          ))}
-        </div>
-
-        {isFormOpenFor('summary') && renderForm('summary')}
-        {renderAddButton('summary', canAddMoreSummary, t.prompts.addSummaryPrompt, t.prompts.maxSummaryReached)}
+          <p className="text-[10px] text-white/40 mb-4 ml-[24px] leading-relaxed pr-2">{t.prompts.summaryPromptsHint}</p>
+          <div className="space-y-2">
+            {summaryPrompts.map((prompt) => (
+              <PromptCard
+                key={prompt.id}
+                prompt={prompt}
+                isSelected={selectedSummaryId === prompt.id}
+                onSelect={() => handleSelect(prompt.id, 'summary')}
+                onEdit={() => startEditing(prompt)}
+                onDelete={() => handleDelete(prompt.id, 'summary')}
+              />
+            ))}
+          </div>
+          {isFormOpenFor('summary') && renderForm('summary')}
         </section>
       </div>
     </div>

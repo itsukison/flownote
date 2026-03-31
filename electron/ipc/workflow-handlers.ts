@@ -135,7 +135,7 @@ export function registerWorkflowHandlers(
 
   // ── Manual Run ─────────────────────────────────────────────────────────────
 
-  ipcMain.handle('workflows:run', async (_event, id: string) => {
+  ipcMain.handle('workflows:run', async (_event, id: string, transcriptId?: string) => {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'no_database' }
     const userId = await getCurrentUserId(getSupabase)
@@ -150,7 +150,7 @@ export function registerWorkflowHandlers(
 
     if (error || !workflow) return { success: false, error: 'Workflow not found' }
 
-    const context = await buildSessionContext(supabase, userId)
+    const context = await buildSessionContext(supabase, userId, transcriptId ? { transcriptId } : undefined)
     const result = await executeWorkflow(workflow as Workflow, context, supabase, genAI, userId)
     notifyRunCompleted(workflow.id, workflow.name, result.success, result.error)
 
