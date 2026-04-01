@@ -35,3 +35,8 @@ dist-electron
 
 # Agent files
 .agent/
+
+# Projects
+flownoteadmin/
+flownoteweb/
+

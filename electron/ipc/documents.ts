@@ -5,10 +5,22 @@ import * as crypto from 'crypto'
 import { extractText, chunkText, embedChunks, storeDocument, searchSimilar, getUsage, incrementUsage } from '../services/rag'
 import { ensureCached } from '../services/documentCache'
 import { trackNormalizedUsage } from '../services/tokenNormalization'
-import { checkBudget, isUserInOrg, maybeRefreshCache, recordUsage } from '../services/usageLimiter'
+import { checkBudget, maybeRefreshCache, recordUsage, getCachedState } from '../services/usageLimiter'
 import { normalizeTokens } from '../services/tokenNormalization'
 
 type GetWindowFn = () => BrowserWindow | null
+
+/** Persist usage to profiles (free_credits_remaining or current_period_usage) */
+function persistProfileUsage(supabase: SupabaseClient, userId: string, normalizedTokens: number) {
+    const state = getCachedState()
+    if (state.plan === 'free') {
+        supabase.rpc('decrement_free_credits', { p_user_id: userId, p_tokens: normalizedTokens })
+            .then(({ error }) => { if (error) console.error('[Documents] decrement_free_credits error:', error) })
+    } else if (state.plan === 'pro' || ((state.plan === 'business' || state.plan === 'enterprise') && !state.orgId)) {
+        supabase.rpc('increment_period_usage', { p_user_id: userId, p_tokens: normalizedTokens })
+            .then(({ error }) => { if (error) console.error('[Documents] increment_period_usage error:', error) })
+    }
+}
 
 async function ensureDocBudget(getSupabase: () => SupabaseClient | null): Promise<{ allowed: boolean; error?: string }> {
     const supabase = getSupabase()
@@ -17,7 +29,6 @@ async function ensureDocBudget(getSupabase: () => SupabaseClient | null): Promis
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return { allowed: false, error: 'not_authenticated' }
         await maybeRefreshCache(supabase, user.id)
-        if (!isUserInOrg()) return { allowed: false, error: 'no_org' }
         const budget = checkBudget()
         if (!budget.allowed) return { allowed: false, error: 'limit_exceeded' }
         return { allowed: true }
@@ -183,7 +194,9 @@ export function registerDocumentHandlers(
             // Track usage: document count + embedding tokens (normalized)
             if (embeddingTokens > 0) {
                 await trackNormalizedUsage(supabase, user.id, 'embedding', embeddingTokens, 0, { incrementDocuments: true })
-                recordUsage(normalizeTokens('embedding', embeddingTokens, 0))
+                const norm = normalizeTokens('embedding', embeddingTokens, 0)
+                recordUsage(norm)
+                persistProfileUsage(supabase, user.id, norm)
             }
 
             return { success: true, id: docId }
@@ -229,7 +242,9 @@ export function registerDocumentHandlers(
             // Track usage: document count + embedding tokens (normalized)
             if (embeddingTokens > 0) {
                 await trackNormalizedUsage(supabase, user.id, 'embedding', embeddingTokens, 0, { incrementDocuments: true })
-                recordUsage(normalizeTokens('embedding', embeddingTokens, 0))
+                const norm = normalizeTokens('embedding', embeddingTokens, 0)
+                recordUsage(norm)
+                persistProfileUsage(supabase, user.id, norm)
             }
 
             return { success: true, id: docId }
@@ -357,7 +372,9 @@ export function registerDocumentHandlers(
 
             if (tokensUsed > 0) {
                 await trackNormalizedUsage(supabase, user.id, 'embedding', tokensUsed, 0)
-                recordUsage(normalizeTokens('embedding', tokensUsed, 0))
+                const normEdit = normalizeTokens('embedding', tokensUsed, 0)
+                recordUsage(normEdit)
+                persistProfileUsage(supabase, user.id, normEdit)
             }
 
             return { success: true }

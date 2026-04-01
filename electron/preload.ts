@@ -166,6 +166,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOrgMembership: () => ipcRenderer.invoke('org:get-membership'),
   checkBudget: () => ipcRenderer.invoke('org:check-budget'),
   getMonthlyUsage: () => ipcRenderer.invoke('org:get-monthly-usage'),
+  getPlanInfo: () => ipcRenderer.invoke('org:get-plan-info'),
+  openCheckout: (plan: string, seats?: number) => ipcRenderer.invoke('org:open-checkout', plan, seats),
+  openBillingPortal: () => ipcRenderer.invoke('org:open-billing-portal'),
   onUsageLimitExceeded: (cb: () => void) => {
     const fn = () => cb()
     ipcRenderer.on('usage-limit-exceeded', fn)
@@ -175,6 +178,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_: any, payload: any) => cb(payload)
     ipcRenderer.on('org:membership-changed', fn)
     return () => ipcRenderer.removeListener('org:membership-changed', fn)
+  },
+  onPlanChanged: (cb: (payload: { plan: string; subscriptionStatus: string }) => void) => {
+    const fn = (_: any, payload: any) => cb(payload)
+    ipcRenderer.on('plan:changed', fn)
+    return () => ipcRenderer.removeListener('plan:changed', fn)
   },
   onCollectionsChanged: (cb: () => void) => {
     const fn = () => cb()

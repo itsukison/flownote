@@ -1,11 +1,25 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { getCurrentYearMonth } from './tokenNormalization'
 
+export type Plan = 'free' | 'pro' | 'business' | 'enterprise'
+
+const PLAN_LIMITS: Record<Plan, number> = {
+  free: 2_000_000,
+  pro: 20_000_000,
+  business: 20_000_000,
+  enterprise: 20_000_000,
+}
+
 export interface UsageState {
   normalizedTokensUsed: number
   tokenLimit: number
   orgId: string | null
   orgName: string | null
+  plan: Plan
+  subscriptionStatus: string
+  freeCreditsRemaining: number
+  currentPeriodEnd: string | null
+  cancelAtPeriodEnd: boolean
   lastFetchedAt: number
 }
 
@@ -14,6 +28,11 @@ let cachedState: UsageState = {
   tokenLimit: 0,
   orgId: null,
   orgName: null,
+  plan: 'free',
+  subscriptionStatus: 'none',
+  freeCreditsRemaining: 2_000_000,
+  currentPeriodEnd: null,
+  cancelAtPeriodEnd: false,
   lastFetchedAt: 0,
 }
 
@@ -21,7 +40,9 @@ let lastYearMonth = getCurrentYearMonth()
 const CACHE_TTL_MS = 60_000 // 60 seconds
 
 /**
- * Fetches usage state from Supabase via get_user_monthly_usage RPC
+ * Fetches usage state from Supabase — plan-aware.
+ * For org users: uses get_user_monthly_usage RPC (existing behavior).
+ * For individual users: reads profile fields directly.
  */
 export async function fetchUsageState(supabase: SupabaseClient, userId: string): Promise<UsageState> {
   const yearMonth = getCurrentYearMonth()
@@ -29,28 +50,98 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
   // Detect month rollover — reset local cache
   if (yearMonth !== lastYearMonth) {
     lastYearMonth = yearMonth
-    cachedState = { normalizedTokensUsed: 0, tokenLimit: 0, orgId: null, orgName: null, lastFetchedAt: 0 }
+    cachedState = { ...cachedState, normalizedTokensUsed: 0, lastFetchedAt: 0 }
   }
 
   try {
-    const { data, error } = await supabase.rpc('get_user_monthly_usage', {
-      p_user_id: userId,
-      p_year_month: yearMonth,
-    })
+    // Always fetch profile for plan info
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('plan, subscription_status, free_credits_remaining, current_period_usage, current_period_end, cancel_at_period_end')
+      .eq('id', userId)
+      .single()
 
-    if (error) {
-      console.error('[UsageLimiter] get_user_monthly_usage error:', error)
+    if (profileError) {
+      console.error('[UsageLimiter] profile fetch error:', profileError)
       return cachedState
     }
 
-    const result = typeof data === 'string' ? JSON.parse(data) : data
+    const plan = (profile?.plan ?? 'free') as Plan
+    const subscriptionStatus = profile?.subscription_status ?? 'none'
+    const freeCreditsRemaining = profile?.free_credits_remaining ?? 0
+    const currentPeriodEnd = profile?.current_period_end ?? null
+    const cancelAtPeriodEnd = profile?.cancel_at_period_end ?? false
 
-    cachedState = {
-      normalizedTokensUsed: result.normalized_tokens ?? 0,
-      tokenLimit: result.token_limit ?? 0,
-      orgId: result.org_id ?? null,
-      orgName: result.org_name ?? null,
-      lastFetchedAt: Date.now(),
+    // For business/enterprise users in an org, use org-based usage
+    if ((plan === 'business' || plan === 'enterprise') || plan === 'free' || plan === 'pro') {
+      // Try org-based usage first (for business/enterprise members)
+      const { data, error } = await supabase.rpc('get_user_monthly_usage', {
+        p_user_id: userId,
+        p_year_month: yearMonth,
+      })
+
+      if (!error) {
+        const result = typeof data === 'string' ? JSON.parse(data) : data
+        const orgId = result.org_id ?? null
+        const orgName = result.org_name ?? null
+
+        if (orgId) {
+          // Org member — use org token limit
+          cachedState = {
+            normalizedTokensUsed: result.normalized_tokens ?? 0,
+            tokenLimit: result.token_limit ?? PLAN_LIMITS[plan],
+            orgId,
+            orgName,
+            plan,
+            subscriptionStatus,
+            freeCreditsRemaining,
+            currentPeriodEnd,
+            cancelAtPeriodEnd,
+            lastFetchedAt: Date.now(),
+          }
+          return cachedState
+        }
+      }
+    }
+
+    // Individual user (free or pro, no org)
+    if (plan === 'free') {
+      cachedState = {
+        normalizedTokensUsed: PLAN_LIMITS.free - freeCreditsRemaining,
+        tokenLimit: PLAN_LIMITS.free,
+        orgId: null,
+        orgName: null,
+        plan,
+        subscriptionStatus,
+        freeCreditsRemaining,
+        currentPeriodEnd,
+        lastFetchedAt: Date.now(),
+      }
+    } else if (plan === 'pro') {
+      cachedState = {
+        normalizedTokensUsed: profile?.current_period_usage ?? 0,
+        tokenLimit: PLAN_LIMITS.pro,
+        orgId: null,
+        orgName: null,
+        plan,
+        subscriptionStatus,
+        freeCreditsRemaining,
+        currentPeriodEnd,
+        lastFetchedAt: Date.now(),
+      }
+    } else {
+      // business/enterprise without org — shouldn't normally happen
+      cachedState = {
+        normalizedTokensUsed: profile?.current_period_usage ?? 0,
+        tokenLimit: PLAN_LIMITS[plan],
+        orgId: null,
+        orgName: null,
+        plan,
+        subscriptionStatus,
+        freeCreditsRemaining,
+        currentPeriodEnd,
+        lastFetchedAt: Date.now(),
+      }
     }
 
     return cachedState
@@ -62,13 +153,37 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
 
 /**
  * Checks if the user has budget remaining.
- * Returns { allowed, remaining, used, limit }
+ * Plan-aware: Free users use free_credits_remaining, Pro uses period usage, Business uses org limit.
  */
 export function checkBudget(): { allowed: boolean; remaining: number; used: number; limit: number } {
-  const { normalizedTokensUsed, tokenLimit } = cachedState
+  const { plan, subscriptionStatus, freeCreditsRemaining, normalizedTokensUsed, tokenLimit, currentPeriodEnd } = cachedState
 
-  // No org = no budget (fail-closed)
-  if (!cachedState.orgId) {
+  // Canceled subscription — allow until period end
+  if (subscriptionStatus === 'canceled' && currentPeriodEnd) {
+    if (new Date() > new Date(currentPeriodEnd)) {
+      return { allowed: false, remaining: 0, used: normalizedTokensUsed, limit: tokenLimit }
+    }
+  }
+
+  if (plan === 'free') {
+    // Free tier: one-time credits
+    return {
+      allowed: freeCreditsRemaining > 0,
+      remaining: freeCreditsRemaining,
+      used: PLAN_LIMITS.free - freeCreditsRemaining,
+      limit: PLAN_LIMITS.free,
+    }
+  }
+
+  if (plan === 'pro') {
+    // Pro: active or past_due subscription required
+    if (subscriptionStatus !== 'active' && subscriptionStatus !== 'past_due' && subscriptionStatus !== 'canceled') {
+      return { allowed: false, remaining: 0, used: normalizedTokensUsed, limit: tokenLimit }
+    }
+  }
+
+  if ((plan === 'business' || plan === 'enterprise') && !cachedState.orgId) {
+    // Business/enterprise without org membership — shouldn't happen but fail-closed
     return { allowed: false, remaining: 0, used: normalizedTokensUsed, limit: tokenLimit }
   }
 
@@ -86,6 +201,9 @@ export function checkBudget(): { allowed: boolean; remaining: number; used: numb
  */
 export function recordUsage(normalizedTokens: number): void {
   cachedState.normalizedTokensUsed += normalizedTokens
+  if (cachedState.plan === 'free') {
+    cachedState.freeCreditsRemaining = Math.max(0, cachedState.freeCreditsRemaining - normalizedTokens)
+  }
 }
 
 /**

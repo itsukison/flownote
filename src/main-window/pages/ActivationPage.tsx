@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { KeyRound, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
-import { ja } from '@/i18n/ja'
+import { Loader2 } from 'lucide-react'
+import { assetUrl } from '@/utils/assetUrl'
+import { PlanCards, BusinessModal, EnterpriseModal } from '@/components/PlanSelection'
 
-const t = ja
+const logoUrl = assetUrl('logo.png')
 
 interface Props {
   onActivated: (orgName: string) => void
@@ -11,101 +12,58 @@ interface Props {
 
 export default function ActivationPage({ onActivated }: Props) {
   const navigate = useNavigate()
-  const [code, setCode] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [businessModalOpen, setBusinessModalOpen] = useState(false)
+  const [enterpriseModalOpen, setEnterpriseModalOpen] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = code.trim().toUpperCase()
-    if (!trimmed) return
-
-    setLoading(true)
-    setError(null)
-    setSuccess(null)
-
-    try {
-      const result = await window.electronAPI.activateCode(trimmed)
-      if (result.success) {
-        setSuccess(t.activation.success.replace('{org}', result.orgName || ''))
-        setTimeout(() => onActivated(result.orgName || ''), 1200)
-      } else {
-        const errorKey = result.error || 'unknown'
-        const errorMessages: Record<string, string> = {
-          invalid_code: t.activation.invalidCode,
-          org_inactive: t.activation.orgInactive,
-          org_full: t.activation.orgFull,
-        }
-        setError(errorMessages[errorKey] || t.activation.unknownError)
-      }
-    } catch (err: any) {
-      setError(err.message || t.activation.unknownError)
-    } finally {
-      setLoading(false)
+  const handleProUpgrade = async () => {
+    setCheckoutLoading(true)
+    const result = await window.electronAPI?.openCheckout('pro')
+    setCheckoutLoading(false)
+    if (!result?.success) {
+      console.error('Checkout failed:', result?.error)
     }
+  }
+
+  const handleActivated = () => {
+    onActivated('')
   }
 
   return (
     <div className="flex items-center justify-center h-screen w-full bg-[#0e0e10] text-white">
-      <div className="w-full max-w-sm mx-auto px-6">
+      <div className="w-full max-w-lg mx-auto px-6">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto mb-4">
-            <KeyRound size={22} className="text-zinc-400" />
-          </div>
-          <h1 className="text-lg font-semibold text-zinc-100">{t.activation.title}</h1>
-          <p className="text-sm text-zinc-500 mt-2 leading-relaxed">{t.activation.description}</p>
-          <p className="text-xs text-zinc-600 mt-2">{t.activation.hintNoCode}</p>
+          <img src={logoUrl} alt="Logo" className="w-10 h-10 object-contain mx-auto mb-4 opacity-80" />
+          <h1 className="text-lg font-semibold text-zinc-100">無料クレジットを使い切りました</h1>
+          <p className="text-sm text-zinc-500 mt-2 leading-relaxed max-w-sm mx-auto">
+            引き続きFlownoteをご利用いただくには、プランを選択してください。
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="FN-XXXXXX"
-              maxLength={9}
-              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 tracking-widest text-center font-mono"
-              disabled={loading || !!success}
-              autoFocus
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-400 text-xs px-1">
-              <AlertCircle size={14} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 text-emerald-400 text-xs px-1">
-              <CheckCircle size={14} />
-              <span>{success}</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !code.trim() || !!success}
-            className="w-full py-3 bg-zinc-100 text-zinc-900 rounded-xl text-sm font-medium hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              t.activation.activate
-            )}
-          </button>
-        </form>
+        <PlanCards
+          onProClick={handleProUpgrade}
+          onBusinessClick={() => setBusinessModalOpen(true)}
+          onEnterpriseClick={() => setEnterpriseModalOpen(true)}
+          checkoutLoading={checkoutLoading}
+        />
 
         <button
           type="button"
           onClick={() => navigate('/auth')}
-          className="w-full mt-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-xl transition-colors"
+          className="w-full mt-6 py-2.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors text-center"
         >
-          {t.activation.backToAuth}
+          別のアカウントでログイン
         </button>
+
+        <BusinessModal
+          open={businessModalOpen}
+          onClose={() => setBusinessModalOpen(false)}
+          onActivated={handleActivated}
+        />
+        <EnterpriseModal
+          open={enterpriseModalOpen}
+          onClose={() => setEnterpriseModalOpen(false)}
+        />
       </div>
     </div>
   )

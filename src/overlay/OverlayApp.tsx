@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
-import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, Lock, AlertTriangle, MessageSquareMore, ArrowUp, Zap } from 'lucide-react'
+import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap } from 'lucide-react'
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
@@ -25,7 +25,7 @@ export default function OverlayApp() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
-    const [hasOrg, setHasOrg] = useState<boolean | null>(null)
+    const [budgetChecked, setBudgetChecked] = useState(false)
     const [limitExceeded, setLimitExceeded] = useState(false)
     const [activeTab, setActiveTab] = useState<'transcript' | 'questions'>('transcript')
     const [newQuestionCount, setNewQuestionCount] = useState(0)
@@ -135,20 +135,16 @@ export default function OverlayApp() {
         return off
     }, [forceStopAll])
 
-    // Org membership + collections + quick prompts when authed
+    // Budget check + collections + quick prompts when authed
     useEffect(() => {
         if (!session) return
-        const refreshMembership = () => {
-            window.electronAPI?.getOrgMembership().then((membership) => {
-                setHasOrg(!!membership)
-                if (membership) {
-                    window.electronAPI?.checkBudget().then((budget) => {
-                        setLimitExceeded(!budget.allowed)
-                    })
-                }
+        const refreshBudget = () => {
+            window.electronAPI?.checkBudget().then((budget) => {
+                setLimitExceeded(!budget.allowed)
+                setBudgetChecked(true)
             })
         }
-        refreshMembership()
+        refreshBudget()
         refreshCollections()
         refreshQuickPrompts()
     }, [session, refreshCollections, refreshQuickPrompts])
@@ -161,13 +157,8 @@ export default function OverlayApp() {
             forceStopAll()
         })
         const offOrg = window.electronAPI.onOrgMembershipChanged(() => {
-            window.electronAPI?.getOrgMembership().then((membership) => {
-                setHasOrg(!!membership)
-                if (membership) {
-                    window.electronAPI?.checkBudget().then((budget) => {
-                        setLimitExceeded(!budget.allowed)
-                    })
-                }
+            window.electronAPI?.checkBudget().then((budget) => {
+                setLimitExceeded(!budget.allowed)
             })
             refreshCollections()
         })
@@ -270,36 +261,16 @@ export default function OverlayApp() {
         )
     }
 
-    // No org membership
-    if (hasOrg === false) {
+    // Budget not yet checked
+    if (!budgetChecked) {
         return (
-            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
-                    <div className="flex items-center">
-                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
-                    </div>
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
-                        <X size={13} />
-                    </button>
-                </div>
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <Lock size={28} strokeWidth={1.5} className="text-zinc-700" />
-                    <div>
-                        <p className="text-sm text-zinc-400 font-medium">{t.activation.overlayLocked}</p>
-                        <p className="text-xs text-zinc-500 mt-1">{t.activation.overlayLockedHint}</p>
-                    </div>
-                    <button
-                        onClick={() => window.electronAPI.showMainWindow()}
-                        className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs text-zinc-500 transition-all"
-                    >
-                        {t.overlay.openMainWindow}
-                    </button>
-                </div>
+            <div className="flex items-center justify-center h-full w-full rounded-2xl bg-zinc-950/90 backdrop-blur-xl border border-zinc-800">
+                <Loader2 size={20} className="animate-spin text-zinc-400" />
             </div>
         )
     }
 
-    // Limit exceeded
+    // Limit exceeded (free credits exhausted, or subscription usage maxed)
     if (limitExceeded) {
         return (
             <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">

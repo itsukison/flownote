@@ -1,5 +1,5 @@
 import dotenv from 'dotenv'
-import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol, Tray, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, globalShortcut, session, desktopCapturer, protocol, Tray, Menu, nativeImage } from 'electron'
 import * as path from 'path'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { registerHandlers } from './ipc/handlers'
@@ -10,6 +10,7 @@ import { stopTranscriptionAndSave, getCurrentTranscriptIdValue } from './ipc/tra
 import { getStoredSession } from './services/tokenStorage'
 import { initUpdater, flushPendingUpdate } from './services/updater'
 import { getCacheRoot } from './services/documentCache'
+import { fetchUsageState } from './services/usageLimiter'
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
@@ -22,6 +23,11 @@ const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
 const BASE_URL = 'http://localhost:5182'
 
 dotenv.config()
+
+// Register flownote:// as a custom protocol for deep linking (Stripe checkout callback)
+if (!app.isDefaultProtocolClient('flownote')) {
+  app.setAsDefaultProtocolClient('flownote')
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -170,7 +176,9 @@ function toggleMainWindow() {
 
 function createTray() {
   const iconPath = path.join(__dirname, '../public/tray-icon.png')
-  tray = new Tray(iconPath)
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  icon.setTemplateImage(true)
+  tray = new Tray(icon)
   tray.setToolTip('Flownote')
 
   const contextMenu = Menu.buildFromTemplate([
@@ -333,6 +341,65 @@ async function init() {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
   })
+
+  // Handle flownote:// deep links (e.g. flownote://subscription-updated)
+  const handleDeepLink = async (url: string) => {
+    console.log('[DeepLink] Received:', url)
+    if (url.includes('subscription-updated') && supabase) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        // Re-fetch plan state from Supabase
+        const state = await fetchUsageState(supabase, user.id)
+        mainWindow?.webContents.send('plan:changed', { plan: state.plan, subscriptionStatus: state.subscriptionStatus })
+        overlayWindow?.webContents.send('plan:changed', { plan: state.plan, subscriptionStatus: state.subscriptionStatus })
+      }
+      // Show and focus main window
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
+  }
+
+  // macOS: deep links arrive via open-url
+  app.on('open-url', (_event, url) => {
+    handleDeepLink(url)
+  })
+
+  // Windows/Linux: deep links arrive as second-instance args
+  app.on('second-instance', (_event, argv) => {
+    const deepLink = argv.find(arg => arg.startsWith('flownote://'))
+    if (deepLink) handleDeepLink(deepLink)
+    mainWindow?.show()
+    mainWindow?.focus()
+  })
+
+  // Subscribe to profile changes via Supabase Realtime (for live plan updates)
+  if (supabase) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user && supabase) {
+        supabase
+          .channel('profile-plan-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=eq.${user.id}`,
+            },
+            async (payload) => {
+              const newPlan = payload.new as any
+              if (newPlan.plan || newPlan.subscription_status) {
+                // Re-fetch full state
+                const state = await fetchUsageState(supabase!, user.id)
+                mainWindow?.webContents.send('plan:changed', { plan: state.plan, subscriptionStatus: state.subscriptionStatus })
+                overlayWindow?.webContents.send('plan:changed', { plan: state.plan, subscriptionStatus: state.subscriptionStatus })
+              }
+            }
+          )
+          .subscribe()
+      }
+    })
+  }
 
   if (process.platform === 'darwin') {
     app.dock?.hide()

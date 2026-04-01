@@ -46,9 +46,9 @@ function Sidebar({ user, collapsed, onToggle }: { user: any; collapsed: boolean;
         >
             <div style={{ width: 208 }} className="flex flex-col flex-1">
                 {/* Brand */}
-                <div className="px-6 py-6 flex items-center gap-2">
-                    <img src={logoUrl} alt="Logo" className="w-7 h-7 object-contain" />
-                    <span className="text-base font-bold text-white/90">Flownote</span>
+                <div className="px-5 py-5 flex items-center gap-0.5">
+                    <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" />
+                    <span className="text-sm font-bold text-white/90">Flownote</span>
                 </div>
 
                 {/* Nav */}
@@ -184,12 +184,15 @@ export default function MainApp() {
     }
 
     const checkOnboardingStatus = async () => {
-        const membership = await window.electronAPI?.getOrgMembership()
-        if (!membership) {
+        const planInfo = await window.electronAPI?.getPlanInfo()
+
+        // Free users with no credits left and no org → force activation/upgrade
+        if (planInfo && planInfo.plan === 'free' && planInfo.freeCreditsRemaining <= 0 && !planInfo.orgId) {
             navigate('/activation')
             setActivationChecked(true)
             return
         }
+
         const onboardingCompleted = await window.electronAPI?.getOnboardingCompleted()
         navigate(onboardingCompleted ? '/documents' : '/tutorial')
         setActivationChecked(true)
@@ -291,7 +294,7 @@ export default function MainApp() {
                                         style={{
                                             position: 'absolute',
                                             top: 16,
-                                            left: sidebarCollapsed ? 12 : 172,
+                                            left: sidebarCollapsed ? 8 : 164,
                                             transition: 'left 250ms ease',
                                             zIndex: 30,
                                         }}

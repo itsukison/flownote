@@ -78,8 +78,12 @@ declare global {
             getOrgMembership: () => Promise<{ orgId: string; orgName: string; used: number; limit: number } | null>
             checkBudget: () => Promise<{ allowed: boolean; remaining: number; used: number; limit: number }>
             getMonthlyUsage: () => Promise<MonthlyUsage | null>
+            getPlanInfo: () => Promise<PlanInfo | null>
+            openCheckout: (plan: string, seats?: number) => Promise<{ success: boolean; error?: string }>
+            openBillingPortal: () => Promise<{ success: boolean; error?: string }>
             onUsageLimitExceeded: (cb: () => void) => () => void
             onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
+            onPlanChanged: (cb: (payload: { plan: string; subscriptionStatus: string }) => void) => () => void
             onCollectionsChanged: (cb: () => void) => () => void
             // ── Profile Settings ────────────────────────────────────────────────────
             getProfileSettings: () => Promise<{ success: boolean; auto_summary_enabled: boolean; error?: string }>
@@ -243,5 +247,15 @@ declare global {
         raw_transcription_audio_ms: number
         questions_count: number
         documents_count: number
+    }
+
+    interface PlanInfo {
+        plan: 'free' | 'pro' | 'business' | 'enterprise'
+        subscriptionStatus: string
+        freeCreditsRemaining: number
+        currentPeriodEnd: string | null
+        cancelAtPeriodEnd: boolean
+        orgId: string | null
+        orgName: string | null
     }
 }

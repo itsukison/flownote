@@ -21,6 +21,7 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +69,7 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SLACK_CLIENT_ID: ${{ secrets.SLACK_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
