@@ -137,7 +137,7 @@ function createMainWindow() {
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault()
-      mainWindow?.hide()
+      hideMainWindowGracefully(mainWindow)
     }
   })
 
@@ -150,6 +150,42 @@ function createMainWindow() {
 
 function getOverlayWindow() { return overlayWindow }
 function getMainWindow() { return mainWindow }
+
+/**
+ * Hiding a window while it is still in native full screen leaves an empty full-screen
+ * space on macOS (black screen). Leave full screen first, then hide.
+ */
+function hideMainWindowGracefully(win: BrowserWindow | null) {
+  if (!win || win.isDestroyed()) return
+  if (win.isFullScreen()) {
+    const fallbackMs = 5000
+    const t = setTimeout(() => {
+      if (!win.isDestroyed()) win.hide()
+    }, fallbackMs)
+    win.once('leave-full-screen', () => {
+      clearTimeout(t)
+      if (!win.isDestroyed()) win.hide()
+    })
+    win.setFullScreen(false)
+  } else {
+    win.hide()
+  }
+}
+
+/**
+ * Squirrel.Mac needs the process to actually exit after quitAndInstall. If any BrowserWindow
+ * `close` handler calls preventDefault() (e.g. hide-to-tray), quit can fail to complete and the
+ * app will not relaunch — user reopens manually and still sees the old build. See electron#47984.
+ */
+function prepareForUpdateInstall() {
+  isQuitting = true
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.removeAllListeners('close')
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.removeAllListeners('close')
+  }
+}
 
 function toggleOverlay() {
   if (!overlayWindow) return
@@ -167,7 +203,7 @@ function toggleOverlay() {
 function toggleMainWindow() {
   if (!mainWindow) return
   if (mainWindow.isVisible()) {
-    mainWindow.hide()
+    hideMainWindowGracefully(mainWindow)
   } else {
     mainWindow.show()
     mainWindow.focus()
@@ -296,7 +332,9 @@ async function init() {
     mainWindow?.focus()
 
     // Initialize auto-updater (packaged builds only)
-    if (app.isPackaged) initUpdater(getMainWindow)
+    if (app.isPackaged) {
+      initUpdater(getMainWindow, prepareForUpdateInstall)
+    }
 
     // Global shortcut: toggle overlay (only when logged in)
     globalShortcut.register('CommandOrControl+/', () => {

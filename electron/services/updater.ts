@@ -11,14 +11,22 @@ let availableVersion: string | null = null
 
 type GetWindowFn = () => BrowserWindow | null
 
+let beforeQuitAndInstall: (() => void) | undefined
+
 /**
  * Set up electron-updater. Call once from app.whenReady() (only when app.isPackaged).
  * Uses a 5-second delay so all IPC handlers and windows are initialised first.
  * Also works when no mainWindow exists at startup (overlay-only mode).
+ *
+ * @param onBeforeQuitAndInstall — e.g. set `isQuitting` so BrowserWindow `close` handlers
+ *   do not call preventDefault+hide, which would block a clean quit/relaunch.
  */
-export function initUpdater(getMainWindow: GetWindowFn) {
+export function initUpdater(getMainWindow: GetWindowFn, onBeforeQuitAndInstall?: () => void) {
+  beforeQuitAndInstall = onBeforeQuitAndInstall
+
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoRunAppAfterInstall = true
 
   // Helper: send to mainWindow only when it exists and is live
   const send = (channel: string, data?: unknown) => {
@@ -96,7 +104,11 @@ export function flushPendingUpdate(win: BrowserWindow) {
 
 /**
  * Trigger install immediately (called from the IPC handler).
+ * Defers quit so the `invoke` promise can settle and Squirrel / NSIS can run a normal quit sequence.
  */
 export function installUpdate() {
-  autoUpdater.quitAndInstall(false, true)
+  beforeQuitAndInstall?.()
+  setImmediate(() => {
+    autoUpdater.quitAndInstall(false, true)
+  })
 }
