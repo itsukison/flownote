@@ -115,6 +115,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         subscriptionStatus,
         freeCreditsRemaining,
         currentPeriodEnd,
+        cancelAtPeriodEnd,
         lastFetchedAt: Date.now(),
       }
     } else if (plan === 'pro') {
@@ -127,6 +128,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         subscriptionStatus,
         freeCreditsRemaining,
         currentPeriodEnd,
+        cancelAtPeriodEnd,
         lastFetchedAt: Date.now(),
       }
     } else {
@@ -140,6 +142,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         subscriptionStatus,
         freeCreditsRemaining,
         currentPeriodEnd,
+        cancelAtPeriodEnd,
         lastFetchedAt: Date.now(),
       }
     }
