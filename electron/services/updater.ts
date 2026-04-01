@@ -98,5 +98,5 @@ export function flushPendingUpdate(win: BrowserWindow) {
  * Trigger install immediately (called from the IPC handler).
  */
 export function installUpdate() {
-  autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall(false, true)
 }
