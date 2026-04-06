@@ -35,7 +35,7 @@ const NORM = {
     TRANSCRIPTION_MS: 0.01,
 } as const
 
-function UsageBar({ monthlyUsage, usagePercent }: { monthlyUsage: MonthlyUsage; usagePercent: number }) {
+function UsageBar({ monthlyUsage, usagePercent, resetDate }: { monthlyUsage: MonthlyUsage; usagePercent: number; resetDate?: string | null }) {
     const barRef = useRef<HTMLDivElement>(null)
     const [tooltip, setTooltip] = useState<{ x: number; label: string; norm: number; pct: number } | null>(null)
 
@@ -125,6 +125,11 @@ function UsageBar({ monthlyUsage, usagePercent }: { monthlyUsage: MonthlyUsage; 
 
                 <div className="flex justify-between items-center pt-2 border-t border-zinc-800/50">
                     <span className="text-xs text-zinc-500">{usagePercent.toFixed(1)}% {t.settings.usage}</span>
+                    {resetDate && (
+                        <span className="text-xs text-zinc-600">
+                            次回リセット: {new Date(resetDate).toLocaleDateString('ja-JP')}
+                        </span>
+                    )}
                 </div>
             </div>
         </div>
@@ -325,7 +330,7 @@ export default function SettingsPage({ user }: Props) {
                                     onClick={() => window.electronAPI?.openBillingPortal()}
                                     className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                                 >
-                                    プランを変更・キャンセル <ExternalLink size={11} />
+                                    {planInfo.cancelAtPeriodEnd ? 'キャンセルを取り消す' : 'プランを変更・キャンセル'} <ExternalLink size={11} />
                                 </button>
                             )}
                         </div>
@@ -337,7 +342,7 @@ export default function SettingsPage({ user }: Props) {
                                     プランは {new Date(planInfo.currentPeriodEnd).toLocaleDateString('ja-JP')} に終了します。
                                 </p>
                                 <p className="text-xs text-amber-400/60 mt-1">
-                                    それまで{PLAN_LABELS[planInfo.plan]}の全機能をご利用いただけます。キャンセルを取り消すには「プランを変更・キャンセル」から操作してください。
+                                    それまで{PLAN_LABELS[planInfo.plan]}の全機能をご利用いただけます。キャンセルを取り消すには「キャンセルを取り消す」から操作してください。
                                 </p>
                             </div>
                         )}
@@ -375,7 +380,15 @@ export default function SettingsPage({ user }: Props) {
                         <Loader2 size={20} className="animate-spin text-zinc-600" />
                     </div>
                 ) : monthlyUsage ? (
-                    <UsageBar monthlyUsage={monthlyUsage} usagePercent={usagePercent} />
+                    <UsageBar
+                        monthlyUsage={monthlyUsage}
+                        usagePercent={usagePercent}
+                        resetDate={
+                            isPaid && planInfo?.currentPeriodEnd
+                                ? planInfo.currentPeriodEnd
+                                : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString()
+                        }
+                    />
                 ) : (
                     <p className="text-sm text-zinc-500 text-center py-8">{t.settings.noUsageDataYet}</p>
                 )}

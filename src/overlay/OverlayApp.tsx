@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
-import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap } from 'lucide-react'
+import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap, History } from 'lucide-react'
+
+export type HistoryItem = { id: string; question: string; answer: string; source: 'detected' | 'manual'; timestamp: number; }
 import { Loader } from '../components/ui/loader'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
@@ -21,13 +23,15 @@ import { DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
 const t = ja
 
 export default function OverlayApp() {
+    const [sessionHistory, setSessionHistory] = useState<HistoryItem[]>([])
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
     const [session, setSession] = useState<any>(undefined)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
     const [budgetChecked, setBudgetChecked] = useState(false)
     const [limitExceeded, setLimitExceeded] = useState(false)
-    const [activeTab, setActiveTab] = useState<'transcript' | 'questions'>('transcript')
+    const [activeTab, setActiveTab] = useState<'transcript' | 'questions' | 'history'>('transcript')
     const [newQuestionCount, setNewQuestionCount] = useState(0)
     const [questionDetectionOn, setQuestionDetectionOn] = useState(false)
     const [qaInput, setQaInput] = useState('')
@@ -39,9 +43,17 @@ export default function OverlayApp() {
     const [autoScroll, setAutoScroll] = useState(true)
 
     const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
-    const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream()
+    const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream({
+        onGenerateComplete: (qText, finalResponse) => {
+            setSessionHistory(prev => [...prev, { id: 'd-' + Date.now().toString(), question: qText, answer: finalResponse, source: 'detected', timestamp: Date.now() }])
+        }
+    })
     const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription, resetSession } = useTranscription()
-    const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA()
+    const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA({
+        onGenerateComplete: (qText, finalResponse) => {
+            setSessionHistory(prev => [...prev, { id: 'm-' + Date.now().toString(), question: qText, answer: finalResponse, source: 'manual', timestamp: Date.now() }])
+        }
+    })
 
     const error = transcriptionError || listenError
 
@@ -121,6 +133,9 @@ export default function OverlayApp() {
         await forceStopAll()
         resetSession()
         clearAll()
+        setSessionHistory([])
+        setSelectedHistoryId(null)
+        setActiveTab('transcript')
         window.electronAPI.hideOverlay()
     }, [forceStopAll, resetSession, clearAll])
 
@@ -130,7 +145,7 @@ export default function OverlayApp() {
         window.electronAPI.getSession().then(({ session }) => setSession(session))
         const off = window.electronAPI.onSessionChange(({ session }) => {
             setSession(session)
-            if (!session) forceStopAll()
+            if (!session) { forceStopAll(); setSessionHistory([]); setSelectedHistoryId(null); setActiveTab('transcript'); }
         })
         return off
     }, [forceStopAll])
@@ -298,8 +313,8 @@ export default function OverlayApp() {
             {/* Header */}
             <div className="drag-handle flex items-center justify-between px-3 py-2.5 border-b border-zinc-800 bg-zinc-900/10">
                 <div className="flex items-center gap-2">
-                    {/* Back button for detail views */}
-                    {(viewMode === 'detail' || qaViewActive) && (
+                    {/* Back button for detail views (hidden in history tab to avoid duplication) */}
+                    {(viewMode === 'detail' || qaViewActive) && activeTab !== 'history' && (
                         <button
                             onClick={qaViewActive ? goBackQA : goBack}
                             className="no-drag p-1 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors -ml-0.5"
@@ -308,8 +323,33 @@ export default function OverlayApp() {
                         </button>
                     )}
                     <div className="flex items-center gap-2">
-                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
-                        {transcribing && (
+                        <div className="no-drag relative group flex items-center">
+                            <button
+                                onClick={() => {
+                                    if (activeTab === 'history') {
+                                        if (selectedHistoryId) {
+                                            setSelectedHistoryId(null)
+                                        } else {
+                                            setActiveTab('transcript')
+                                        }
+                                    } else {
+                                        setActiveTab('history')
+                                        setSelectedHistoryId(null)
+                                    }
+                                }}
+                                className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 transition-colors flex items-center"
+                            >
+                                {activeTab === 'history' ? (
+                                    <ArrowLeft size={14} className="text-zinc-400 m-[1px]" />
+                                ) : (
+                                    <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
+                                )}
+                            </button>
+                            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-zinc-800 text-zinc-300 text-[10px] font-medium rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                {activeTab === 'history' ? t.common.back : t.overlay.pastResponses}
+                            </div>
+                        </div>
+                        {transcribing && activeTab !== 'history' && (
                             <span className="flex items-center gap-1 text-[10px] text-zinc-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
                                 {t.overlay.live}
@@ -405,7 +445,7 @@ export default function OverlayApp() {
             {error && <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-600 text-xs">{error}</div>}
 
             {/* Mode switch strip — always visible outside detail views */}
-            {viewMode !== 'detail' && !qaViewActive && (
+            {viewMode !== 'detail' && !qaViewActive && activeTab !== 'history' && (
                 <div className="px-3 pt-2 pb-0.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         {activeTab === 'questions' && questions.length > 0 && (
@@ -555,6 +595,45 @@ export default function OverlayApp() {
                         )}
                     </>
                 )}
+
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                    <>
+                        {selectedHistoryId ? (
+                            <div className="p-4 space-y-3">
+                                <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
+                                    {sessionHistory.find(h => h.id === selectedHistoryId)?.question}
+                                </p>
+                                <div className="text-sm text-zinc-300 leading-relaxed">
+                                    <MarkdownRenderer content={sessionHistory.find(h => h.id === selectedHistoryId)?.answer || ''} />
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                {sessionHistory.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
+                                        <History size={32} strokeWidth={1} />
+                                        <p className="text-xs text-center px-10 text-zinc-500 leading-relaxed">
+                                            {t.overlay.noHistoryYet}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="p-3 pt-0 space-y-2 mt-2">
+                                        {[...sessionHistory].reverse().map((h) => (
+                                            <button
+                                                key={h.id}
+                                                onClick={() => setSelectedHistoryId(h.id)}
+                                                className="w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all bg-zinc-900/30 text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200 border border-transparent"
+                                            >
+                                                <span>{h.question}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </>
+                )}
                 </div>
 
                 {/* Transcript Q&A input bar — floating */}
@@ -564,14 +643,14 @@ export default function OverlayApp() {
                         <div className="h-8 pointer-events-none bg-gradient-to-t from-zinc-950/90 to-transparent" />
                         <div className="bg-zinc-950">
                             {quickPrompts.length > 0 && (
-                                <div className="px-3 pb-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
+                                <div className="px-3 pb-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
                                     <Zap size={10} className="shrink-0 text-zinc-700" />
                                     {quickPrompts.map((qp) => (
                                         <button
                                             key={qp.id}
                                             onClick={() => { askQuestion(qp.content) }}
                                             disabled={qaGenerating}
-                                            className="shrink-0 px-1 py-1 text-[10px] text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
+                                            className="shrink-0 px-2 py-1 text-[10px] text-zinc-400 bg-zinc-900/60 hover:bg-zinc-800 hover:text-zinc-300 border border-zinc-800/60 hover:border-zinc-700 rounded-md disabled:opacity-40 transition-all whitespace-nowrap shadow-sm"
                                         >
                                             {qp.name}
                                         </button>

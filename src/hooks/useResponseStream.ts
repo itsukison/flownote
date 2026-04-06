@@ -5,12 +5,13 @@ interface Question {
   text: string
 }
 
-export function useResponseStream() {
+export function useResponseStream(options?: { onGenerateComplete?: (qText: string, finalResponse: string) => void }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [response, setResponse] = useState('')
   const [generating, setGenerating] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
+  const currentActionRef = useRef<{ id: string, text: string } | null>(null)
   const responseRef = useRef('')
   const rafRef = useRef<number | null>(null)
   const dirtyRef = useRef(false)
@@ -37,16 +38,21 @@ export function useResponseStream() {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       setResponse(responseRef.current)
       setGenerating(false)
+      if (options?.onGenerateComplete && currentActionRef.current) {
+        options.onGenerateComplete(currentActionRef.current.text, responseRef.current)
+      }
     })
     return () => {
       offQ(); offChunk(); offDone()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const selectQuestion = useCallback(async (q: Question, collectionId: string | null) => {
     if (generating) return
     setSelectedId(q.id)
+    currentActionRef.current = q
     setResponse('')
     responseRef.current = ''
     setViewMode('detail')
@@ -57,6 +63,7 @@ export function useResponseStream() {
   const clearAll = useCallback(() => {
     setQuestions([])
     setSelectedId(null)
+    currentActionRef.current = null
     setResponse('')
     responseRef.current = ''
     window.electronAPI.clearQuestions()

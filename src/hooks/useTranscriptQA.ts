@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-export function useTranscriptQA() {
+export function useTranscriptQA(options?: { onGenerateComplete?: (qText: string, finalResponse: string) => void }) {
   const [response, setResponse] = useState('')
   const [generating, setGenerating] = useState(false)
   const [qaViewActive, setQaViewActive] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState('')
+  const currentQuestionRef = useRef('')
   const responseRef = useRef('')
   const rafRef = useRef<number | null>(null)
   const dirtyRef = useRef(false)
@@ -28,21 +29,27 @@ export function useTranscriptQA() {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       setResponse(responseRef.current)
       setGenerating(false)
+      if (options?.onGenerateComplete && currentQuestionRef.current) {
+        options.onGenerateComplete(currentQuestionRef.current, responseRef.current)
+      }
     })
     return () => {
       offChunk(); offDone()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const askQuestion = useCallback(async (text: string) => {
     if (generating || !text.trim()) return
-    setCurrentQuestion(text.trim())
+    const qText = text.trim()
+    setCurrentQuestion(qText)
+    currentQuestionRef.current = qText
     setResponse('')
     responseRef.current = ''
     setQaViewActive(true)
     setGenerating(true)
-    await window.electronAPI.askTranscriptQuestion(text.trim())
+    await window.electronAPI.askTranscriptQuestion(qText)
   }, [generating])
 
   const goBack = useCallback(() => {
@@ -50,6 +57,7 @@ export function useTranscriptQA() {
     setResponse('')
     responseRef.current = ''
     setCurrentQuestion('')
+    currentQuestionRef.current = ''
   }, [])
 
   return {

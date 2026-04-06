@@ -6,6 +6,7 @@ export const ja = {
     delete: '削除',
     rename: '名前を変更',
     search: '検索...',
+    back: '戻る',
     unknown: '不明',
   },
   auth: {
@@ -156,6 +157,8 @@ export const ja = {
     noTranscriptYet: 'リスニングを開始して文字起こしを始めましょう',
     you: 'あなた',
     speaker: 'スピーカー',
+    pastResponses: '過去の返答',
+    noHistoryYet: '履歴はまだありません',
   },
   prompts: {
     title: 'プロンプトを管理',

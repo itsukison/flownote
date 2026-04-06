@@ -85,21 +85,23 @@ Deno.serve(async (req: Request) => {
           : sub.status === 'past_due' ? 'past_due'
           : sub.status === 'canceled' ? 'canceled'
           : 'none'
+        const periodStart = new Date(sub.current_period_start * 1000).toISOString()
+        const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
+        const cancelAtPeriodEnd = sub.cancel_at_period_end ?? false
 
-        // Fix drift
+        // Always sync period dates and cancel_at_period_end; also fix status drift
+        await supabase
+          .from('profiles')
+          .update({
+            subscription_status: stripeStatus,
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
+            cancel_at_period_end: cancelAtPeriodEnd,
+            ...(stripeStatus === 'none' ? { plan: 'free', current_period_usage: 0 } : {}),
+          })
+          .eq('id', profile.id)
+
         if (stripeStatus !== profile.subscription_status) {
-          const periodStart = new Date(sub.current_period_start * 1000).toISOString()
-          const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
-
-          await supabase
-            .from('profiles')
-            .update({
-              subscription_status: stripeStatus,
-              current_period_start: periodStart,
-              current_period_end: periodEnd,
-              ...(stripeStatus === 'none' ? { plan: 'free', current_period_usage: 0 } : {}),
-            })
-            .eq('id', profile.id)
           fixed++
         }
       }
