@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Loader2, Crown, Building2, ExternalLink } from 'lucide-react'
+import { LogOut, Loader2, Crown, Building2, ExternalLink, BookOpen } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 import { PlanCards, BusinessModal, EnterpriseModal } from '@/components/PlanSelection'
@@ -298,7 +298,8 @@ export default function SettingsPage({ user }: Props) {
                 </div>
             </section>
 
-            {/* ── 4. Plan + Usage ──────────────────────────────────────── */}
+
+            {/* ── 5. Plan + Usage ──────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
                 <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">プラン</h2>
 

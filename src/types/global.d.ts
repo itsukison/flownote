@@ -81,6 +81,7 @@ declare global {
             getPlanInfo: () => Promise<PlanInfo | null>
             openCheckout: (plan: string, seats?: number) => Promise<{ success: boolean; error?: string }>
             openBillingPortal: () => Promise<{ success: boolean; error?: string }>
+            openExternal: (url: string) => Promise<void>
             onUsageLimitExceeded: (cb: () => void) => () => void
             onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
             onPlanChanged: (cb: (payload: { plan: string; subscriptionStatus: string }) => void) => () => void

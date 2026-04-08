@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { HelpCircle, Keyboard, Lightbulb, PlayCircle, ArrowLeft, FileText, Settings, MousePointer2 } from 'lucide-react'
+import { HelpCircle, Keyboard, Lightbulb, PlayCircle, ArrowLeft, FileText, Settings, MousePointer2, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ja } from '@/i18n/ja'
@@ -74,8 +74,8 @@ export default function HelpPage() {
             </div>
           </section>
 
-          {/* Tutorial Reset */}
-          <section className="pt-12 border-t border-white/[0.04]">
+          {/* Tutorial Resources */}
+          <section className="pt-12 border-t border-white/[0.04] space-y-4">
             <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-6">
               <div className="space-y-2">
                 <h3 className="font-medium text-white/90">{t.help.tutorial.title}</h3>
@@ -88,6 +88,20 @@ export default function HelpPage() {
               >
                 <PlayCircle size={18} />
                 {t.help.tutorial.restart}
+              </Button>
+            </div>
+
+            <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-6 hover:bg-white/[0.04] transition-colors group cursor-pointer" onClick={() => window.electronAPI?.openExternal('https://flownote-jp.com/tutorials')}>
+              <div className="space-y-2">
+                <h3 className="font-medium text-white/90">Webチュートリアル</h3>
+                <p className="text-sm text-white/40 leading-relaxed max-w-md">Flownoteの詳細な使い方ガイドをシステムブラウザで開きます。</p>
+              </div>
+              <Button 
+                variant="outline" 
+                className="h-11 px-6 rounded-2xl flex items-center gap-2 bg-white/5 border-white/10 group-hover:bg-white/10 transition-all text-white font-medium shadow-xl pointer-events-none"
+              >
+                <ExternalLink size={18} />
+                ブラウザで開く
               </Button>
             </div>
           </section>

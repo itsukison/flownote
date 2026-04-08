@@ -240,4 +240,8 @@ export function registerOrganizationHandlers(
       return { success: false, error: err.message }
     }
   })
+
+  ipcMain.handle('open:external-url', (_event, url: string) => {
+    shell.openExternal(url)
+  })
 }

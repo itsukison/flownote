@@ -169,6 +169,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPlanInfo: () => ipcRenderer.invoke('org:get-plan-info'),
   openCheckout: (plan: string, seats?: number) => ipcRenderer.invoke('org:open-checkout', plan, seats),
   openBillingPortal: () => ipcRenderer.invoke('org:open-billing-portal'),
+  openExternal: (url: string) => ipcRenderer.invoke('open:external-url', url),
   onUsageLimitExceeded: (cb: () => void) => {
     const fn = () => cb()
     ipcRenderer.on('usage-limit-exceeded', fn)

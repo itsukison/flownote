@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FolderOpen, Terminal, Mic, Settings } from 'lucide-react'
+import { FolderOpen, Terminal, Mic, Settings, ExternalLink } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 import { assetUrl } from '@/utils/assetUrl'
@@ -197,6 +197,26 @@ export default function TutorialPage({ onComplete }: TutorialPageProps) {
                           開く
                         </Button>
                       </div>
+                    </div>
+                  )}
+
+                  {isLast && (
+                    <div className="flex flex-col gap-3 mt-8">
+                      <p className="text-sm text-zinc-400">アプリの詳細な使い方はこちらから確認できます</p>
+                      <button 
+                        onClick={() => window.electronAPI?.openExternal('https://flownote-jp.com/tutorials')}
+                        className="flex items-center justify-between p-4 rounded-[14px] border border-white/5 bg-white/5 hover:bg-white/10 transition-colors group w-full text-left"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-2 rounded-lg bg-white/10 text-zinc-300 group-hover:bg-white/20 transition-colors">
+                            <ExternalLink className="w-5 h-5" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-white">チュートリアルを開く</span>
+                            <span className="text-xs text-zinc-400">ブラウザで使い方ガイドを開きます</span>
+                          </div>
+                        </div>
+                      </button>
                     </div>
                   )}
                 </div>
