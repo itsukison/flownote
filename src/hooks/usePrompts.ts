@@ -8,6 +8,10 @@ export interface Prompt {
   prompt_type: 'base' | 'rag' | 'quick' | 'transcript' | 'summary'
   is_default: boolean
   is_active: boolean
+  user_id?: string
+  visibility?: VisibilityLevel
+  org_id?: string
+  _owner?: ItemOwner
 }
 
 interface UsePromptsOptions {
@@ -22,6 +26,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
 
   // customPrompts = only user-created prompts from DB
   const [customPrompts, setCustomPrompts] = useState<Prompt[]>([])
+  const [teamPrompts, setTeamPrompts] = useState<Prompt[]>([])
+  const [sharingFilter, setSharingFilter] = useState<'mine' | 'team'>('mine')
   const [selectedBaseId, setSelectedBaseId] = useState<string | null>(null)
   const [selectedRagId, setSelectedRagId] = useState<string | null>(null)
   const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null)
@@ -70,6 +76,15 @@ export function usePrompts(options: UsePromptsOptions = {}) {
     }
     setLoading(false)
   }
+
+  const loadTeamPrompts = async () => {
+    const result = await window.electronAPI?.getOrgItems('prompts')
+    if (result?.success) setTeamPrompts(result.data || [])
+  }
+
+  useEffect(() => {
+    if (sharingFilter === 'team') loadTeamPrompts()
+  }, [sharingFilter])
 
   const handleSelect = async (id: string | null, type: 'base' | 'rag' | 'transcript' | 'summary') => {
     const result = await window.electronAPI?.selectPrompt(id, type)
@@ -121,13 +136,26 @@ export function usePrompts(options: UsePromptsOptions = {}) {
     }
   }
 
+  // Active prompt source based on filter
+  const activeSource = sharingFilter === 'team' ? teamPrompts : customPrompts
+
   // Merge hardcoded defaults with custom DB prompts
-  const basePrompts = useMemo(() => [DEFAULT_BASE_PROMPT, ...customPrompts.filter(p => p.prompt_type === 'base' && !p.is_default)], [customPrompts])
-  const ragPrompts = useMemo(() => [DEFAULT_RAG_PROMPT, ...customPrompts.filter(p => p.prompt_type === 'rag' && !p.is_default)], [customPrompts])
-  const quickPrompts = useMemo(() => [...DEFAULT_QUICK_PROMPTS, ...customPrompts.filter(p => p.prompt_type === 'quick' && !p.is_default)], [customPrompts])
+  const basePrompts = useMemo(() => sharingFilter === 'mine'
+    ? [DEFAULT_BASE_PROMPT, ...activeSource.filter(p => p.prompt_type === 'base' && !p.is_default)]
+    : activeSource.filter(p => p.prompt_type === 'base'), [activeSource, sharingFilter])
+  const ragPrompts = useMemo(() => sharingFilter === 'mine'
+    ? [DEFAULT_RAG_PROMPT, ...activeSource.filter(p => p.prompt_type === 'rag' && !p.is_default)]
+    : activeSource.filter(p => p.prompt_type === 'rag'), [activeSource, sharingFilter])
+  const quickPrompts = useMemo(() => sharingFilter === 'mine'
+    ? [...DEFAULT_QUICK_PROMPTS, ...activeSource.filter(p => p.prompt_type === 'quick' && !p.is_default)]
+    : activeSource.filter(p => p.prompt_type === 'quick'), [activeSource, sharingFilter])
   const activeQuickPrompts = useMemo(() => quickPrompts.filter(p => p.is_active), [quickPrompts])
-  const transcriptPrompts = useMemo(() => [DEFAULT_TRANSCRIPT_PROMPT, ...customPrompts.filter(p => p.prompt_type === 'transcript' && !p.is_default)], [customPrompts])
-  const summaryPrompts = useMemo(() => [...DEFAULT_SUMMARY_PROMPTS, ...customPrompts.filter(p => p.prompt_type === 'summary' && !p.is_default)], [customPrompts])
+  const transcriptPrompts = useMemo(() => sharingFilter === 'mine'
+    ? [DEFAULT_TRANSCRIPT_PROMPT, ...activeSource.filter(p => p.prompt_type === 'transcript' && !p.is_default)]
+    : activeSource.filter(p => p.prompt_type === 'transcript'), [activeSource, sharingFilter])
+  const summaryPrompts = useMemo(() => sharingFilter === 'mine'
+    ? [...DEFAULT_SUMMARY_PROMPTS, ...activeSource.filter(p => p.prompt_type === 'summary' && !p.is_default)]
+    : activeSource.filter(p => p.prompt_type === 'summary'), [activeSource, sharingFilter])
 
   const customBaseRagCount = customPrompts.filter(p => p.prompt_type === 'base' || p.prompt_type === 'rag').length
   const customQuickCount = customPrompts.filter(p => p.prompt_type === 'quick').length
@@ -147,6 +175,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
   return {
     prompts: [...basePrompts, ...ragPrompts, ...quickPrompts, ...transcriptPrompts, ...summaryPrompts],
     loading,
+    sharingFilter,
+    setSharingFilter,
     selectedBaseId: effectiveBaseId,
     selectedRagId: effectiveRagId,
     selectedTranscriptId: effectiveTranscriptId,

@@ -9,6 +9,7 @@ import { registerTranscriptionHandlers } from './transcription-handlers'
 import { registerSessionHandlers } from './session-handlers'
 import { registerSessionAIHandlers } from './ai-handlers'
 import { registerWorkflowHandlers } from './workflow-handlers'
+import { registerSharingHandlers } from './sharing'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -30,4 +31,5 @@ export function registerHandlers(
   registerSessionHandlers(getSupabaseFn)
   registerSessionAIHandlers(getMainWindow, getSupabaseFn, genAI)
   registerWorkflowHandlers(getOverlayWindow, getMainWindow, getSupabaseFn, genAI)
+  registerSharingHandlers(getMainWindow, getOverlayWindow, getSupabaseFn)
 }

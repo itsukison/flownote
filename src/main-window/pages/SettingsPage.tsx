@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { LogOut, Loader2, Crown, Building2, ExternalLink, BookOpen } from 'lucide-react'
+import { LogOut, Loader2, Crown, Building2, ExternalLink } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 import { PlanCards, BusinessModal, EnterpriseModal } from '@/components/PlanSelection'
+import { formatTokens } from '@/utils/format'
 
 const t = ja
 
@@ -18,12 +19,6 @@ const STATUS_LABELS: Record<string, string> = {
   past_due: '支払い遅延',
   canceled: 'キャンセル済み',
   none: '—',
-}
-
-function formatTokens(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
-    return n.toLocaleString()
 }
 
 const NORM = {
@@ -149,7 +144,6 @@ export default function SettingsPage({ user }: Props) {
     const [checkoutLoading, setCheckoutLoading] = useState(false)
     const [businessModalOpen, setBusinessModalOpen] = useState(false)
     const [enterpriseModalOpen, setEnterpriseModalOpen] = useState(false)
-
     const refreshPlanData = () => {
         window.electronAPI?.getPlanInfo().then(setPlanInfo)
         window.electronAPI?.getMonthlyUsage().then(setMonthlyUsage)
@@ -180,6 +174,7 @@ export default function SettingsPage({ user }: Props) {
         setCheckoutLoading(false)
         if (!result?.success) {
             console.error('Checkout failed:', result?.error)
+            alert('Checkout error: ' + String(result?.error))
         }
     }
 
@@ -200,15 +195,6 @@ export default function SettingsPage({ user }: Props) {
                     </div>
                     <span className="text-xs text-zinc-400 font-mono">{user?.email}</span>
                 </div>
-
-                {planInfo?.orgName && (
-                    <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
-                        <div>
-                            <p className="text-sm text-zinc-300">{t.settings.organization}</p>
-                        </div>
-                        <span className="text-xs text-zinc-400">{planInfo.orgName}</span>
-                    </div>
-                )}
 
                 <button
                     onClick={() => window.electronAPI?.signOut()}
@@ -299,7 +285,7 @@ export default function SettingsPage({ user }: Props) {
             </section>
 
 
-            {/* ── 5. Plan + Usage ──────────────────────────────────────── */}
+            {/* ── 4. Plan + Usage ──────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
                 <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">プラン</h2>
 

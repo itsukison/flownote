@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
 import { Routes, Route, Navigate, useNavigate, NavLink } from 'react-router-dom'
-import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle, ChevronLeft, ChevronRight, AlignJustify, Zap } from 'lucide-react'
+import { FileText, History, Settings, LogOut, MessageSquare, HelpCircle, ChevronLeft, AlignJustify, Zap, Users } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import AuthPage from './pages/AuthPage'
 import ActivationPage from './pages/ActivationPage'
@@ -13,18 +13,20 @@ import PromptsPage from './pages/PromptsPage'
 import TutorialPage from './pages/TutorialPage'
 import HelpPage from './pages/HelpPage'
 import WorkflowPage from './pages/WorkflowPage'
+import TeamPage from './pages/TeamPage'
 import { UpdateToast } from '@/components/UpdateToast'
 import CommandPalette from '@/components/CommandPalette'
 
 const t = ja
 
-function Sidebar({ user, collapsed, onToggle }: { user: any; collapsed: boolean; onToggle: () => void }) {
+function Sidebar({ user, collapsed, onToggle, isOrgMember }: { user: any; collapsed: boolean; onToggle: () => void; isOrgMember: boolean }) {
     const navigate = useNavigate()
     const navItems = [
         { to: '/documents', icon: FileText, label: t.sidebar.documents },
         { to: '/prompts', icon: MessageSquare, label: t.sidebar.prompts },
         { to: '/history', icon: History, label: t.sidebar.history },
         { to: '/workflow', icon: Zap, label: t.sidebar.workflow },
+        ...(isOrgMember ? [{ to: '/team', icon: Users, label: t.sidebar.team }] : []),
         { to: '/help', icon: HelpCircle, label: t.sidebar.help },
         { to: '/settings', icon: Settings, label: t.sidebar.settings },
     ]
@@ -129,11 +131,22 @@ export default function MainApp() {
     const [prompts, setPrompts] = useState<any[]>([])
     const [promptsLoading, setPromptsLoading] = useState(true)
     const [promptsSelectedIds, setPromptsSelectedIds] = useState<{ base?: string; rag?: string }>({})
+    const [isOrgMember, setIsOrgMember] = useState(false)
 
     // Load cached data on mount
     useEffect(() => {
         loadCollections()
         loadPrompts()
+        window.electronAPI?.getPlanInfo().then((info) => {
+            setIsOrgMember(!!info?.orgId)
+        })
+
+        const unsubMembership = window.electronAPI?.onOrgMembershipChanged((payload) => {
+            setIsOrgMember(!!payload.orgId)
+        })
+        const unsubPlan = window.electronAPI?.onPlanChanged(() => {
+            window.electronAPI?.getPlanInfo().then(info => setIsOrgMember(!!info?.orgId))
+        })
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -142,7 +155,11 @@ export default function MainApp() {
             }
         }
         window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
+        return () => {
+            unsubMembership?.()
+            unsubPlan?.()
+            window.removeEventListener('keydown', handleKeyDown)
+        }
     }, [])
 
     const loadCollections = async () => {
@@ -286,7 +303,7 @@ export default function MainApp() {
                         element={
                             session ? (
                                 <div className="flex flex-1 overflow-hidden relative">
-                                    <Sidebar user={user} collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+                                    <Sidebar user={user} collapsed={sidebarCollapsed} onToggle={toggleSidebar} isOrgMember={isOrgMember} />
 
                                     {/* Floating toggle button */}
                                     <button
@@ -307,10 +324,11 @@ export default function MainApp() {
                                     <main className="flex-1 overflow-auto">
                                         <Routes>
                                             <Route path="/" element={<Navigate to="/documents" replace />} />
-                                            <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} />} />
-                                            <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} />} />
+                                            <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} isOrgMember={isOrgMember} />} />
+                                            <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} isOrgMember={isOrgMember} />} />
                                             <Route path="/history" element={<HistoryPage />} />
-                                            <Route path="/workflow/*" element={<WorkflowPage />} />
+                                            <Route path="/workflow/*" element={<WorkflowPage isOrgMember={isOrgMember} />} />
+                                            <Route path="/team" element={<TeamPage user={user} />} />
                                             <Route path="/settings" element={<SettingsPage user={user} />} />
                                             <Route path="/help" element={<HelpPage />} />
                                         </Routes>

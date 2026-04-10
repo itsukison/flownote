@@ -12,7 +12,6 @@ async function getCustomPrompts(getSupabase: GetSupabaseFn): Promise<any[]> {
     const { data: prompts, error } = await supabase
       .from('prompts')
       .select('*')
-      .eq('user_id', user.id)
       .order('created_at', { ascending: true })
     if (error) {
       console.error('[Handlers] getCustomPrompts error:', error)
@@ -73,9 +72,23 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
         return { success: false, error: isQuick ? '最大10個までのクイックプロンプトを作成できます' : '最大3つまでのカスタムプロンプトを作成できます' }
       }
 
+      // Read user's default visibility preference
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('default_prompt_visibility')
+        .eq('id', user.id)
+        .single()
+
+      const defaultVis = profile?.default_prompt_visibility || 'private'
+      let orgId: string | null = null
+      if (defaultVis !== 'private') {
+        const { data: oid } = await supabase.rpc('get_user_org_id', { p_user_id: user.id })
+        orgId = oid || null
+      }
+
       const { data, error } = await supabase
         .from('prompts')
-        .insert({ user_id: user.id, name, content, prompt_type: promptType, is_default: false, is_active: promptType === 'quick' })
+        .insert({ user_id: user.id, name, content, prompt_type: promptType, is_default: false, is_active: promptType === 'quick', visibility: defaultVis, org_id: orgId })
         .select()
         .single()
 
@@ -90,10 +103,14 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: 'Not authenticated' }
+
       const { data, error } = await supabase
         .from('prompts')
         .update({ name, content, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .eq('user_id', user.id)
         .select()
         .single()
 
@@ -145,10 +162,14 @@ export function registerPromptHandlers(getSupabase: GetSupabaseFn) {
     const supabase = getSupabase()
     if (!supabase) return { success: false, error: 'Database not available' }
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: 'Not authenticated' }
+
       const { error } = await supabase
         .from('prompts')
         .update({ is_active: isActive, updated_at: new Date().toISOString() })
         .eq('id', id)
+        .eq('user_id', user.id)
       if (error) return { success: false, error: error.message }
       return { success: true }
     } catch (err: any) {

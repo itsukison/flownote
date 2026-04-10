@@ -38,7 +38,6 @@ export function registerWorkflowHandlers(
     const { data, error } = await supabase
       .from('workflows')
       .select('*')
-      .eq('user_id', userId)
       .order('created_at', { ascending: true })
 
     if (error) return { success: false, error: error.message }
@@ -51,6 +50,20 @@ export function registerWorkflowHandlers(
     const userId = await getCurrentUserId(getSupabase)
     if (!userId) return { success: false, error: 'not_authenticated' }
 
+    // Read user's default visibility preference
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('default_workflow_visibility')
+      .eq('id', userId)
+      .single()
+
+    const defaultVis = profile?.default_workflow_visibility || 'private'
+    let orgId: string | null = null
+    if (defaultVis !== 'private') {
+      const { data: oid } = await supabase.rpc('get_user_org_id', { p_user_id: userId })
+      orgId = oid || null
+    }
+
     const { data, error } = await supabase
       .from('workflows')
       .insert({
@@ -60,6 +73,8 @@ export function registerWorkflowHandlers(
         trigger_type: workflow.trigger_type,
         trigger_config: workflow.trigger_config ?? {},
         steps: workflow.steps ?? [],
+        visibility: defaultVis,
+        org_id: orgId,
       })
       .select()
       .single()
@@ -201,17 +216,35 @@ export function registerWorkflowHandlers(
     const userId = await getCurrentUserId(getSupabase)
     if (!userId) return { success: false, error: 'not_authenticated' }
 
-    const { data: workflow, error } = await supabase
+    // Try to find as owner first
+    let { data: workflow } = await supabase
       .from('workflows')
       .select('*')
       .eq('id', id)
       .eq('user_id', userId)
       .single()
 
-    if (error || !workflow) return { success: false, error: 'Workflow not found' }
+    let isSharedRun = false
+
+    if (!workflow) {
+      // Try as shared workflow (RLS allows SELECT if visibility != private and same org)
+      const { data: sharedWorkflow } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('id', id)
+        .neq('visibility', 'private')
+        .single()
+
+      if (!sharedWorkflow) return { success: false, error: 'Workflow not found' }
+      workflow = sharedWorkflow
+      isSharedRun = true
+    }
 
     const context = await buildSessionContext(supabase, userId, transcriptId ? { transcriptId } : undefined)
-    const result = await executeWorkflow(workflow as Workflow, context, supabase, genAI, userId)
+    const result = await executeWorkflow(workflow as Workflow, context, supabase, genAI, userId, isSharedRun ? {
+      stepsSnapshot: workflow.steps,
+      sourceWorkflowOwnerId: workflow.user_id,
+    } : undefined)
     notifyRunCompleted(workflow.id, workflow.name, result.success, result.error)
 
     return result

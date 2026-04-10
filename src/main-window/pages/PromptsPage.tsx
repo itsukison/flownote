@@ -14,11 +14,13 @@ export default function PromptsPage({
   loading: externalLoading,
   selectedIds,
   onRefresh,
+  isOrgMember,
 }: {
   prompts?: Prompt[]
   loading?: boolean
   selectedIds?: { base?: string; rag?: string; transcript?: string; summary?: string }
   onRefresh?: () => void
+  isOrgMember?: boolean
 }) {
   const {
     loading,
@@ -40,10 +42,17 @@ export default function PromptsPage({
     handleUpdate,
     handleDelete,
     handleToggleActive,
+    sharingFilter,
+    setSharingFilter,
   } = usePrompts({ initialPrompts, externalLoading, selectedIds, onRefresh })
 
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null)
   const [creatingType, setCreatingType] = useState<CreatingType>(null)
+
+  const handleVisibilityChange = async (promptId: string, visibility: VisibilityLevel) => {
+    const result = await window.electronAPI?.setVisibility('prompts', promptId, visibility)
+    if (result?.success) onRefresh?.()
+  }
 
   const clearEditing = () => { setEditingPrompt(null); setCreatingType(null) }
   const startCreating = (type: CreatingType) => { setCreatingType(type); setEditingPrompt(null) }
@@ -99,9 +108,30 @@ export default function PromptsPage({
 
   return (
     <div className="flex-1 flex flex-col min-h-full max-w-4xl mx-auto px-8 py-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.prompts.title}</h1>
       </div>
+
+      {isOrgMember && (
+        <div className="flex items-center gap-1 mb-6">
+          {([
+            { key: 'mine' as const, label: t.sharing.filterMine },
+            { key: 'team' as const, label: t.sharing.filterTeam },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setSharingFilter(tab.key)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                sharingFilter === tab.key
+                  ? 'bg-white/10 text-white/80'
+                  : 'text-white/30 hover:text-white/50 hover:bg-white/5'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ═══ Section 1: System Prompts ═══ */}
       <section className="mb-10">
@@ -126,6 +156,8 @@ export default function PromptsPage({
                 onSelect={() => handleSelect(prompt.is_default ? null : prompt.id, 'base')}
                 onEdit={() => startEditing(prompt)}
                 onDelete={() => handleDelete(prompt.id, 'base')}
+                isOwner={!prompt._owner}
+                onVisibilityChange={!prompt._owner && !prompt.is_default && isOrgMember ? (v) => handleVisibilityChange(prompt.id, v) : undefined}
               />
             ))}
           </div>
@@ -147,6 +179,8 @@ export default function PromptsPage({
                 onSelect={() => handleSelect(prompt.is_default ? null : prompt.id, 'rag')}
                 onEdit={() => startEditing(prompt)}
                 onDelete={() => handleDelete(prompt.id, 'rag')}
+                isOwner={!prompt._owner}
+                onVisibilityChange={!prompt._owner && !prompt.is_default && isOrgMember ? (v) => handleVisibilityChange(prompt.id, v) : undefined}
               />
             ))}
           </div>
@@ -168,6 +202,8 @@ export default function PromptsPage({
                 onSelect={() => handleSelect(prompt.is_default ? null : prompt.id, 'transcript')}
                 onEdit={() => startEditing(prompt)}
                 onDelete={() => handleDelete(prompt.id, 'transcript')}
+                isOwner={!prompt._owner}
+                onVisibilityChange={!prompt._owner && !prompt.is_default && isOrgMember ? (v) => handleVisibilityChange(prompt.id, v) : undefined}
               />
             ))}
           </div>
@@ -197,6 +233,8 @@ export default function PromptsPage({
                 onSelect={() => {}}
                 onEdit={() => startEditing(prompt)}
                 onDelete={() => handleDelete(prompt.id, 'quick')}
+                isOwner={!prompt._owner}
+                onVisibilityChange={!prompt._owner && !prompt.is_default && isOrgMember ? (v) => handleVisibilityChange(prompt.id, v) : undefined}
               />
             ))}
           </div>
@@ -222,6 +260,8 @@ export default function PromptsPage({
                 onSelect={() => handleSelect(prompt.id, 'summary')}
                 onEdit={() => startEditing(prompt)}
                 onDelete={() => handleDelete(prompt.id, 'summary')}
+                isOwner={!prompt._owner}
+                onVisibilityChange={!prompt._owner && !prompt.is_default && isOrgMember ? (v) => handleVisibilityChange(prompt.id, v) : undefined}
               />
             ))}
           </div>

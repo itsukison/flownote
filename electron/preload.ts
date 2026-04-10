@@ -170,6 +170,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openCheckout: (plan: string, seats?: number) => ipcRenderer.invoke('org:open-checkout', plan, seats),
   openBillingPortal: () => ipcRenderer.invoke('org:open-billing-portal'),
   openExternal: (url: string) => ipcRenderer.invoke('open:external-url', url),
+  getTeamMembers: () => ipcRenderer.invoke('org:get-team-members'),
+  getAdminDashboard: () => ipcRenderer.invoke('org:get-admin-dashboard'),
+  removeMember: (userId: string) => ipcRenderer.invoke('org:remove-member', userId),
   onUsageLimitExceeded: (cb: () => void) => {
     const fn = () => cb()
     ipcRenderer.on('usage-limit-exceeded', fn)
@@ -194,6 +197,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Profile Settings ────────────────────────────────────────────────────
   getProfileSettings: () => ipcRenderer.invoke('profiles:get-settings'),
   setAutoSummary: (enabled: boolean) => ipcRenderer.invoke('profiles:set-auto-summary', enabled),
+
+  // ── Sharing ──────────────────────────────────────────────────────────────
+  setVisibility: (itemType: string, itemId: string, visibility: string) =>
+    ipcRenderer.invoke('sharing:set-visibility', itemType, itemId, visibility),
+  getOrgItems: (itemType: string) =>
+    ipcRenderer.invoke('sharing:get-org-items', itemType),
+  getSharingDefaults: () => ipcRenderer.invoke('sharing:get-defaults'),
+  setSharingDefaults: (defaults: any) => ipcRenderer.invoke('sharing:set-defaults', defaults),
 
   // ── Prompts ────────────────────────────────────────────────────────────────
   getPrompts: () => ipcRenderer.invoke('prompts:list'),

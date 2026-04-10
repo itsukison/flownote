@@ -1,5 +1,5 @@
 import { Routes, Route, useNavigate } from 'react-router-dom'
-import { Plus, Zap, Hand, Clock, Play, Loader2, ListChecks } from 'lucide-react'
+import { Plus, Zap, Hand, Clock, Play, Loader2, ListChecks, Share2, Lock, Eye, Users } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { useWorkflows, Workflow } from '@/hooks/useWorkflows'
 import { WORKFLOW_TEMPLATES } from './workflow/templates'
@@ -50,15 +50,22 @@ function formatLastRun(dateStr: string | null) {
 
 // ── List View ─────────────────────────────────────────────────────────────
 
-function WorkflowList() {
+function WorkflowList({ isOrgMember }: { isOrgMember?: boolean }) {
   const navigate = useNavigate()
   const {
     workflows, loading, toggleWorkflow, deleteWorkflow, runWorkflow,
     slackStatus, slackChannels, connectSlack, disconnectSlack,
     createWorkflow, updateWorkflow,
+    sharingFilter, setSharingFilter, currentUserId,
   } = useWorkflows()
   const [runningId, setRunningId] = useState<string | null>(null)
   const [pendingRunId, setPendingRunId] = useState<string | null>(null)
+  const [visMenuId, setVisMenuId] = useState<string | null>(null)
+
+  const handleVisibilityChange = async (id: string, visibility: VisibilityLevel) => {
+    await window.electronAPI?.setVisibility('workflows', id, visibility)
+    setVisMenuId(null)
+  }
 
   // Listen for workflow run completion toasts
   useEffect(() => {
@@ -104,6 +111,27 @@ function WorkflowList() {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
+      {isOrgMember && (
+        <div className="flex items-center gap-1 mb-4">
+          {([
+            { key: 'mine' as const, label: ja.sharing.filterMine },
+            { key: 'team' as const, label: ja.sharing.filterTeam },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setSharingFilter(tab.key)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                sharingFilter === tab.key
+                  ? 'bg-white/10 text-white/80'
+                  : 'text-white/30 hover:text-white/50 hover:bg-white/5'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.title}</h1>
         <div className="flex items-center gap-2">
@@ -146,7 +174,24 @@ function WorkflowList() {
                   onClick={() => navigate(`/workflow/edit/${wf.id}`)}
                   className="flex-1 min-w-0 text-left"
                 >
-                  <div className="text-sm font-medium text-white/80 truncate">{wf.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-white/80 truncate">{wf.name}</span>
+                    {wf._owner && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-violet-500/10 text-violet-400/70 rounded-full font-medium shrink-0">
+                        {wf._owner.email?.[0]?.toUpperCase() || '?'} · {ja.sharing.teamBadge}
+                      </span>
+                    )}
+                    {wf.visibility && wf.visibility !== 'private' && !wf._owner && (
+                      <span className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-sky-500/10 text-sky-400/70 rounded-full font-medium shrink-0">
+                        {wf.visibility === 'team_view' ? <Eye size={8} /> : <Users size={8} />}
+                      </span>
+                    )}
+                    {wf._owner && wf.trigger_type !== 'manual' && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-white/30 rounded-full font-medium shrink-0">
+                        {ja.sharing.manualRunOnly}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="flex items-center gap-1 text-[11px] text-white/30">
                       {triggerIcon(wf.trigger_type)}
@@ -161,8 +206,38 @@ function WorkflowList() {
                   </div>
                 </button>
 
-                {/* Run button (manual only) */}
-                {wf.trigger_type === 'manual' && (
+                {/* Visibility menu (owner only) */}
+                {!wf._owner && currentUserId === wf.user_id && isOrgMember && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setVisMenuId(visMenuId === wf.id ? null : wf.id)}
+                      className="p-2 rounded-lg text-white/20 hover:text-white/50 hover:bg-white/[0.06] transition-colors"
+                      title={ja.sharing.sharingLabel}
+                    >
+                      <Share2 size={13} />
+                    </button>
+                    {visMenuId === wf.id && (
+                      <div className="absolute right-0 top-9 z-50 w-40 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-xs">
+                        {([
+                          { value: 'private' as VisibilityLevel, label: ja.sharing.private, icon: <Lock size={10} /> },
+                          { value: 'team_view' as VisibilityLevel, label: ja.sharing.teamView, icon: <Eye size={10} /> },
+                          { value: 'team_edit' as VisibilityLevel, label: ja.sharing.teamEdit, icon: <Users size={10} /> },
+                        ]).map(opt => (
+                          <button
+                            key={opt.value}
+                            onClick={() => handleVisibilityChange(wf.id, opt.value)}
+                            className={`w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 ${wf.visibility === opt.value ? 'text-white' : 'text-white/50'}`}
+                          >
+                            {opt.icon} {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Run button (manual only, or team shared workflows manual-only) */}
+                {(wf.trigger_type === 'manual' || wf._owner) && (
                   <button
                     onClick={() => handleRunClick(wf.id)}
                     disabled={runningId === wf.id}
@@ -232,15 +307,15 @@ function WorkflowList() {
 
 // ── Router ────────────────────────────────────────────────────────────────
 
-export default function WorkflowPage() {
+export default function WorkflowPage({ isOrgMember }: { isOrgMember?: boolean }) {
   const {
-    workflows, createWorkflow, updateWorkflow,
+    allWorkflows: workflows, createWorkflow, updateWorkflow,
     slackStatus, slackChannels, connectSlack, disconnectSlack,
   } = useWorkflows()
 
   return (
     <Routes>
-      <Route index element={<WorkflowList />} />
+      <Route index element={<WorkflowList isOrgMember={isOrgMember} />} />
       <Route path="history" element={<WorkflowHistoryPage />} />
       <Route
         path="new"

@@ -52,8 +52,7 @@ export function registerDocumentHandlers(
 
         const { data, error } = await supabase
             .from('collections')
-            .select('id, name, created_at')
-            .eq('user_id', user.id)
+            .select('id, name, created_at, visibility, user_id, org_id')
             .order('created_at', { ascending: true })
 
         if (error) { console.error('[Documents] list collections:', error); return [] }
@@ -66,10 +65,24 @@ export function registerDocumentHandlers(
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return null
 
+        // Read user's default visibility preference
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('default_collection_visibility')
+            .eq('id', user.id)
+            .single()
+
+        const defaultVis = profile?.default_collection_visibility || 'private'
+        let orgId: string | null = null
+        if (defaultVis !== 'private') {
+            const { data: oid } = await supabase.rpc('get_user_org_id', { p_user_id: user.id })
+            orgId = oid || null
+        }
+
         const { data, error } = await supabase
             .from('collections')
-            .insert({ name, user_id: user.id })
-            .select('id, name, created_at')
+            .insert({ name, user_id: user.id, visibility: defaultVis, org_id: orgId })
+            .select('id, name, created_at, visibility, user_id, org_id')
             .single()
 
         if (error) { console.error('[Documents] create collection:', error); return null }
@@ -80,11 +93,14 @@ export function registerDocumentHandlers(
     ipcMain.handle('doc:rename-collection', async (_event, id: string, newName: string) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { success: false, error: 'Not authenticated' }
 
         const { error } = await supabase
             .from('collections')
             .update({ name: newName })
             .eq('id', id)
+            .eq('user_id', user.id)
 
         if (error) {
             console.error('[Documents] rename collection:', error)
@@ -97,12 +113,14 @@ export function registerDocumentHandlers(
     ipcMain.handle('doc:delete-collection', async (_event, id: string) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { success: false, error: 'Not authenticated' }
 
-        // Note: documents might cascade delete, but if not we may need to delete docs first
         const { error } = await supabase
             .from('collections')
             .delete()
             .eq('id', id)
+            .eq('user_id', user.id)
 
         if (error) {
             console.error('[Documents] delete collection:', error)
@@ -272,12 +290,15 @@ export function registerDocumentHandlers(
     ipcMain.handle('doc:delete', async (_event, documentId: string) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { success: false, error: 'Not authenticated' }
 
         try {
             const { error } = await supabase
                 .from('documents')
                 .delete()
                 .eq('id', documentId)
+                .eq('user_id', user.id)
 
             if (error) throw error
             return { success: true }
@@ -289,12 +310,15 @@ export function registerDocumentHandlers(
     ipcMain.handle('doc:rename-document', async (_event, documentId: string, newName: string) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return { success: false, error: 'Not authenticated' }
 
         try {
             const { error } = await supabase
                 .from('documents')
                 .update({ name: newName })
                 .eq('id', documentId)
+                .eq('user_id', user.id)
 
             if (error) throw error
             return { success: true }
@@ -348,6 +372,7 @@ export function registerDocumentHandlers(
                     content: text.slice(0, 10000)
                 })
                 .eq('id', documentId)
+                .eq('user_id', user.id)
 
             if (docErr) throw docErr
 

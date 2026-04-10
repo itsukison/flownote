@@ -4,6 +4,19 @@
 export { }
 
 declare global {
+    type VisibilityLevel = 'private' | 'team_view' | 'team_edit'
+
+    interface SharingDefaults {
+        collections: VisibilityLevel
+        prompts: VisibilityLevel
+        workflows: VisibilityLevel
+    }
+
+    interface ItemOwner {
+        id: string
+        email: string
+    }
+
     interface Window {
         electronAPI: {
             // ── Auth ────────────────────────────────────────────────────────────────
@@ -82,6 +95,9 @@ declare global {
             openCheckout: (plan: string, seats?: number) => Promise<{ success: boolean; error?: string }>
             openBillingPortal: () => Promise<{ success: boolean; error?: string }>
             openExternal: (url: string) => Promise<void>
+            getTeamMembers: () => Promise<TeamMembersData | null>
+            getAdminDashboard: () => Promise<OrgAdminDashboard | null>
+            removeMember: (userId: string) => Promise<{ success: boolean; error?: string }>
             onUsageLimitExceeded: (cb: () => void) => () => void
             onOrgMembershipChanged: (cb: (payload: { orgId: string | null; orgName: string | null }) => void) => () => void
             onPlanChanged: (cb: (payload: { plan: string; subscriptionStatus: string }) => void) => () => void
@@ -89,6 +105,11 @@ declare global {
             // ── Profile Settings ────────────────────────────────────────────────────
             getProfileSettings: () => Promise<{ success: boolean; auto_summary_enabled: boolean; error?: string }>
             setAutoSummary: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
+            // ── Sharing ──────────────────────────────────────────────────────────────
+            setVisibility: (itemType: string, itemId: string, visibility: VisibilityLevel) => Promise<{ success: boolean; error?: string }>
+            getOrgItems: (itemType: 'collections' | 'prompts' | 'workflows') => Promise<{ success: boolean; data: any[] }>
+            getSharingDefaults: () => Promise<{ success: boolean; data?: SharingDefaults; error?: string }>
+            setSharingDefaults: (defaults: Partial<SharingDefaults>) => Promise<{ success: boolean; error?: string }>
             // ── Prompts ────────────────────────────────────────────────────────────────
             getPrompts: () => Promise<{ success: boolean; data: Prompt[]; selectedBaseId?: string | null; selectedRagId?: string | null; selectedTranscriptId?: string | null; selectedSummaryId?: string | null; error?: string }>
             createPrompt: (name: string, content: string, promptType: string) => Promise<{ success: boolean; data?: Prompt; error?: string }>
@@ -156,6 +177,10 @@ declare global {
         id: string
         name: string
         created_at: string
+        visibility?: VisibilityLevel
+        user_id?: string
+        org_id?: string
+        _owner?: ItemOwner
     }
 
     interface Doc {
@@ -178,6 +203,9 @@ declare global {
         is_active: boolean
         created_at: string
         updated_at: string
+        visibility?: VisibilityLevel
+        org_id?: string
+        _owner?: ItemOwner
     }
 
     interface SessionTranscript {
@@ -258,5 +286,39 @@ declare global {
         cancelAtPeriodEnd: boolean
         orgId: string | null
         orgName: string | null
+        isAdmin: boolean
+    }
+
+    interface OrgMemberInfo {
+        user_id: string
+        email: string
+        role: string
+        joined_at: string
+        normalized_tokens_used: number
+    }
+
+    interface TeamMembersData {
+        success: true
+        org: {
+            id: string
+            name: string
+            seat_count: number
+            max_users: number | null
+            normalized_token_limit_per_user: number
+        }
+        members: OrgMemberInfo[]
+    }
+
+    interface OrgAdminDashboard {
+        success: true
+        org: {
+            id: string
+            name: string
+            seat_count: number
+            max_users: number | null
+            normalized_token_limit_per_user: number
+        }
+        activation_code: string | null
+        members: OrgMemberInfo[]
     }
 }

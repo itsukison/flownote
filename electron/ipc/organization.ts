@@ -148,6 +148,7 @@ export function registerOrganizationHandlers(
         cancelAtPeriodEnd: state.cancelAtPeriodEnd,
         orgId: state.orgId,
         orgName: state.orgName,
+        isAdmin: state.isAdmin,
       }
     } catch (err: any) {
       console.error('[Organization] get-plan-info error:', err)
@@ -163,8 +164,10 @@ export function registerOrganizationHandlers(
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return { success: false, error: 'Not authenticated' }
+      console.log('[open-checkout] Starting checkout flow. plan:', plan, 'seats:', seats)
 
       // Create checkout token via flownoteweb API
+      console.log(`[open-checkout] Fetching ${WEB_URL}/api/checkout-token`)
       const response = await fetch(`${WEB_URL}/api/checkout-token`, {
         method: 'POST',
         headers: {
@@ -173,27 +176,38 @@ export function registerOrganizationHandlers(
         },
         body: JSON.stringify({ plan, seats }),
       })
+      console.log(`[open-checkout] Token fetch returned status: ${response.status}`)
 
       if (!response.ok) {
-        const err = await response.json()
+        const errText = await response.text()
+        console.error('[open-checkout] Failed to create checkout:', errText)
+        let err;
+        try { err = JSON.parse(errText); } catch(e) { err = { error: errText }; }
         return { success: false, error: err.error || 'Failed to create checkout' }
       }
 
       const { token } = await response.json()
+      console.log('[open-checkout] Received token successfully:', token)
 
       // Create checkout session via flownoteweb API
+      console.log(`[open-checkout] Fetching ${WEB_URL}/api/stripe/checkout with token`)
       const checkoutRes = await fetch(`${WEB_URL}/api/stripe/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ checkout_token: token }),
       })
+      console.log(`[open-checkout] Stripe/checkout fetch returned status: ${checkoutRes.status}`)
 
       if (!checkoutRes.ok) {
-        const err = await checkoutRes.json()
+        const errText = await checkoutRes.text()
+        console.error('[open-checkout] Failed to string/checkout:', errText)
+        let err;
+        try { err = JSON.parse(errText); } catch(e) { err = { error: errText }; }
         return { success: false, error: err.error || 'Failed to create checkout session' }
       }
 
       const { url } = await checkoutRes.json()
+      console.log('[open-checkout] Got final checkout URL:', url)
       if (url) {
         await shell.openExternal(url)
         return { success: true }
@@ -243,5 +257,88 @@ export function registerOrganizationHandlers(
 
   ipcMain.handle('open:external-url', (_event, url: string) => {
     shell.openExternal(url)
+  })
+
+  // Get team members — accessible to any active org member
+  ipcMain.handle('org:get-team-members', async () => {
+    const supabase = getSupabase()
+    if (!supabase) return null
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+
+      const { data, error } = await supabase.rpc('get_team_members', {
+        p_user_id: user.id,
+      })
+
+      if (error) {
+        console.error('[Organization] get-team-members error:', error)
+        return null
+      }
+
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      if (!result?.success) return null
+
+      return result
+    } catch (err: any) {
+      console.error('[Organization] get-team-members error:', err)
+      return null
+    }
+  })
+
+  // Get admin dashboard (org info, activation code, members)
+  ipcMain.handle('org:get-admin-dashboard', async () => {
+    const supabase = getSupabase()
+    if (!supabase) return null
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+
+      const { data, error } = await supabase.rpc('get_admin_dashboard', {
+        p_user_id: user.id,
+      })
+
+      if (error) {
+        console.error('[Organization] get-admin-dashboard error:', error)
+        return null
+      }
+
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      if (!result?.success) return null
+
+      return result
+    } catch (err: any) {
+      console.error('[Organization] get-admin-dashboard error:', err)
+      return null
+    }
+  })
+
+  // Remove a member from the org (admin only)
+  ipcMain.handle('org:remove-member', async (_event, targetUserId: string) => {
+    const supabase = getSupabase()
+    if (!supabase) return { success: false, error: 'Database not available' }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return { success: false, error: 'Not authenticated' }
+
+      const { data, error } = await supabase.rpc('deactivate_org_member', {
+        p_admin_user_id: user.id,
+        p_target_user_id: targetUserId,
+      })
+
+      if (error) {
+        console.error('[Organization] remove-member error:', error)
+        return { success: false, error: error.message }
+      }
+
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      return result
+    } catch (err: any) {
+      console.error('[Organization] remove-member error:', err)
+      return { success: false, error: err.message }
+    }
   })
 }

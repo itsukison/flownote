@@ -15,6 +15,7 @@ export interface UsageState {
   tokenLimit: number
   orgId: string | null
   orgName: string | null
+  isAdmin: boolean
   plan: Plan
   subscriptionStatus: string
   freeCreditsRemaining: number
@@ -28,6 +29,7 @@ let cachedState: UsageState = {
   tokenLimit: 0,
   orgId: null,
   orgName: null,
+  isAdmin: false,
   plan: 'free',
   subscriptionStatus: 'none',
   freeCreditsRemaining: 2_000_000,
@@ -92,6 +94,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
             tokenLimit: result.token_limit ?? PLAN_LIMITS[plan],
             orgId,
             orgName,
+            isAdmin: result.role === 'admin',
             plan,
             subscriptionStatus,
             freeCreditsRemaining,
@@ -111,6 +114,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         tokenLimit: PLAN_LIMITS.free,
         orgId: null,
         orgName: null,
+        isAdmin: false,
         plan,
         subscriptionStatus,
         freeCreditsRemaining,
@@ -124,6 +128,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         tokenLimit: PLAN_LIMITS.pro,
         orgId: null,
         orgName: null,
+        isAdmin: false,
         plan,
         subscriptionStatus,
         freeCreditsRemaining,
@@ -138,6 +143,7 @@ export async function fetchUsageState(supabase: SupabaseClient, userId: string):
         tokenLimit: PLAN_LIMITS[plan],
         orgId: null,
         orgName: null,
+        isAdmin: false,
         plan,
         subscriptionStatus,
         freeCreditsRemaining,

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import {
   Plus,
   Upload,
@@ -8,6 +8,9 @@ import {
   Loader2,
   FileText,
   Folder as FolderIcon,
+  Lock,
+  Eye,
+  Users,
 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { useDocuments, Collection } from '@/hooks/useDocuments'
@@ -21,34 +24,66 @@ const t = ja
 function ContextMenu({
   x, y,
   onRename, onDelete, onClose,
+  isOwner, visibility, onVisibilityChange,
 }: {
   x: number; y: number
   onRename: () => void
   onDelete: () => void
   onClose: () => void
+  isOwner: boolean
+  visibility?: VisibilityLevel
+  onVisibilityChange?: (v: VisibilityLevel) => void
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 w-36 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-sm text-white/90"
-      style={{ top: Math.min(y, window.innerHeight - 100), left: Math.min(x, window.innerWidth - 150) }}
+      className="fixed z-50 w-48 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-sm text-white/90"
+      style={{ top: Math.min(y, window.innerHeight - 200), left: Math.min(x, window.innerWidth - 200) }}
       onMouseDown={e => e.stopPropagation()}
     >
-      <button
-        onClick={() => { onRename(); onClose() }}
-        className="w-full text-left px-3 py-1.5 hover:bg-white/10 transition-colors"
-      >
-        {t.common.rename}
-      </button>
-      <div className="h-[1px] bg-white/5 my-1" />
-      <button
-        onClick={() => { onDelete(); onClose() }}
-        className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-400/10 transition-colors"
-      >
-        {t.common.delete}
-      </button>
+      {isOwner && (
+        <>
+          <button
+            onClick={() => { onRename(); onClose() }}
+            className="w-full text-left px-3 py-1.5 hover:bg-white/10 transition-colors"
+          >
+            {t.common.rename}
+          </button>
+          <div className="h-[1px] bg-white/5 my-1" />
+        </>
+      )}
+      {isOwner && onVisibilityChange && (
+        <>
+          <div className="px-3 py-1 text-[10px] text-white/30 uppercase tracking-wider">{t.sharing.sharingLabel}</div>
+          {([
+            { value: 'private' as const, label: t.sharing.private, icon: <Lock size={11} /> },
+            { value: 'team_view' as const, label: t.sharing.teamView, icon: <Eye size={11} /> },
+            { value: 'team_edit' as const, label: t.sharing.teamEdit, icon: <Users size={11} /> },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onVisibilityChange(opt.value); onClose() }}
+              className={`w-full text-left px-3 py-1.5 hover:bg-white/10 transition-colors flex items-center gap-2 ${visibility === opt.value ? 'text-white' : 'text-white/50'}`}
+            >
+              <span className={`w-3 h-3 rounded-full border ${visibility === opt.value ? 'border-white bg-white/20' : 'border-white/20'} flex items-center justify-center`}>
+                {visibility === opt.value && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+              </span>
+              <span className="flex items-center gap-1.5">{opt.icon} {opt.label}</span>
+            </button>
+          ))}
+          <div className="h-[1px] bg-white/5 my-1" />
+        </>
+      )}
+      {isOwner && (
+        <button
+          onClick={() => { onDelete(); onClose() }}
+          className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-400/10 transition-colors"
+        >
+          {t.common.delete}
+        </button>
+      )}
     </div>
   )
 }
@@ -57,17 +92,49 @@ export default function DocumentsPage({
   collections: initialCollections,
   loading: externalLoading,
   onRefresh,
+  isOrgMember,
 }: {
   collections?: Collection[]
   loading?: boolean
   onRefresh?: () => void
+  isOrgMember?: boolean
 }) {
   const docs = useDocuments({ initialCollections, externalLoading, onRefresh })
+
+  const handleVisibilityChange = async (itemId: string, visibility: VisibilityLevel) => {
+    const result = await window.electronAPI?.setVisibility('collections', itemId, visibility)
+    if (result?.success) {
+      // Refresh collections list
+      onRefresh?.()
+    }
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-[#111113] text-white overflow-hidden min-h-full relative" onClick={docs.closeContextMenu}>
       <div className="flex-1 flex flex-col overflow-y-auto" onClick={() => docs.cancelInlineEdit()}>
         <div className="max-w-5xl mx-auto px-8 py-8 w-full flex-1 flex flex-col">
+
+          {/* Sharing filter tabs */}
+          {isOrgMember && !docs.selectedCol && (
+            <div className="flex items-center gap-1 mb-4">
+              {([
+                { key: 'mine' as const, label: t.sharing.filterMine },
+                { key: 'team' as const, label: t.sharing.filterTeam },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => docs.setSharingFilter(tab.key)}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    docs.sharingFilter === tab.key
+                      ? 'bg-white/10 text-white/80'
+                      : 'text-white/30 hover:text-white/50 hover:bg-white/5'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -142,8 +209,8 @@ export default function DocumentsPage({
               ) : (
                 <>
                   <FolderIcon className="w-12 h-12 mb-4 text-white/10" />
-                  <p>{t.documents.noFoldersYet}</p>
-                  <p className="text-sm mt-1">{t.documents.createFolderToStart}</p>
+                  <p>{docs.sharingFilter === 'team' ? t.sharing.emptyTeam : t.documents.noFoldersYet}</p>
+                  <p className="text-sm mt-1">{docs.sharingFilter === 'team' ? t.sharing.emptyTeamHint : t.documents.createFolderToStart}</p>
                 </>
               )}
             </div>
@@ -191,21 +258,32 @@ export default function DocumentsPage({
       </div>
 
       {/* Context Menu */}
-      {docs.contextMenu.visible && (
-        <ContextMenu
-          x={docs.contextMenu.x}
-          y={docs.contextMenu.y}
-          onRename={() => docs.startInlineEditing(docs.contextMenu.id, docs.contextMenu.currentName)}
-          onDelete={() => {
-            if (docs.contextMenu.type === 'folder') {
-              docs.handleDeleteFolder(docs.contextMenu.id, docs.contextMenu.currentName)
-            } else {
-              docs.handleDeleteDoc(docs.contextMenu.id, docs.contextMenu.currentName)
-            }
-          }}
-          onClose={docs.closeContextMenu}
-        />
-      )}
+      {docs.contextMenu.visible && (() => {
+        const ctxItem = docs.contextMenu.type === 'folder'
+          ? docs.filteredItems.find((c: any) => c.id === docs.contextMenu.id) as Collection | undefined
+          : undefined
+        const isOwner = !ctxItem?.user_id || ctxItem.user_id === docs.currentUserId
+        return (
+          <ContextMenu
+            x={docs.contextMenu.x}
+            y={docs.contextMenu.y}
+            isOwner={isOwner}
+            visibility={ctxItem?.visibility}
+            onVisibilityChange={docs.contextMenu.type === 'folder' && isOwner
+              ? (v) => handleVisibilityChange(docs.contextMenu.id, v)
+              : undefined}
+            onRename={() => docs.startInlineEditing(docs.contextMenu.id, docs.contextMenu.currentName)}
+            onDelete={() => {
+              if (docs.contextMenu.type === 'folder') {
+                docs.handleDeleteFolder(docs.contextMenu.id, docs.contextMenu.currentName)
+              } else {
+                docs.handleDeleteDoc(docs.contextMenu.id, docs.contextMenu.currentName)
+              }
+            }}
+            onClose={docs.closeContextMenu}
+          />
+        )
+      })()}
 
       {/* PDF / Image Preview Modal */}
       {docs.previewDoc && (

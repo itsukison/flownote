@@ -14,6 +14,9 @@ export interface Workflow {
   last_run_error: string | null
   created_at: string
   updated_at: string
+  visibility?: VisibilityLevel
+  org_id?: string
+  _owner?: ItemOwner
 }
 
 export interface SlackStatus {
@@ -23,7 +26,10 @@ export interface SlackStatus {
 
 export function useWorkflows() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [teamWorkflows, setTeamWorkflows] = useState<Workflow[]>([])
+  const [sharingFilter, setSharingFilter] = useState<'mine' | 'team'>('mine')
   const [loading, setLoading] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [slackStatus, setSlackStatus] = useState<SlackStatus>({ connected: false, team_name: null })
   const [slackChannels, setSlackChannels] = useState<{ id: string; name: string; is_private: boolean }[]>([])
 
@@ -61,10 +67,26 @@ export function useWorkflows() {
     }
   }, [])
 
+  const loadTeamWorkflows = useCallback(async () => {
+    try {
+      const result = await window.electronAPI?.getOrgItems('workflows')
+      if (result?.success) setTeamWorkflows(result.data ?? [])
+    } catch (err) {
+      console.error('Failed to load team workflows:', err)
+    }
+  }, [])
+
   useEffect(() => {
     loadWorkflows()
     loadSlackStatus()
+    window.electronAPI?.getSession().then((res: any) => {
+      setCurrentUserId(res?.session?.user?.id || null)
+    })
   }, [loadWorkflows, loadSlackStatus])
+
+  useEffect(() => {
+    if (sharingFilter === 'team') loadTeamWorkflows()
+  }, [sharingFilter, loadTeamWorkflows])
 
   // Load channels when Slack becomes connected
   useEffect(() => {
@@ -137,9 +159,19 @@ export function useWorkflows() {
     return result
   }, [])
 
+  const activeWorkflows = sharingFilter === 'team'
+    ? teamWorkflows
+    : currentUserId
+      ? workflows.filter(w => w.user_id === currentUserId || !w.user_id)
+      : workflows
+
   return {
-    workflows,
+    workflows: activeWorkflows,
+    allWorkflows: workflows,
     loading,
+    sharingFilter,
+    setSharingFilter,
+    currentUserId,
     createWorkflow,
     updateWorkflow,
     deleteWorkflow,

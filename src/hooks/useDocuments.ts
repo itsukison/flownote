@@ -8,6 +8,10 @@ export interface Collection {
   id: string
   name: string
   created_at: string
+  visibility?: VisibilityLevel
+  user_id?: string
+  org_id?: string
+  _owner?: ItemOwner
 }
 
 export interface Doc {
@@ -65,6 +69,12 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Sharing filter state
+  const [sharingFilter, setSharingFilter] = useState<'mine' | 'team'>('mine')
+  const [teamCollections, setTeamCollections] = useState<Collection[]>([])
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+
   useEffect(() => {
     if (initialCollections !== undefined) {
       setCollections(initialCollections)
@@ -72,6 +82,10 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     } else {
       loadCollections()
     }
+    // Get current user id for filter
+    window.electronAPI?.getSession().then((res: any) => {
+      setCurrentUserId(res?.session?.user?.id || null)
+    })
   }, [])
 
   useEffect(() => {
@@ -150,6 +164,22 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
       if (documentsRequestIdRef.current === requestId) setDocumentsLoading(false)
     }
   }
+
+  const loadTeamCollections = async () => {
+    setTeamLoading(true)
+    try {
+      const result = await window.electronAPI?.getOrgItems('collections')
+      if (result?.success) setTeamCollections(result.data || [])
+    } catch (err: any) {
+      console.error('[Documents] load team collections:', err)
+    } finally {
+      setTeamLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (sharingFilter === 'team') loadTeamCollections()
+  }, [sharingFilter])
 
   const handleCreateFolder = async () => {
     try {
@@ -327,11 +357,17 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
 
   const cancelInlineEdit = () => setEditingId(null)
 
+  const activeCollections = sharingFilter === 'team'
+    ? teamCollections
+    : currentUserId
+      ? collections.filter(c => c.user_id === currentUserId || !c.user_id)
+      : collections
+
   const filteredItems = selectedCol
     ? documents.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : collections.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : activeCollections.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
-  const isPageLoading = selectedCol ? documentsLoading : loading
+  const isPageLoading = selectedCol ? documentsLoading : (sharingFilter === 'team' ? teamLoading : loading)
 
   return {
     // state
@@ -361,6 +397,9 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     setSearchQuery,
     filteredItems,
     isPageLoading,
+    sharingFilter,
+    setSharingFilter,
+    currentUserId,
     // actions
     handleCreateFolder,
     handleDeleteFolder,

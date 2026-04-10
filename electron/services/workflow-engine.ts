@@ -150,7 +150,8 @@ export async function executeWorkflow(
   context: SessionContext,
   supabase: SupabaseClient,
   genAI: GoogleGenerativeAI | null,
-  userId: string
+  userId: string,
+  sharedRunMeta?: { stepsSnapshot: any; sourceWorkflowOwnerId: string }
 ): Promise<{ success: boolean; error?: string }> {
   const stepOutputs: Record<string, string> = {}
 
@@ -158,11 +159,15 @@ export async function executeWorkflow(
   const { data: runRow } = await supabase
     .from('workflow_runs')
     .insert({
-      workflow_id: workflow.id,
+      workflow_id: sharedRunMeta ? null : workflow.id,
       user_id: userId,
       status: 'running',
       workflow_name: workflow.name,
       trigger_type: workflow.trigger_type,
+      ...(sharedRunMeta ? {
+        steps_snapshot: sharedRunMeta.stepsSnapshot,
+        source_workflow_owner_id: sharedRunMeta.sourceWorkflowOwnerId,
+      } : {}),
     })
     .select('id')
     .single()

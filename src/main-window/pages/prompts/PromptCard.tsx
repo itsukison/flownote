@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { 
+import {
   Check, Edit2, Trash2, ChevronDown, ChevronUp,
-  FileText, List, CheckSquare, MessageCircleQuestion, Clock, ClipboardList, PenTool, Database, MessageSquareText, Zap
+  FileText, List, CheckSquare, MessageCircleQuestion, Clock, ClipboardList, PenTool, Database, MessageSquareText, Zap,
+  Share2, Lock, Eye, Users,
 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Prompt } from '@/hooks/usePrompts'
@@ -36,10 +37,13 @@ interface PromptCardProps {
   onDelete: () => void
   toggleMode?: boolean
   onToggleActive?: (isActive: boolean) => void
+  isOwner?: boolean
+  onVisibilityChange?: (v: VisibilityLevel) => void
 }
 
-export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, toggleMode, onToggleActive }: PromptCardProps) {
+export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, toggleMode, onToggleActive, isOwner = true, onVisibilityChange }: PromptCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [showShareMenu, setShowShareMenu] = useState(false)
 
   const isQuick = prompt.prompt_type === 'quick'
 
@@ -61,6 +65,17 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             {prompt.is_default && (
               <span className="text-[9px] px-1.5 py-0.5 bg-white/[0.06] text-white/40 rounded-full font-medium">
                 {t.prompts.default}
+              </span>
+            )}
+            {prompt._owner && (
+              <span className="text-[9px] px-1.5 py-0.5 bg-violet-500/10 text-violet-400/70 rounded-full font-medium">
+                {prompt._owner.email?.[0]?.toUpperCase() || '?'} · {t.sharing.teamBadge}
+              </span>
+            )}
+            {prompt.visibility && prompt.visibility !== 'private' && !prompt._owner && (
+              <span className="text-[9px] px-1.5 py-0.5 bg-sky-500/10 text-sky-400/70 rounded-full font-medium flex items-center gap-0.5">
+                {prompt.visibility === 'team_view' ? <Eye size={8} /> : <Users size={8} />}
+                {t.sharing.sharedWithTeam}
               </span>
             )}
             {!isQuick && (
@@ -107,8 +122,40 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
         </div>
       </div>
 
-      {!prompt.is_default && (
+      {!prompt.is_default && isOwner && (
         <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onVisibilityChange && (
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowShareMenu(!showShareMenu) }}
+                className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
+                title={t.sharing.sharingLabel}
+              >
+                <Share2 size={12} className="text-white/60" />
+              </button>
+              {showShareMenu && (
+                <div
+                  className="absolute right-0 top-8 z-50 w-40 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-xs"
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {([
+                    { value: 'private' as VisibilityLevel, label: t.sharing.private, icon: <Lock size={10} /> },
+                    { value: 'team_view' as VisibilityLevel, label: t.sharing.teamView, icon: <Eye size={10} /> },
+                    { value: 'team_edit' as VisibilityLevel, label: t.sharing.teamEdit, icon: <Users size={10} /> },
+                  ]).map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={(e) => { e.stopPropagation(); onVisibilityChange(opt.value); setShowShareMenu(false) }}
+                      className={`w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 ${prompt.visibility === opt.value ? 'text-white' : 'text-white/50'}`}
+                    >
+                      {opt.icon} {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); onEdit() }}
             className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
@@ -122,6 +169,17 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
             title={t.common.delete}
           >
             <Trash2 size={12} className="text-white/60 hover:text-red-400" />
+          </button>
+        </div>
+      )}
+      {!prompt.is_default && !isOwner && prompt.visibility === 'team_edit' && (
+        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit() }}
+            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
+            title={t.common.rename}
+          >
+            <Edit2 size={12} className="text-white/60" />
           </button>
         </div>
       )}

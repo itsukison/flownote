@@ -107,11 +107,16 @@ export function BusinessModal({ open, onClose, onActivated }: BusinessModalProps
     }
 
     const handleCheckout = async () => {
+        console.log('[BusinessModal] User clicked handleCheckout for seats:', seats)
         setCheckoutLoading(true)
         const result = await window.electronAPI?.openCheckout('business', seats)
+        console.log('[BusinessModal] Received openCheckout result:', result)
         setCheckoutLoading(false)
         if (result?.success) {
             handleClose()
+        } else {
+            console.error('[BusinessModal] Checkout failed:', result?.error)
+            alert('Checkout error: ' + String(result?.error))
         }
     }
 
