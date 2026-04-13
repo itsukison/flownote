@@ -54,6 +54,7 @@ declare global {
             onTranscriptSegment: (cb: (segment: TranscriptSegment) => void) => () => void
             onTranscriptDelta: (cb: (data: { itemId: string; text: string; speaker: 'You' | 'Speaker' }) => void) => () => void
             onTranscriptSpeechStarted: (cb: (data: { speaker: 'You' | 'Speaker' }) => void) => () => void
+            onTranscriptSegmentCorrected: (cb: (data: { id: string; text: string }) => void) => () => void
             onTranscriptResponseChunk: (cb: (chunk: string) => void) => () => void
             onTranscriptResponseDone: (cb: () => void) => () => void
             // ── Session History ──────────────────────────────────────────────────────

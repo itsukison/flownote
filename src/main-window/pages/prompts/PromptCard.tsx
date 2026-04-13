@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
-  Check, Edit2, Trash2, ChevronDown, ChevronUp,
+  Check, Edit2, Trash2, ChevronDown, ChevronUp, MoreHorizontal,
   FileText, List, CheckSquare, MessageCircleQuestion, Clock, ClipboardList, PenTool, Database, MessageSquareText, Zap,
-  Share2, Lock, Eye, Users,
+  Lock, Eye, Users,
 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Prompt } from '@/hooks/usePrompts'
@@ -43,9 +43,22 @@ interface PromptCardProps {
 
 export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, toggleMode, onToggleActive, isOwner = true, onVisibilityChange }: PromptCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const [showShareMenu, setShowShareMenu] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const isQuick = prompt.prompt_type === 'quick'
+  const hasMenu = !prompt.is_default && (isOwner || (!isOwner && prompt.visibility === 'team_edit'))
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showMenu])
 
   return (
     <div
@@ -92,7 +105,7 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-none">
           {prompt.is_default && !isQuick && (
             <button
               onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded) }}
@@ -101,6 +114,68 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           )}
+
+          {hasMenu && (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu) }}
+                className="p-1 rounded-md text-white/20 group-hover:text-white/40 hover:!text-white/70 hover:bg-white/[0.06] transition-colors"
+              >
+                <MoreHorizontal size={14} />
+              </button>
+              {showMenu && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-50 w-40 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-xs"
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {onVisibilityChange && (
+                    <>
+                      {([
+                        { value: 'private' as VisibilityLevel, label: t.sharing.private, icon: <Lock size={10} /> },
+                        { value: 'team_view' as VisibilityLevel, label: t.sharing.teamView, icon: <Eye size={10} /> },
+                        { value: 'team_edit' as VisibilityLevel, label: t.sharing.teamEdit, icon: <Users size={10} /> },
+                      ]).map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={(e) => { e.stopPropagation(); onVisibilityChange(opt.value); setShowMenu(false) }}
+                          className={`w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 ${prompt.visibility === opt.value ? 'text-white' : 'text-white/50'}`}
+                        >
+                          {opt.icon} {opt.label}
+                        </button>
+                      ))}
+                      <div className="border-t border-white/[0.06] my-1" />
+                    </>
+                  )}
+                  {isOwner && (
+                    <>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEdit(); setShowMenu(false) }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 text-white/60"
+                      >
+                        <Edit2 size={10} /> {t.common.rename}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDelete(); setShowMenu(false) }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-red-500/10 flex items-center gap-2 text-red-400/70 hover:text-red-400"
+                      >
+                        <Trash2 size={10} /> {t.common.delete}
+                      </button>
+                    </>
+                  )}
+                  {!isOwner && prompt.visibility === 'team_edit' && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onEdit(); setShowMenu(false) }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 text-white/60"
+                    >
+                      <Edit2 size={10} /> {t.common.rename}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {toggleMode ? (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleActive?.(!prompt.is_active) }}
@@ -121,68 +196,6 @@ export function PromptCard({ prompt, isSelected, onSelect, onEdit, onDelete, tog
           ) : null}
         </div>
       </div>
-
-      {!prompt.is_default && isOwner && (
-        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {onVisibilityChange && (
-            <div className="relative">
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowShareMenu(!showShareMenu) }}
-                className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
-                title={t.sharing.sharingLabel}
-              >
-                <Share2 size={12} className="text-white/60" />
-              </button>
-              {showShareMenu && (
-                <div
-                  className="absolute right-0 top-8 z-50 w-40 bg-[#1a1a1d] border border-white/10 rounded-lg shadow-xl overflow-hidden py-1 text-xs"
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
-                >
-                  {([
-                    { value: 'private' as VisibilityLevel, label: t.sharing.private, icon: <Lock size={10} /> },
-                    { value: 'team_view' as VisibilityLevel, label: t.sharing.teamView, icon: <Eye size={10} /> },
-                    { value: 'team_edit' as VisibilityLevel, label: t.sharing.teamEdit, icon: <Users size={10} /> },
-                  ]).map(opt => (
-                    <button
-                      key={opt.value}
-                      onClick={(e) => { e.stopPropagation(); onVisibilityChange(opt.value); setShowShareMenu(false) }}
-                      className={`w-full text-left px-3 py-1.5 hover:bg-white/10 flex items-center gap-2 ${prompt.visibility === opt.value ? 'text-white' : 'text-white/50'}`}
-                    >
-                      {opt.icon} {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onEdit() }}
-            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
-            title={t.common.rename}
-          >
-            <Edit2 size={12} className="text-white/60" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-red-500/20 transition-colors"
-            title={t.common.delete}
-          >
-            <Trash2 size={12} className="text-white/60 hover:text-red-400" />
-          </button>
-        </div>
-      )}
-      {!prompt.is_default && !isOwner && prompt.visibility === 'team_edit' && (
-        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); onEdit() }}
-            className="p-1.5 bg-white/[0.06] rounded-md hover:bg-white/10 transition-colors"
-            title={t.common.rename}
-          >
-            <Edit2 size={12} className="text-white/60" />
-          </button>
-        </div>
-      )}
     </div>
   )
 }

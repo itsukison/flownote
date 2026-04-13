@@ -21,7 +21,13 @@ export function useTranscription() {
       setSegments((prev) => [...prev, segment])
       setPartialSegment(null)
     })
-    return () => { offSpeechStarted(); offSegment() }
+    // Patch corrected text in-place after the async LLM cleanup pass completes
+    const offCorrected = window.electronAPI.onTranscriptSegmentCorrected?.((data: { id: string; text: string }) => {
+      setSegments((prev) =>
+        prev.map((s) => (s.id === data.id ? { ...s, text: data.text } : s))
+      )
+    })
+    return () => { offSpeechStarted(); offSegment(); offCorrected?.() }
   }, [])
 
   const stopMicCapture = useCallback(() => {

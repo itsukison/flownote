@@ -9,6 +9,58 @@ import { workflowEvents } from '../services/workflow-engine'
 
 type GetWindowFn = () => BrowserWindow | null
 
+// ── LLM transcript cleanup ────────────────────────────────────────────────────
+
+/**
+ * Runs a completed transcript segment through a lightweight Gemini call to:
+ * 1. Remove any non-Japanese/English hallucinations inserted by the STT model.
+ * 2. Fix obvious recognition errors using surrounding context.
+ * 3. Leave proper nouns and English technical terms intact.
+ * Tracks token usage via the shared normalization system.
+ * Returns the cleaned text, or null if the call should be skipped/failed.
+ */
+async function cleanSegmentWithLLM(
+  genAI: GoogleGenerativeAI,
+  getSupabase: GetSupabaseFn,
+  segment: TranscriptSegment
+): Promise<string | null> {
+  // Skip very short segments — not worth the round-trip
+  if (segment.text.trim().length < 3) return null
+
+  const prompt = [
+    '以下は音声認識システムが出力した日本語の発話テキストです。次のルールに従って修正してください。',
+    'ルール:',
+    '- 日本語や英語以外の言語の文字や単語が混入している場合は削除する',
+    '- 明らかな認識ミスは文脈から修正する',
+    '- 固有名詞、英字の専門用語、英語の単語はそのまま正しく維持する',
+    '- テキストの内容や意味は変えない',
+    '- 修正済みテキストのみを出力し、説明や追加情報は不要',
+    '',
+    `Input: ${segment.text}`,
+    'Output:',
+  ].join('\n')
+
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash-lite',
+    generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
+  })
+
+  const result = await model.generateContent(prompt)
+  const cleaned = result.response.text().trim()
+
+  // Track token usage consistently with all other Gemini calls in the codebase
+  const usage = result.response.usageMetadata
+  if (usage) {
+    const promptTokens = usage.promptTokenCount ?? 0
+    const responseTokens = usage.candidatesTokenCount ?? 0
+    if (promptTokens > 0 || responseTokens > 0) {
+      trackNormalizedAndRecord(getSupabase, 'gemini', promptTokens, responseTokens)
+    }
+  }
+
+  return cleaned || null
+}
+
 let micSession: TranscriptionSession | null = null
 let speakerSession: TranscriptionSession | null = null
 let segments: TranscriptSegment[] = []
@@ -142,7 +194,27 @@ export function registerTranscriptionHandlers(
 
       const transcriptCallback = (segment: TranscriptSegment) => {
         segments.push(segment)
+        // Emit raw segment immediately — overlay shows text without any delay
         getOverlayWindow()?.webContents.send('transcript-segment', segment)
+
+        // Fire-and-forget async LLM cleanup; non-fatal if it fails
+        if (_genAI) {
+          cleanSegmentWithLLM(_genAI, _getSupabase, segment).then((correctedText) => {
+            if (correctedText && correctedText !== segment.text) {
+              // Patch in-memory record so later summaries/titles use clean text
+              const idx = segments.findIndex((s) => s.id === segment.id)
+              if (idx !== -1) segments[idx] = { ...segments[idx], text: correctedText }
+              // Notify overlay to patch the displayed text in-place
+              getOverlayWindow()?.webContents.send('transcript-segment-corrected', {
+                id: segment.id,
+                text: correctedText,
+              })
+              console.log(`[Transcription] LLM-corrected seg ${segment.id}: "${correctedText.slice(0, 80)}"`)
+            }
+          }).catch((err) => {
+            console.warn('[Transcription] LLM cleanup failed (non-fatal):', err?.message ?? err)
+          })
+        }
       }
 
       const transcriptDeltaCallback = (itemId: string, text: string, speaker: 'You' | 'Speaker') => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Loader2 } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Prompt } from '@/hooks/usePrompts'
 
@@ -9,7 +10,7 @@ type PromptType = Prompt['prompt_type']
 interface PromptFormModalProps {
   prompt?: Prompt
   forceType?: PromptType
-  onSave: (name: string, content: string, promptType: string) => void
+  onSave: (name: string, content: string, promptType: string) => Promise<boolean>
   onCancel: () => void
 }
 
@@ -17,6 +18,7 @@ export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptF
   const [name, setName] = useState(prompt?.name || '')
   const [content, setContent] = useState(prompt?.content || '')
   const [promptType, setPromptType] = useState<PromptType>(forceType || prompt?.prompt_type || 'base')
+  const [isSaving, setIsSaving] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const isQuick = promptType === 'quick'
@@ -210,19 +212,25 @@ export function PromptFormModal({ prompt, forceType, onSave, onCancel }: PromptF
       <div className="flex justify-end gap-2 pt-2">
         <button
           onClick={onCancel}
-          className="px-4 py-1.5 text-xs font-medium text-white/40 hover:text-white/80 hover:bg-white/[0.05] rounded-lg transition-colors"
+          disabled={isSaving}
+          className="px-4 py-1.5 text-xs font-medium text-white/40 hover:text-white/80 hover:bg-white/[0.05] rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           {t.common.cancel}
         </button>
         <button
-          onClick={() => onSave(name, content, promptType)}
-          disabled={!isValid}
+          onClick={async () => {
+            setIsSaving(true)
+            const ok = await onSave(name, content, promptType)
+            if (!ok) setIsSaving(false)
+          }}
+          disabled={!isValid || isSaving}
           title={!isValid ? '必須項目と変数を入力してください' : ''}
-          className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${isValid
+          className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${isValid && !isSaving
             ? 'bg-white text-black hover:bg-white/90 shadow-sm'
             : 'bg-white/[0.06] text-white/20 cursor-not-allowed'
             }`}
         >
+          {isSaving && <Loader2 size={11} className="animate-spin" />}
           {t.common.save}
         </button>
       </div>

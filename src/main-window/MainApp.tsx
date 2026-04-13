@@ -196,7 +196,6 @@ export default function MainApp() {
     }
 
     const refreshPrompts = () => {
-        setPromptsLoading(true)
         loadPrompts()
     }
 

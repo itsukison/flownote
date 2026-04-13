@@ -63,8 +63,8 @@ export function usePrompts(options: UsePromptsOptions = {}) {
     }
   }, [initialPrompts, externalLoading, selectedIds])
 
-  const loadPrompts = async () => {
-    setLoading(true)
+  const loadPrompts = async (silent = false) => {
+    if (!silent) setLoading(true)
     const result = await window.electronAPI?.getPrompts()
     if (result?.success && result.data) {
       setCustomPrompts(result.data)
@@ -74,7 +74,7 @@ export function usePrompts(options: UsePromptsOptions = {}) {
       setSelectedTranscriptId(result.selectedTranscriptId || null)
       setSelectedSummaryId(result.selectedSummaryId || null)
     }
-    setLoading(false)
+    if (!silent) setLoading(false)
   }
 
   const loadTeamPrompts = async () => {
@@ -99,8 +99,11 @@ export function usePrompts(options: UsePromptsOptions = {}) {
   const handleCreate = async (name: string, content: string, promptType: string) => {
     const result = await window.electronAPI?.createPrompt(name, content, promptType)
     if (result?.success) {
-      loadPrompts()
-      onRefresh?.()
+      if (initialPrompts !== undefined) {
+        onRefresh?.()
+      } else {
+        loadPrompts(true)
+      }
       return true
     }
     return false
@@ -109,8 +112,11 @@ export function usePrompts(options: UsePromptsOptions = {}) {
   const handleUpdate = async (id: string, name: string, content: string) => {
     const result = await window.electronAPI?.updatePrompt(id, name, content)
     if (result?.success) {
-      loadPrompts()
-      onRefresh?.()
+      if (initialPrompts !== undefined) {
+        onRefresh?.()
+      } else {
+        loadPrompts(true)
+      }
       return true
     }
     return false
@@ -131,8 +137,11 @@ export function usePrompts(options: UsePromptsOptions = {}) {
       else if (type === 'rag' && selectedRagId === id) setSelectedRagId(null)
       else if (type === 'transcript' && selectedTranscriptId === id) setSelectedTranscriptId(null)
       else if (type === 'summary' && selectedSummaryId === id) setSelectedSummaryId(null)
-      loadPrompts()
-      onRefresh?.()
+      if (initialPrompts !== undefined) {
+        onRefresh?.()
+      } else {
+        loadPrompts(true)
+      }
     }
   }
 

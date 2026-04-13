@@ -8,7 +8,7 @@ export const NORMALIZATION_MULTIPLIERS = {
   REALTIME_INPUT: 6.0,
   REALTIME_OUTPUT: 24.0,
   EMBEDDING_INPUT: 0.2,
-  TRANSCRIPTION_AUDIO_MS: 0.01,
+  TRANSCRIPTION_AUDIO_MS: 0.02, // Doubled for gpt-4o-transcribe ($0.006/min vs mini at $0.003/min)
 } as const
 
 export type UsageType = 'realtime' | 'gemini' | 'embedding' | 'transcription'

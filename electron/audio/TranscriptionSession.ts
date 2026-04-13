@@ -26,7 +26,7 @@ export class TranscriptionSession {
   private source: 'user' | 'opponent'
   private speaker: 'You' | 'Speaker'
   private callbacks: TranscriptionCallbacks
-  private readonly modelName = 'gpt-4o-mini-transcribe'
+  private readonly modelName = 'gpt-4o-transcribe'
   private reconnectTimer: NodeJS.Timeout | null = null
 
   private socket: WebSocket | null = null
@@ -162,6 +162,8 @@ export class TranscriptionSession {
               input_audio_transcription: {
                 model: this.modelName,
                 language: 'ja',
+                // Prime the decoder toward Japanese; proper nouns in English are acceptable.
+                prompt: 'これは日本語の会話です。固有名詞や専門用語は英語のままで構いません。',
               },
               turn_detection: {
                 type: 'server_vad',
@@ -170,7 +172,8 @@ export class TranscriptionSession {
                 silence_duration_ms: 500,
               },
               input_audio_noise_reduction: {
-                type: 'near_field',
+                // near_field for mic (user); far_field for system/speaker audio (opponent)
+                type: this.source === 'user' ? 'near_field' : 'far_field',
               },
             },
           }))
