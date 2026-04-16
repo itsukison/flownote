@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Building2, Copy, Check, Loader2, Shield, Users } from 'lucide-react'
+import { Building2, Copy, Check, Shield, Users } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import MembersModal from './team/MembersModal'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader, SectionHeader } from '@/components/PageShell'
 
 const t = ja
 
@@ -51,8 +53,29 @@ export default function TeamPage({ user }: Props) {
 
     if (loading) {
         return (
-            <div className="max-w-2xl mx-auto px-8 py-8 flex items-center justify-center min-h-[300px]">
-                <Loader2 size={20} className="animate-spin text-zinc-600" />
+            <div className="max-w-2xl mx-auto px-8 py-8">
+                <Skeleton className="h-8 w-16 mb-8" />
+                <div className="space-y-8">
+                    {/* Org header skeleton */}
+                    <div className="flex items-center gap-3 py-3">
+                        <Skeleton className="w-9 h-9 rounded-xl shrink-0" />
+                        <div className="space-y-1.5">
+                            <Skeleton className="h-3 w-32" />
+                            <Skeleton className="h-2.5 w-48" />
+                        </div>
+                    </div>
+                    {/* Section skeleton */}
+                    <div className="space-y-3">
+                        <Skeleton className="h-2.5 w-20" />
+                        <Skeleton className="h-12 w-full rounded-xl" />
+                    </div>
+                    <div className="space-y-3">
+                        <Skeleton className="h-2.5 w-24" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                        <Skeleton className="h-10 w-full rounded-xl" />
+                    </div>
+                </div>
             </div>
         )
     }
@@ -63,7 +86,7 @@ export default function TeamPage({ user }: Props) {
 
     return (
         <div className="max-w-2xl mx-auto px-8 py-8">
-            <h1 className="text-2xl font-semibold text-zinc-100 mb-8">{t.team.title}</h1>
+            <PageHeader title={t.team.title} />
 
             {/* ── Org Header ─────────────────────────────────────────────── */}
             <section className="mb-10">
@@ -89,9 +112,7 @@ export default function TeamPage({ user }: Props) {
             {/* ── Activation Code (admin only) ──────────────────────────── */}
             {isAdmin && (
                 <section className="mb-10">
-                    <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">
-                        {t.sharing.title}
-                    </h2>
+                    <SectionHeader title={t.sharing.title} />
                     <p className="text-xs text-zinc-500 mb-3">{t.team.activationCodeHint}</p>
                     {adminData?.activation_code ? (
                         <div className="flex items-center gap-3">
@@ -116,10 +137,8 @@ export default function TeamPage({ user }: Props) {
 
             {/* ── Members ───────────────────────────────────────────────── */}
             <section className="mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">
-                    {t.team.membersSection}
-                </h2>
-                <div className="flex items-center justify-between py-3 -mx-3 px-3 hover:bg-zinc-900/20 rounded-xl transition-colors">
+                <SectionHeader title={t.team.membersSection} />
+                <div className="flex items-center justify-between py-3 -mx-3 px-3 hover:bg-white/[0.04] rounded-xl transition-colors">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center">
                             <Users size={15} className="text-zinc-400" />
@@ -150,9 +169,7 @@ export default function TeamPage({ user }: Props) {
 
             {/* ── Sharing Defaults ──────────────────────────────────────── */}
             <section className="mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">
-                    {t.team.sharingDefaults}
-                </h2>
+                <SectionHeader title={t.team.sharingDefaults} />
                 <div className="py-3 -mx-3 px-3">
                     <p className="text-xs text-zinc-500 mb-4">{t.sharing.defaultVisibilityHint}</p>
                     {([

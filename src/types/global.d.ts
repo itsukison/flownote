@@ -81,8 +81,8 @@ declare global {
             uploadTextDocument: (title: string, text: string, collectionId: string) => Promise<{ success: boolean; error?: string; id?: string }>
             deleteDocument: (id: string) => Promise<{ success: boolean; error?: string }>
             renameDocument: (id: string, newName: string) => Promise<{ success: boolean; error?: string }>
-            getTextDocument: (id: string) => Promise<{ success: boolean; error?: string; text?: string; title?: string }>
-            updateTextDocument: (id: string, text: string) => Promise<{ success: boolean; error?: string }>
+            getTextDocument: (id: string) => Promise<{ success: boolean; error?: string; text?: string; title?: string; updatedAt?: string }>
+            updateTextDocument: (id: string, text: string, expectedUpdatedAt?: string) => Promise<{ success: boolean; error?: string; updatedAt?: string; serverContent?: string; serverUpdatedAt?: string; serverName?: string }>
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
             getDocumentFileUrl: (filePath: string, fileEtag?: string) => Promise<{ success: boolean; error?: string; url?: string }>
             // ── Usage ─────────────────────────────────────────────────────────────────

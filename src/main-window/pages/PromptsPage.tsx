@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Loader2, Plus, FileText, BookOpen, Zap, MessageSquareText, ClipboardList } from 'lucide-react'
+import { Plus, FileText, Zap, ClipboardList, MessageSquareText } from 'lucide-react'
 import { ja } from '@/i18n/ja'
 import { usePrompts, Prompt } from '@/hooks/usePrompts'
 import { PromptCard } from './prompts/PromptCard'
 import { PromptFormModal } from './prompts/PromptFormModal'
+import { PageHeader, SectionHeader, SectionTitle, InlineLoader, SharingTabs } from '@/components/PageShell'
 
 const t = ja
 
@@ -67,6 +68,7 @@ export default function PromptsPage({
         {editingPrompt ? t.prompts.editPrompt : t.prompts.createPrompt}
       </h2>
       <PromptFormModal
+        key={editingPrompt?.id ?? 'new'}
         prompt={editingPrompt || undefined}
         forceType={forceType}
         onSave={async (name, content, promptType) => {
@@ -84,70 +86,50 @@ export default function PromptsPage({
     </div>
   )
 
-  const renderHeaderAddButton = (type: CreatingType, canAdd: boolean, label: string, maxLabel?: string) => {
+  const renderHeaderAddButton = (type: CreatingType, canAdd: boolean, maxLabel?: string) => {
     if (isFormOpenFor(type!)) return null
     return (
       <button
         onClick={() => startCreating(type)}
         disabled={!canAdd}
         title={!canAdd ? maxLabel : undefined}
-        className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/[0.04] hover:bg-white/10 text-white/70 text-[10px] font-medium transition-colors disabled:opacity-30 disabled:pointer-events-none"
+        className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-white/[0.04] text-white/40 hover:text-white/80 text-[11px] transition-colors disabled:opacity-30 disabled:pointer-events-none"
       >
-        <Plus size={12} />
-        {label}
+        <Plus size={12} strokeWidth={2.5} />
+        <span className="font-medium">新規作成</span>
       </button>
     )
   }
 
   if (loading) {
-    return (
-      <div className="flex-1 flex justify-center items-center">
-        <Loader2 size={20} className="animate-spin text-white/20" />
-      </div>
-    )
+    return <InlineLoader className="flex-1" />
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-full max-w-4xl mx-auto px-8 py-8">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.prompts.title}</h1>
-      </div>
+      <PageHeader title={t.prompts.title} />
 
       {isOrgMember && (
-        <div className="flex items-center gap-1 mb-6">
-          {([
+        <SharingTabs
+          tabs={[
             { key: 'mine' as const, label: t.sharing.filterMine },
             { key: 'team' as const, label: t.sharing.filterTeam },
-          ]).map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setSharingFilter(tab.key)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                sharingFilter === tab.key
-                  ? 'bg-white/10 text-white/80'
-                  : 'text-white/30 hover:text-white/50 hover:bg-white/5'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+          ]}
+          active={sharingFilter}
+          onChange={setSharingFilter}
+        />
       )}
 
       {/* ═══ Section 1: System Prompts ═══ */}
-      <section className="mb-10">
-        <div className="flex items-center gap-2 mb-1">
-          <FileText size={16} className="text-white/60" />
-          <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.systemPrompts}</h2>
-        </div>
-        <p className="text-[10px] text-white/40 mb-6 ml-[24px] leading-relaxed">{t.prompts.systemPromptsHint}</p>
+      <section className="mb-12">
+        <SectionTitle title={t.prompts.systemPrompts} className="mb-2" />
+        <p className="text-[11px] text-white/40 mb-2 leading-relaxed">{t.prompts.systemPromptsHint}</p>
 
         {/* Base Prompts */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-xs font-semibold text-white/50">{t.prompts.basePrompts}</h3>
-            {renderHeaderAddButton('base', canAddMore, t.prompts.addBasePrompt, t.prompts.maxReached)}
-          </div>
+          <SectionHeader title={t.prompts.basePrompts} className="mb-3">
+            {renderHeaderAddButton('base', canAddMore, t.prompts.maxReached)}
+          </SectionHeader>
           <div className="space-y-2">
             {basePrompts.map((prompt) => (
               <PromptCard
@@ -167,10 +149,9 @@ export default function PromptsPage({
 
         {/* RAG Prompts */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-xs font-semibold text-white/50">{t.prompts.ragPrompts}</h3>
-            {renderHeaderAddButton('rag', canAddMore, t.prompts.addRagPrompt, t.prompts.maxReached)}
-          </div>
+          <SectionHeader title={t.prompts.ragPrompts} className="mb-3">
+            {renderHeaderAddButton('rag', canAddMore, t.prompts.maxReached)}
+          </SectionHeader>
           <div className="space-y-2">
             {ragPrompts.map((prompt) => (
               <PromptCard
@@ -190,10 +171,9 @@ export default function PromptsPage({
 
         {/* Transcript Prompts */}
         <div>
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h3 className="text-xs font-semibold text-white/50">{t.prompts.transcriptPrompts}</h3>
-            {renderHeaderAddButton('transcript', canAddMoreTranscript, t.prompts.addTranscriptPrompt, t.prompts.maxTranscriptReached)}
-          </div>
+          <SectionHeader title={t.prompts.transcriptPrompts} className="mb-3">
+            {renderHeaderAddButton('transcript', canAddMoreTranscript, t.prompts.maxTranscriptReached)}
+          </SectionHeader>
           <div className="space-y-2">
             {transcriptPrompts.map((prompt) => (
               <PromptCard
@@ -212,17 +192,13 @@ export default function PromptsPage({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start mb-8">
         {/* ═══ Section 2: Quick Prompts ═══ */}
         <section>
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <Zap size={16} className="text-white/60" />
-              <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.quickPrompts}</h2>
-            </div>
-            {renderHeaderAddButton('quick', canAddMoreQuick, t.prompts.addQuickPrompt, t.prompts.maxQuickReached)}
-          </div>
-          <p className="text-[10px] text-white/40 mb-4 ml-[24px] leading-relaxed pr-2">{t.prompts.quickPromptsHint}</p>
+          <SectionTitle title={t.prompts.quickPrompts} className="mb-2">
+            {renderHeaderAddButton('quick', canAddMoreQuick, t.prompts.maxQuickReached)}
+          </SectionTitle>
+          <p className="text-[11px] text-white/40 mb-4 leading-relaxed pr-2">{t.prompts.quickPromptsHint}</p>
           <div className="space-y-2">
             {quickPrompts.map((prompt) => (
               <PromptCard
@@ -244,14 +220,10 @@ export default function PromptsPage({
 
         {/* ═══ Section 3: Summary Prompts ═══ */}
         <section>
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <ClipboardList size={16} className="text-white/60" />
-              <h2 className="text-sm font-semibold text-white/80 uppercase tracking-widest">{t.prompts.summaryPrompts}</h2>
-            </div>
-            {renderHeaderAddButton('summary', canAddMoreSummary, t.prompts.addSummaryPrompt, t.prompts.maxSummaryReached)}
-          </div>
-          <p className="text-[10px] text-white/40 mb-4 ml-[24px] leading-relaxed pr-2">{t.prompts.summaryPromptsHint}</p>
+          <SectionTitle title={t.prompts.summaryPrompts} className="mb-2">
+            {renderHeaderAddButton('summary', canAddMoreSummary, t.prompts.maxSummaryReached)}
+          </SectionTitle>
+          <p className="text-[11px] text-white/40 mb-4 leading-relaxed pr-2">{t.prompts.summaryPromptsHint}</p>
           <div className="space-y-2">
             {summaryPrompts.map((prompt) => (
               <PromptCard

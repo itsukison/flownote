@@ -1,7 +1,9 @@
 import { memo, useMemo, useState, useEffect, useRef } from 'react'
-import { Loader2, Mic, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Mic, MoreHorizontal, Trash2 } from 'lucide-react'
 import { formatDuration, formatTime, groupByDate } from './utils'
 import { ja } from '@/i18n/ja'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader, EmptyState } from '@/components/PageShell'
 
 const t = ja
 
@@ -60,22 +62,33 @@ export const SessionListView = memo(function SessionListView({
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-full">
-        <Loader2 size={20} className="animate-spin text-white/20" />
+      <div className="flex-1 flex flex-col min-h-full max-w-3xl mx-auto px-8 py-8 w-full">
+        <div className="h-9 w-24 mb-8"><Skeleton className="h-full w-full" /></div>
+        <div className="space-y-px">
+          {[55, 40, 68, 35, 50, 45].map((w, i) => (
+            <div key={i} className="flex items-center justify-between px-4 py-3 rounded-xl">
+              <Skeleton className="h-3" style={{ width: `${w}%` }} />
+              <div className="flex items-center gap-3 shrink-0">
+                <Skeleton className="h-2.5 w-8" />
+                <Skeleton className="h-2.5 w-10" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-full max-w-3xl mx-auto px-8 py-8 w-full">
-      <h1 className="text-2xl font-semibold text-zinc-100 mb-6">{t.history.title}</h1>
+      <PageHeader title={t.history.title} />
 
       {sessions.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white/20">
-          <Mic size={36} strokeWidth={1} />
-          <p className="text-sm">{t.history.noSessionsYet}</p>
-          <p className="text-xs text-white/15">{t.history.startRecordingHint}</p>
-        </div>
+        <EmptyState
+          icon={<Mic size={32} strokeWidth={1} />}
+          title={t.history.noSessionsYet}
+          hint={t.history.startRecordingHint}
+        />
       ) : (
         <div className="space-y-6">
           {groups.map((group) => (

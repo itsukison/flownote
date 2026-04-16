@@ -47,6 +47,15 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
   const [writeContent, setWriteContent] = useState('')
   const [editingDocId, setEditingDocId] = useState<string | null>(null)
   const [uploadingText, setUploadingText] = useState(false)
+  const [docUpdatedAt, setDocUpdatedAt] = useState<string | null>(null)
+
+  // Conflict state
+  const [conflict, setConflict] = useState<{
+    serverContent: string
+    serverUpdatedAt: string
+    serverName: string
+    localContent: string
+  } | null>(null)
 
   // Preview modal state
   const [previewDoc, setPreviewDoc] = useState<Doc | null>(null)
@@ -65,6 +74,11 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  // Refs to track current editing state for reliable save-on-unmount
+  const editingIdRef = useRef<string | null>(null)
+  const editingNameRef = useRef<string>('')
+  const collectionsRef = useRef<Collection[]>([])
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -140,6 +154,21 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     }
   }, [editingId])
 
+  // Save any pending rename when the component unmounts (e.g. user navigates away
+  // while the inline edit input is still open — blur may not fire reliably on unmount)
+  useEffect(() => {
+    return () => {
+      const id = editingIdRef.current
+      const name = editingNameRef.current.trim()
+      if (!id || !name) return
+      const orig = collectionsRef.current.find(c => c.id === id)?.name
+      if (orig !== undefined && orig !== name) {
+        window.electronAPI?.renameCollection(id, name)
+        onRefresh?.()
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadCollections = async () => {
     try {
       const cols = await window.electronAPI.listCollections()
@@ -186,8 +215,8 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
       const col = await window.electronAPI.createCollection('New Folder')
       if (col) {
         setCollections(prev => [...prev, col])
-        onRefresh?.()
         startInlineEditing(col.id, 'New Folder')
+        onRefresh?.() // add new folder to parent cache so it survives navigation
       }
     } catch (err: any) {
       toast.error(err.message || t.documents.failedToCreateFolder)
@@ -200,7 +229,6 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
       const res = await window.electronAPI.deleteCollection(id)
       if (res?.success) {
         setCollections(prev => prev.filter(c => c.id !== id))
-        onRefresh?.()
         if (selectedCol?.id === id) setSelectedCol(null)
         toast.success(t.documents.folderDeleted)
       } else {
@@ -251,7 +279,7 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     fileInput.click()
   }
 
-  const handleCreateOrUpdateTextDoc = async () => {
+  const handleCreateOrUpdateTextDoc = async (forceOverwrite?: boolean) => {
     if (!selectedCol) return
     if (!writeTitle.trim() || !writeContent.trim()) {
       toast.error(t.documents.titleAndContentRequired)
@@ -264,8 +292,23 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
         if (doc && doc.name !== writeTitle) {
           await window.electronAPI.renameDocument(editingDocId, writeTitle)
         }
-        const res = await window.electronAPI.updateTextDocument(editingDocId, writeContent)
+        const expectedAt = forceOverwrite ? undefined : (docUpdatedAt ?? undefined)
+        const res = await window.electronAPI.updateTextDocument(editingDocId, writeContent, expectedAt)
+
+        if (res?.error === 'conflict') {
+          setConflict({
+            serverContent: res.serverContent || '',
+            serverUpdatedAt: res.serverUpdatedAt || '',
+            serverName: res.serverName || '',
+            localContent: writeContent,
+          })
+          setUploadingText(false)
+          return
+        }
+
         if (!res?.success) throw new Error(res?.error || t.documents.errorOccurred)
+        if (res.updatedAt) setDocUpdatedAt(res.updatedAt)
+        setConflict(null)
         toast.success(t.documents.saved)
       } else {
         let finalTitle = writeTitle.trim()
@@ -287,7 +330,22 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     setEditingDocId(null)
     setWriteTitle('')
     setWriteContent('')
+    setDocUpdatedAt(null)
+    setConflict(null)
     setIsWriteModalOpen(true)
+  }
+
+  const resolveConflictKeepMine = () => {
+    setConflict(null)
+    handleCreateOrUpdateTextDoc(true)
+  }
+
+  const resolveConflictKeepTheirs = () => {
+    if (conflict) {
+      setWriteContent(conflict.serverContent)
+      setDocUpdatedAt(conflict.serverUpdatedAt)
+    }
+    setConflict(null)
   }
 
   const openDocumentForEditing = async (doc: Doc) => {
@@ -303,6 +361,8 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
       setEditingDocId(doc.id)
       setWriteTitle(res.title || doc.name)
       setWriteContent(res.text || '')
+      setDocUpdatedAt(res.updatedAt || null)
+      setConflict(null)
       setIsWriteModalOpen(true)
       toast.dismiss(toastId)
     } catch (err: any) {
@@ -326,6 +386,8 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     if (!editingId) return
     const newName = editingName.trim()
     const id = editingId
+    // Null out ref immediately so the unmount cleanup doesn't double-save
+    editingIdRef.current = null
     setEditingId(null)
     if (!newName) return
 
@@ -333,13 +395,13 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
       const orig = collections.find(c => c.id === id)?.name
       if (orig === newName) return
       setCollections(cols => cols.map(c => c.id === id ? { ...c, name: newName } : c))
-      onRefresh?.()
       try {
         const res = await window.electronAPI.renameCollection(id, newName)
         if (!res?.success) throw new Error(res?.error)
+        onRefresh?.() // sync parent cache with new name
       } catch {
         toast.error(t.documents.failedToDeleteFolder)
-        onRefresh?.()
+        onRefresh?.() // revert optimistic update
       }
     } else {
       const orig = documents.find(d => d.id === id)?.name
@@ -356,6 +418,11 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
   }
 
   const cancelInlineEdit = () => setEditingId(null)
+
+  // Keep refs in sync so the unmount cleanup always has the latest values
+  editingIdRef.current = editingId
+  editingNameRef.current = editingName
+  collectionsRef.current = collections
 
   const activeCollections = sharingFilter === 'team'
     ? teamCollections
@@ -400,6 +467,9 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     sharingFilter,
     setSharingFilter,
     currentUserId,
+    conflict,
+    resolveConflictKeepMine,
+    resolveConflictKeepTheirs,
     // actions
     handleCreateFolder,
     handleDeleteFolder,

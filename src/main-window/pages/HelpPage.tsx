@@ -1,9 +1,9 @@
 import React from 'react'
-import { motion } from 'framer-motion'
-import { HelpCircle, Keyboard, Lightbulb, PlayCircle, ArrowLeft, FileText, Settings, MousePointer2, ExternalLink } from 'lucide-react'
+import { Keyboard, Lightbulb, PlayCircle, FileText, Settings, MousePointer2, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ja } from '@/i18n/ja'
+import { PageHeader } from '@/components/PageShell'
 
 const t = ja
 
@@ -22,9 +22,7 @@ export default function HelpPage() {
     <div className="flex flex-col w-full h-full bg-[#0e0e10] text-white">
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-8 py-8">
-          <h1 className="text-2xl font-semibold text-zinc-100 flex items-center gap-2 mb-8">
-            {t.help.title}
-          </h1>
+          <PageHeader title={t.help.title} />
 
           <div className="space-y-16 pb-20 mt-10">
           {/* Keyboard Shortcuts */}

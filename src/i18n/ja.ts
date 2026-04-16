@@ -33,6 +33,8 @@ export const ja = {
     workflow: 'ワークフロー',
     workflowHistory: 'ワークフロー履歴',
     team: 'チーム',
+    workspace: 'ワークスペース',
+    support: 'サポート',
   },
   documents: {
     title: 'ドキュメント',
@@ -66,6 +68,12 @@ export const ja = {
     onlyEditableHere: 'ここでは.txtと.mdファイルのみ編集できます。',
     confirmDeleteFolder: 'フォルダ「{name}」と内のすべてのドキュメントを削除しますか？',
     confirmDeleteDocument: 'ドキュメント「{name}」を削除しますか？',
+    conflictTitle: '編集の競合',
+    conflictDescription: '他のユーザーがこのドキュメントを変更しました。どちらの内容を保持しますか？',
+    keepMine: '自分の変更を保持',
+    keepTheirs: '相手の変更を読み込む',
+    yourVersion: 'あなたの編集内容',
+    serverVersion: '最新のサーバー内容',
   },
   history: {
     title: 'セッション履歴',

@@ -4,8 +4,6 @@ import {
   Upload,
   ChevronLeft,
   Search,
-  X,
-  Loader2,
   FileText,
   Folder as FolderIcon,
   Lock,
@@ -18,6 +16,8 @@ import { CollectionSidebar } from './documents/CollectionSidebar'
 import { DocumentGrid } from './documents/DocumentGrid'
 import { TextDocumentModal } from './documents/TextDocumentModal'
 import { DocumentPreviewModal } from './documents/DocumentPreviewModal'
+import { Skeleton } from '@/components/ui/skeleton'
+import { EmptyState, SharingTabs } from '@/components/PageShell'
 
 const t = ja
 
@@ -116,24 +116,14 @@ export default function DocumentsPage({
 
           {/* Sharing filter tabs */}
           {isOrgMember && !docs.selectedCol && (
-            <div className="flex items-center gap-1 mb-4">
-              {([
+            <SharingTabs
+              tabs={[
                 { key: 'mine' as const, label: t.sharing.filterMine },
                 { key: 'team' as const, label: t.sharing.filterTeam },
-              ]).map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => docs.setSharingFilter(tab.key)}
-                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                    docs.sharingFilter === tab.key
-                      ? 'bg-white/10 text-white/80'
-                      : 'text-white/30 hover:text-white/50 hover:bg-white/5'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+              ]}
+              active={docs.sharingFilter}
+              onChange={docs.setSharingFilter}
+            />
           )}
 
           {/* Header */}
@@ -142,12 +132,12 @@ export default function DocumentsPage({
               {docs.selectedCol && (
                 <button
                   onClick={() => docs.setSelectedCol(null)}
-                  className="p-1 -ml-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white transition-all"
+                  className="p-1 -ml-1 rounded-md hover:bg-white/[0.04] text-white/40 hover:text-white/80 transition-all"
                 >
                   <ChevronLeft size={20} />
                 </button>
               )}
-              <h1 className="text-2xl font-semibold text-zinc-100">
+              <h1 className="text-2xl font-semibold text-white/90 tracking-tight">
                 {docs.selectedCol ? docs.selectedCol.name : t.documents.title}
               </h1>
             </div>
@@ -160,7 +150,7 @@ export default function DocumentsPage({
                   placeholder={t.common.search}
                   value={docs.searchQuery}
                   onChange={e => docs.setSearchQuery(e.target.value)}
-                  className="w-40 bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-white/10 focus:bg-white/10 transition-all placeholder-white/20"
+                  className="w-40 bg-white/5 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:bg-white/10 transition-all placeholder-white/30"
                 />
               </div>
 
@@ -168,25 +158,25 @@ export default function DocumentsPage({
                 <>
                   <button
                     onClick={docs.handleUploadFiles}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/5 text-zinc-400"
+                    className="flex items-center gap-1.5 px-2 py-1.5 text-xs hover:bg-white/[0.04] rounded-md transition-colors text-white/50 hover:text-white/80"
                   >
-                    <Upload className="w-3.5 h-3.5" />
+                    <Upload size={13} strokeWidth={2} />
                     {t.documents.uploadFiles}
                   </button>
                   <button
                     onClick={docs.openNewTextModal}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-white font-medium rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-2 py-1.5 text-xs hover:bg-white/[0.04] font-medium rounded-md transition-colors text-white/50 hover:text-white/90"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus size={13} strokeWidth={2.5} />
                     {t.documents.newTextDoc}
                   </button>
                 </>
               ) : (
                 <button
                   onClick={docs.handleCreateFolder}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-100 text-zinc-950 hover:bg-white font-medium rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-2 py-1.5 text-xs hover:bg-white/[0.04] font-medium rounded-md transition-colors text-white/50 hover:text-white/90"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus size={13} strokeWidth={2.5} />
                   {t.documents.newFolder}
                 </button>
               )}
@@ -195,25 +185,28 @@ export default function DocumentsPage({
 
           {/* Body */}
           {docs.isPageLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="w-10 h-10 text-white/20 animate-spin" />
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-4 auto-rows-max">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex flex-col items-center gap-2 p-2">
+                  <Skeleton className="w-[100px] h-[80px] rounded-xl mt-2" />
+                  <Skeleton className="h-3 w-16 mt-1" />
+                </div>
+              ))}
             </div>
           ) : docs.filteredItems.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-white/40">
-              {docs.selectedCol ? (
-                <>
-                  <FileText className="w-12 h-12 mb-4 opacity-50" />
-                  <p>{t.documents.folderEmpty}</p>
-                  <p className="text-sm mt-1">{t.documents.uploadFilesOrCreate}</p>
-                </>
-              ) : (
-                <>
-                  <FolderIcon className="w-12 h-12 mb-4 text-white/10" />
-                  <p>{docs.sharingFilter === 'team' ? t.sharing.emptyTeam : t.documents.noFoldersYet}</p>
-                  <p className="text-sm mt-1">{docs.sharingFilter === 'team' ? t.sharing.emptyTeamHint : t.documents.createFolderToStart}</p>
-                </>
-              )}
-            </div>
+            docs.selectedCol ? (
+              <EmptyState
+                icon={<FileText size={32} strokeWidth={1} />}
+                title={t.documents.folderEmpty}
+                hint={t.documents.uploadFilesOrCreate}
+              />
+            ) : (
+              <EmptyState
+                icon={<FolderIcon size={32} strokeWidth={1} />}
+                title={docs.sharingFilter === 'team' ? t.sharing.emptyTeam : t.documents.noFoldersYet}
+                hint={docs.sharingFilter === 'team' ? t.sharing.emptyTeamHint : t.documents.createFolderToStart}
+              />
+            )
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-4 auto-rows-max">
               {!docs.selectedCol ? (
@@ -301,10 +294,13 @@ export default function DocumentsPage({
           writeTitle={docs.writeTitle}
           writeContent={docs.writeContent}
           uploadingText={docs.uploadingText}
+          conflict={docs.conflict}
           onTitleChange={docs.setWriteTitle}
           onContentChange={docs.setWriteContent}
-          onSave={docs.handleCreateOrUpdateTextDoc}
+          onSave={() => docs.handleCreateOrUpdateTextDoc()}
           onClose={() => docs.setIsWriteModalOpen(false)}
+          onKeepMine={docs.resolveConflictKeepMine}
+          onKeepTheirs={docs.resolveConflictKeepTheirs}
         />
       )}
     </div>

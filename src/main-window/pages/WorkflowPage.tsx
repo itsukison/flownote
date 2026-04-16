@@ -8,6 +8,8 @@ import WorkflowHistoryPage from './WorkflowHistoryPage'
 import MeetingPickerModal from './workflow/components/MeetingPickerModal'
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader, EmptyState, SharingTabs } from '@/components/PageShell'
 
 const t = ja.workflow
 
@@ -103,8 +105,20 @@ function WorkflowList({ isOrgMember }: { isOrgMember?: boolean }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-white/30 text-sm">
-        {ja.common.loading}
+      <div className="max-w-2xl mx-auto px-6 py-8">
+        <div className="h-9 w-32 mb-8"><Skeleton className="h-full w-full" /></div>
+        <div className="space-y-2">
+          {[38, 55, 42, 60].map((w, i) => (
+            <div key={i} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
+              <Skeleton className="w-2 h-2 rounded-full shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3" style={{ width: `${w}%` }} />
+                <Skeleton className="h-2" style={{ width: `${w * 0.6}%` }} />
+              </div>
+              <Skeleton className="w-9 h-5 rounded-full shrink-0" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -112,52 +126,40 @@ function WorkflowList({ isOrgMember }: { isOrgMember?: boolean }) {
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
       {isOrgMember && (
-        <div className="flex items-center gap-1 mb-4">
-          {([
+        <SharingTabs
+          tabs={[
             { key: 'mine' as const, label: ja.sharing.filterMine },
             { key: 'team' as const, label: ja.sharing.filterTeam },
-          ]).map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setSharingFilter(tab.key)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                sharingFilter === tab.key
-                  ? 'bg-white/10 text-white/80'
-                  : 'text-white/30 hover:text-white/50 hover:bg-white/5'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+          ]}
+          active={sharingFilter}
+          onChange={setSharingFilter}
+        />
       )}
 
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold text-white/90 tracking-tight">{t.title}</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate('/workflow/history')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] text-xs font-medium transition-colors"
-            title={ja.workflowHistory.title}
-          >
-            <ListChecks size={13} />
-            {ja.workflowHistory.title}
-          </button>
-          <button
-            onClick={() => navigate('/workflow/new')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
-          >
-            <Plus size={13} />
-            {t.newWorkflow}
-          </button>
-        </div>
-      </div>
+      <PageHeader title={t.title}>
+        <button
+          onClick={() => navigate('/workflow/history')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.06] text-xs font-medium transition-colors"
+          title={ja.workflowHistory.title}
+        >
+          <ListChecks size={13} />
+          {ja.workflowHistory.title}
+        </button>
+        <button
+          onClick={() => navigate('/workflow/new')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/10 text-white/70 text-xs font-medium transition-colors"
+        >
+          <Plus size={13} />
+          {t.newWorkflow}
+        </button>
+      </PageHeader>
 
       {workflows.length === 0 ? (
-        <div className="text-center py-12 border border-dashed border-white/10 bg-white/[0.01] rounded-xl mb-12">
-          <h2 className="text-sm font-medium text-white/60 mb-2">{t.emptyTitle}</h2>
-          <p className="text-xs text-white/30">{t.emptyDescription}</p>
-        </div>
+        <EmptyState
+          icon={<Zap size={32} strokeWidth={1} />}
+          title={t.emptyTitle}
+          hint={t.emptyDescription}
+        />
       ) : (
         <div className="space-y-2 mb-12">
           {workflows.map((wf) => (

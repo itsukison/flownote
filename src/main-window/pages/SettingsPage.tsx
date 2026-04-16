@@ -4,6 +4,7 @@ import { ja } from '@/i18n/ja'
 import { Button } from '@/components/ui/button'
 import { PlanCards, BusinessModal, EnterpriseModal } from '@/components/PlanSelection'
 import { formatTokens } from '@/utils/format'
+import { PageHeader, SectionHeader } from '@/components/PageShell'
 
 const t = ja
 
@@ -183,12 +184,12 @@ export default function SettingsPage({ user }: Props) {
 
     return (
         <div className="max-w-2xl mx-auto px-8 py-8">
-            <h1 className="text-2xl font-semibold text-zinc-100 mb-8">{t.settings.title}</h1>
+            <PageHeader title={t.settings.title} />
 
             {/* ── 1. Account ─────────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">{t.settings.account}</h2>
-                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                <SectionHeader title={t.settings.account} />
+                <div className="flex justify-between items-center py-3 hover:bg-white/[0.04] -mx-3 px-3 rounded-md transition-colors">
                     <div>
                         <p className="text-sm text-zinc-300">{t.settings.email}</p>
                         <p className="text-xs text-zinc-500 mt-0.5">{t.settings.accountEmail}</p>
@@ -198,7 +199,7 @@ export default function SettingsPage({ user }: Props) {
 
                 <button
                     onClick={() => window.electronAPI?.signOut()}
-                    className="w-full flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors text-left"
+                    className="w-full flex justify-between items-center py-3 hover:bg-white/[0.04] -mx-3 px-3 rounded-md transition-colors text-left"
                 >
                     <div>
                         <p className="text-sm text-zinc-300">{t.settings.signOut}</p>
@@ -210,9 +211,9 @@ export default function SettingsPage({ user }: Props) {
 
             {/* ── 2. Permissions ──────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">{t.permissions.title}</h2>
+                <SectionHeader title={t.permissions.title} />
                 <div className="space-y-2">
-                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-zinc-900/20 rounded-xl transition-colors">
+                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-white/[0.04] rounded-xl transition-colors">
                         <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-800 text-xs font-bold text-zinc-400">1</div>
                         <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start gap-4">
@@ -232,7 +233,7 @@ export default function SettingsPage({ user }: Props) {
                         </div>
                     </div>
 
-                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-zinc-900/20 rounded-xl transition-colors">
+                    <div className="flex gap-4 py-4 -mx-3 px-3 hover:bg-white/[0.04] rounded-xl transition-colors">
                         <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-800 text-xs font-bold text-zinc-400">2</div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-zinc-200">{t.permissions.systemAudio}</p>
@@ -258,8 +259,8 @@ export default function SettingsPage({ user }: Props) {
 
             {/* ── 3. Auto-Summary ─────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">{t.settings.autoSummary.title}</h2>
-                <div className="flex justify-between items-center py-3 hover:bg-zinc-900/20 -mx-3 px-3 rounded-md transition-colors">
+                <SectionHeader title={t.settings.autoSummary.title} />
+                <div className="flex justify-between items-center py-3 hover:bg-white/[0.04] -mx-3 px-3 rounded-md transition-colors">
                     <div>
                         <p className="text-sm text-zinc-300">{t.settings.autoSummary.title}</p>
                         <p className="text-xs text-zinc-500 mt-0.5 max-w-sm leading-relaxed">{t.settings.autoSummary.description}</p>
@@ -272,7 +273,7 @@ export default function SettingsPage({ user }: Props) {
                         }}
                         disabled={autoSummaryLoading}
                         className={`w-9 h-5 rounded-full relative transition-colors flex-none ${
-                            autoSummaryEnabled ? 'bg-green-500/40' : 'bg-zinc-700'
+                            autoSummaryEnabled ? 'bg-green-500/70' : 'bg-zinc-700'
                         }`}
                     >
                         <div
@@ -287,7 +288,7 @@ export default function SettingsPage({ user }: Props) {
 
             {/* ── 4. Plan + Usage ──────────────────────────────────────── */}
             <section className="space-y-1 mb-10">
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">プラン</h2>
+                <SectionHeader title="プラン" />
 
                 {/* Paid user: plan badge + status + billing portal */}
                 {isPaid && (
@@ -358,13 +359,12 @@ export default function SettingsPage({ user }: Props) {
             </section>
 
             <section className="space-y-1 flex-1 flex flex-col min-h-[300px]">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{t.settings.usage}</h2>
-                    <span className="text-xs text-zinc-600">{isFree ? 'トライアル' : t.settings.monthly}</span>
-                </div>
+                <SectionHeader title={t.settings.usage}>
+                    <span className="text-xs text-white/25">{isFree ? 'トライアル' : t.settings.monthly}</span>
+                </SectionHeader>
                 {loadingUsage ? (
                     <div className="flex-1 flex items-center justify-center">
-                        <Loader2 size={20} className="animate-spin text-zinc-600" />
+                        <Loader2 size={18} className="animate-spin text-white/20" />
                     </div>
                 ) : monthlyUsage ? (
                     <UsageBar

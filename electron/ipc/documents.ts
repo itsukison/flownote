@@ -334,24 +334,24 @@ export function registerDocumentHandlers(
         try {
             const { data, error } = await supabase
                 .from('documents')
-                .select('content, name')
+                .select('content, name, updated_at')
                 .eq('id', documentId)
                 .single()
 
             if (error) throw error
-            return { success: true, text: data.content, title: data.name }
+            return { success: true, text: data.content, title: data.name, updatedAt: data.updated_at }
         } catch (err: any) {
             return { success: false, error: err.message }
         }
     })
 
-    ipcMain.handle('doc:update-text-document', async (_event, documentId: string, text: string) => {
+    ipcMain.handle('doc:update-text-document', async (_event, documentId: string, text: string, expectedUpdatedAt?: string) => {
         const supabase = getSupabase()
         if (!supabase) return { success: false, error: 'Supabase not configured' }
 
         try {
-            // Note: If you want vector search to stay updated, we technically should re-embed.
-            // For now, let's just update the content field (if re-implements, RAG will not match edited text automatically without calling re-embed)
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return { success: false, error: 'Not authenticated' }
 
             // Budget check before re-embedding
             const budgetCheck = await ensureDocBudget(getSupabase)
@@ -359,29 +359,49 @@ export function registerDocumentHandlers(
                 return { success: false, error: budgetCheck.error || 'limit_exceeded' }
             }
 
-            // To be thorough, re-embed:
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return { success: false, error: 'Not authenticated' }
+            // Update document content via RPC (optimistic lock if expectedUpdatedAt provided)
+            let rpcResult: any
+            if (expectedUpdatedAt) {
+                const { data, error } = await supabase.rpc('update_text_document', {
+                    p_document_id: documentId,
+                    p_content: text,
+                    p_expected_updated_at: expectedUpdatedAt,
+                })
+                if (error) throw error
+                rpcResult = data
+            } else {
+                const { data, error } = await supabase.rpc('force_update_text_document', {
+                    p_document_id: documentId,
+                    p_content: text,
+                })
+                if (error) throw error
+                rpcResult = data
+            }
 
+            if (rpcResult.status === 'not_found') {
+                return { success: false, error: 'Document not found or access denied' }
+            }
+
+            if (rpcResult.status === 'conflict') {
+                return {
+                    success: false,
+                    error: 'conflict',
+                    serverContent: rpcResult.server_content,
+                    serverUpdatedAt: rpcResult.server_updated_at,
+                    serverName: rpcResult.server_name,
+                }
+            }
+
+            // Document content saved — now re-embed chunks
             const chunks = chunkText(text)
             const { embeddings, tokensUsed } = await embedChunks(chunks)
-
-            const { error: docErr } = await supabase
-                .from('documents')
-                .update({
-                    content: text.slice(0, 10000)
-                })
-                .eq('id', documentId)
-                .eq('user_id', user.id)
-
-            if (docErr) throw docErr
 
             const { error: delErr } = await supabase
                 .from('document_chunks')
                 .delete()
                 .eq('document_id', documentId)
 
-            if (delErr) throw delErr
+            if (delErr) console.error('[RAG] chunk delete error (non-fatal):', delErr)
 
             const chunkRows = chunks.map((chunkContent, i) => ({
                 document_id: documentId,
@@ -392,7 +412,7 @@ export function registerDocumentHandlers(
 
             if (chunkRows.length > 0) {
                 const { error: chunkErr } = await supabase.from('document_chunks').insert(chunkRows)
-                if (chunkErr) throw chunkErr
+                if (chunkErr) console.error('[RAG] chunk insert error (non-fatal):', chunkErr)
             }
 
             if (tokensUsed > 0) {
@@ -402,7 +422,7 @@ export function registerDocumentHandlers(
                 persistProfileUsage(supabase, user.id, normEdit)
             }
 
-            return { success: true }
+            return { success: true, updatedAt: rpcResult.updated_at }
         } catch (err: any) {
             console.error('[RAG] doc:update-text-document error:', err)
             return { success: false, error: err.message }

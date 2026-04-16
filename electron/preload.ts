@@ -157,7 +157,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteDocument: (id: string) => ipcRenderer.invoke('doc:delete', id),
   renameDocument: (id: string, newName: string) => ipcRenderer.invoke('doc:rename-document', id, newName),
   getTextDocument: (id: string) => ipcRenderer.invoke('doc:get-text-document', id),
-  updateTextDocument: (id: string, text: string) => ipcRenderer.invoke('doc:update-text-document', id, text),
+  updateTextDocument: (id: string, text: string, expectedUpdatedAt?: string) => ipcRenderer.invoke('doc:update-text-document', id, text, expectedUpdatedAt),
   searchDocuments: (query: string, collectionId: string) =>
     ipcRenderer.invoke('doc:search', query, collectionId),
   getDocumentFileUrl: (filePath: string, fileEtag?: string) =>
