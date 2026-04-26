@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { incrementUsage } from '../services/rag'
-import { trackNormalizedUsage, normalizeTokens } from '../services/tokenNormalization'
+import { trackNormalizedUsage, normalizeTokens, TranscriptionProvider } from '../services/tokenNormalization'
 import { checkBudget, recordUsage, maybeRefreshCache, getCachedState } from '../services/usageLimiter'
 
 export type GetSupabaseFn = () => SupabaseClient | null
@@ -47,7 +47,7 @@ export async function trackNormalizedAndRecord(
   type: 'realtime' | 'gemini' | 'embedding' | 'transcription',
   inputTokens: number,
   outputTokens: number,
-  opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean }
+  opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean; transcriptionProvider?: TranscriptionProvider }
 ) {
   const supabase = getSupabase()
   if (!supabase) return
@@ -55,7 +55,7 @@ export async function trackNormalizedAndRecord(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const newTotal = await trackNormalizedUsage(supabase, user.id, type, inputTokens, outputTokens, opts)
-    const normalized = normalizeTokens(type, inputTokens, outputTokens)
+    const normalized = normalizeTokens(type, inputTokens, outputTokens, opts?.transcriptionProvider)
     recordUsage(normalized)
 
     // Persist usage to profiles for plan-aware tracking

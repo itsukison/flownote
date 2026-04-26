@@ -332,7 +332,7 @@ export function registerTranscriptionHandlers(
       }
 
       const usageCallback = (audioMs: number) => {
-        trackNormalizedAndRecord(getSupabase, 'transcription', audioMs, 0)
+        trackNormalizedAndRecord(getSupabase, 'transcription', audioMs, 0, { transcriptionProvider: currentProvider })
         const budget = checkBudget()
         if (!budget.allowed) {
           console.log('[Transcription] Usage limit exceeded — stopping')

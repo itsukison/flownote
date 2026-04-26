@@ -8,18 +8,35 @@ export const NORMALIZATION_MULTIPLIERS = {
   REALTIME_INPUT: 6.0,
   REALTIME_OUTPUT: 24.0,
   EMBEDDING_INPUT: 0.2,
-  TRANSCRIPTION_AUDIO_MS: 0.02, // Doubled for gpt-4o-transcribe ($0.006/min vs mini at $0.003/min)
+  // Per-ms transcription multipliers, indexed to provider list price.
+  // Baseline: OpenAI gpt-4o-transcribe = $0.006/min → 0.02/ms.
+  // Deepgram nova-3 = $0.0043/min, AmiVoice = ~$0.010/min.
+  TRANSCRIPTION_OPENAI_MS: 0.020,
+  TRANSCRIPTION_DEEPGRAM_MS: 0.014,
+  TRANSCRIPTION_AMIVOICE_MS: 0.033,
 } as const
 
+export type TranscriptionProvider = 'openai' | 'deepgram' | 'amivoice'
 export type UsageType = 'realtime' | 'gemini' | 'embedding' | 'transcription'
+
+function transcriptionMultiplier(provider: TranscriptionProvider | undefined): number {
+  switch (provider) {
+    case 'deepgram': return NORMALIZATION_MULTIPLIERS.TRANSCRIPTION_DEEPGRAM_MS
+    case 'amivoice': return NORMALIZATION_MULTIPLIERS.TRANSCRIPTION_AMIVOICE_MS
+    case 'openai':
+    default: return NORMALIZATION_MULTIPLIERS.TRANSCRIPTION_OPENAI_MS
+  }
+}
 
 /**
  * Normalizes raw token counts to a unified cost-based unit.
+ * For transcription, pass the provider to apply the correct per-ms rate.
  */
 export function normalizeTokens(
   type: UsageType,
   inputTokens: number,
-  outputTokens: number
+  outputTokens: number,
+  transcriptionProvider?: TranscriptionProvider
 ): number {
   switch (type) {
     case 'realtime':
@@ -38,7 +55,7 @@ export function normalizeTokens(
       )
     case 'transcription':
       return Math.round(
-        inputTokens * NORMALIZATION_MULTIPLIERS.TRANSCRIPTION_AUDIO_MS
+        inputTokens * transcriptionMultiplier(transcriptionProvider)
       )
     default:
       return inputTokens + outputTokens
@@ -81,10 +98,10 @@ export async function trackNormalizedUsage(
   type: UsageType,
   inputTokens: number,
   outputTokens: number,
-  opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean }
+  opts?: { incrementQuestions?: boolean; incrementDocuments?: boolean; transcriptionProvider?: TranscriptionProvider }
 ): Promise<number> {
   const yearMonth = getCurrentYearMonth()
-  const normalized = normalizeTokens(type, inputTokens, outputTokens)
+  const normalized = normalizeTokens(type, inputTokens, outputTokens, opts?.transcriptionProvider)
 
   // Track input tokens
   if (inputTokens > 0) {

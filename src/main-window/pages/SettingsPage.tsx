@@ -22,13 +22,17 @@ const STATUS_LABELS: Record<string, string> = {
   none: '—',
 }
 
+// Must stay in sync with electron/services/tokenNormalization.ts.
+// Transcription is intentionally omitted: its multiplier is provider-dependent
+// (openai 0.020, deepgram 0.014, amivoice 0.033 per ms) and a month may mix
+// providers. The slice is computed as the residual of normalized_tokens minus
+// the other three deterministic categories so the math stays exact.
 const NORM = {
     REALTIME_INPUT: 6,
     REALTIME_OUTPUT: 24,
     GEMINI_INPUT: 1,
     GEMINI_OUTPUT: 4,
     EMBEDDING_INPUT: 0.2,
-    TRANSCRIPTION_MS: 0.01,
 } as const
 
 function UsageBar({ monthlyUsage, usagePercent, resetDate }: { monthlyUsage: MonthlyUsage; usagePercent: number; resetDate?: string | null }) {
@@ -38,7 +42,9 @@ function UsageBar({ monthlyUsage, usagePercent, resetDate }: { monthlyUsage: Mon
     const realtimeNorm = Math.round(monthlyUsage.raw_realtime_input_tokens * NORM.REALTIME_INPUT + monthlyUsage.raw_realtime_output_tokens * NORM.REALTIME_OUTPUT)
     const geminiNorm   = Math.round(monthlyUsage.raw_gemini_input_tokens * NORM.GEMINI_INPUT + monthlyUsage.raw_gemini_output_tokens * NORM.GEMINI_OUTPUT)
     const embeddingNorm = Math.round(monthlyUsage.raw_embedding_tokens * NORM.EMBEDDING_INPUT)
-    const transcriptionNorm = Math.round(monthlyUsage.raw_transcription_audio_ms * NORM.TRANSCRIPTION_MS)
+    // Residual = whatever the backend wrote that the other three categories don't account for.
+    // Clamped at 0 in case rounding pushes the sum slightly over.
+    const transcriptionNorm = Math.max(0, monthlyUsage.normalized_tokens - realtimeNorm - geminiNorm - embeddingNorm)
 
     const limit = monthlyUsage.token_limit || 1
 
