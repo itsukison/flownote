@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Transcription ──────────────────────────────────────────────────────────
   startTranscription: () => ipcRenderer.invoke('start-transcription'),
   stopTranscription: () => ipcRenderer.invoke('stop-transcription'),
+  getTranscriptionProvider: () => ipcRenderer.invoke('get-transcription-provider'),
+  setTranscriptionProvider: (provider: 'openai' | 'deepgram' | 'amivoice') =>
+    ipcRenderer.invoke('set-transcription-provider', provider),
   processMicChunkTranscription: (data: Float32Array) =>
     ipcRenderer.send('process-mic-chunk-transcription', data),
   getTranscriptSegments: () => ipcRenderer.invoke('get-transcript-segments'),

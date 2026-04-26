@@ -1,6 +1,14 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { TranscriptionSession, TranscriptSegment } from '../audio/TranscriptionSession'
+import {
+  TranscriptionSession,
+  TranscriptSegment,
+  TranscriptionCallbacks,
+  ITranscriptionSession,
+  isLikelyPromptEcho,
+} from '../audio/TranscriptionSession'
+import { DeepgramTranscriptionSession } from '../audio/DeepgramTranscriptionSession'
+import { AmiVoiceTranscriptionSession } from '../audio/AmiVoiceTranscriptionSession'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
@@ -12,37 +20,45 @@ type GetWindowFn = () => BrowserWindow | null
 // ── LLM transcript cleanup ────────────────────────────────────────────────────
 
 /**
- * Runs a completed transcript segment through a lightweight Gemini call to:
+ * Runs a completed transcript segment through a Gemini call to:
  * 1. Remove any non-Japanese/English hallucinations inserted by the STT model.
- * 2. Fix obvious recognition errors using surrounding context.
- * 3. Leave proper nouns and English technical terms intact.
+ * 2. Fix obvious recognition errors using surrounding context (prior segments).
+ * 3. Leave proper nouns and English technical terms intact, consistent across segments.
  * Tracks token usage via the shared normalization system.
  * Returns the cleaned text, or null if the call should be skipped/failed.
  */
 async function cleanSegmentWithLLM(
   genAI: GoogleGenerativeAI,
   getSupabase: GetSupabaseFn,
-  segment: TranscriptSegment
+  segment: TranscriptSegment,
+  priorSegments: TranscriptSegment[]
 ): Promise<string | null> {
   // Skip very short segments — not worth the round-trip
   if (segment.text.trim().length < 3) return null
+
+  const contextLines = priorSegments
+    .slice(-5)
+    .map((s) => `${s.speaker === 'You' ? '自分' : '相手'}: ${s.text}`)
+    .join('\n')
 
   const prompt = [
     '以下は音声認識システムが出力した日本語の発話テキストです。次のルールに従って修正してください。',
     'ルール:',
     '- 日本語や英語以外の言語の文字や単語が混入している場合は削除する',
-    '- 明らかな認識ミスは文脈から修正する',
-    '- 固有名詞、英字の専門用語、英語の単語はそのまま正しく維持する',
-    '- テキストの内容や意味は変えない',
-    '- 修正済みテキストのみを出力し、説明や追加情報は不要',
+    '- 明らかな認識ミスは直前の文脈から修正する',
+    '- 固有名詞、英字の専門用語、英語の単語はそのまま正しく維持する（文脈で同じ語が既に出ていれば表記を揃える）',
+    '- 意味を持たないフィラー語（「えーっと」「あのー」「まあ」「その」「えー」「うーん」など）は削除する。ただし意味のある相槌（「はい」「そうですね」など）は残す',
+    '- テキストの内容や意味は変えない。推測で情報を追加しない',
+    '- 修正済みテキストのみを出力し、説明や追加情報、話者ラベルは不要',
     '',
-    `Input: ${segment.text}`,
+    contextLines ? `直前の文脈:\n${contextLines}\n` : '',
+    `修正対象 (${segment.speaker === 'You' ? '自分' : '相手'}): ${segment.text}`,
     'Output:',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash-lite',
-    generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
+    model: 'gemini-2.5-flash',
+    generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
   })
 
   const result = await model.generateContent(prompt)
@@ -61,8 +77,40 @@ async function cleanSegmentWithLLM(
   return cleaned || null
 }
 
-let micSession: TranscriptionSession | null = null
-let speakerSession: TranscriptionSession | null = null
+// ── Provider selection ────────────────────────────────────────────────────
+// Production default: AmiVoice (-a-bizmrr) — Japanese-business-domain ASR with
+// engine-driven phrase-boundary segmentation (handles continuous speech without
+// silence VAD), server-side filler removal, and /nolog privacy.
+// Deepgram is the fallback. OpenAI is dev-only due to JA hallucinations.
+export type TranscriptionProvider = 'openai' | 'deepgram' | 'amivoice'
+let currentProvider: TranscriptionProvider = 'amivoice'
+
+interface ProviderKeys {
+  openai: string
+  deepgram: string
+  amivoice: string
+}
+
+function createTranscriptionSession(
+  provider: TranscriptionProvider,
+  keys: ProviderKeys,
+  source: 'user' | 'opponent',
+  callbacks: TranscriptionCallbacks,
+  amivoiceEngine: string
+): ITranscriptionSession {
+  if (provider === 'deepgram') {
+    if (!keys.deepgram) throw new Error('No DEEPGRAM_API_KEY')
+    return new DeepgramTranscriptionSession(keys.deepgram, source, callbacks)
+  }
+  if (provider === 'amivoice') {
+    if (!keys.amivoice) throw new Error('No AMIVOICE_APP_KEY')
+    return new AmiVoiceTranscriptionSession(keys.amivoice, source, callbacks, amivoiceEngine)
+  }
+  return new TranscriptionSession(keys.openai, source, callbacks)
+}
+
+let micSession: ITranscriptionSession | null = null
+let speakerSession: ITranscriptionSession | null = null
 let segments: TranscriptSegment[] = []
 let currentTranscriptId: string | null = null
 let sysAudioChunkCount = 0
@@ -158,13 +206,53 @@ export function registerTranscriptionHandlers(
   getMainWindow: GetWindowFn,
   getSupabase: GetSupabaseFn,
   openaiApiKey: string,
-  genAI: GoogleGenerativeAI | null
+  genAI: GoogleGenerativeAI | null,
+  deepgramApiKey: string = '',
+  amivoiceAppKey: string = '',
+  amivoiceEngine: string = '-a-general'
 ) {
   _getSupabase = getSupabase
   _genAI = genAI
 
+  const keys: ProviderKeys = {
+    openai: openaiApiKey,
+    deepgram: deepgramApiKey,
+    amivoice: amivoiceAppKey,
+  }
+
+  // Resolve default provider against actual key availability:
+  // amivoice (preferred) → deepgram → openai (last-resort).
+  if (currentProvider === 'amivoice' && !amivoiceAppKey) {
+    if (deepgramApiKey) currentProvider = 'deepgram'
+    else if (openaiApiKey) currentProvider = 'openai'
+  }
+  console.log(`[Transcription] resolved default provider: ${currentProvider}`)
+
+  ipcMain.handle('get-transcription-provider', () => {
+    return {
+      provider: currentProvider,
+      available: {
+        openai: Boolean(openaiApiKey),
+        deepgram: Boolean(deepgramApiKey),
+        amivoice: Boolean(amivoiceAppKey),
+      },
+    }
+  })
+
+  ipcMain.handle('set-transcription-provider', (_e, p: TranscriptionProvider) => {
+    if (p !== 'openai' && p !== 'deepgram' && p !== 'amivoice') return { success: false, error: 'invalid provider' }
+    if (p === 'deepgram' && !deepgramApiKey) return { success: false, error: 'No DEEPGRAM_API_KEY' }
+    if (p === 'amivoice' && !amivoiceAppKey) return { success: false, error: 'No AMIVOICE_APP_KEY' }
+    if (micSession?.active) return { success: false, error: 'Stop transcription before switching' }
+    currentProvider = p
+    console.log(`[Transcription] provider switched to: ${p}`)
+    return { success: true, provider: p }
+  })
+
   ipcMain.handle('start-transcription', async () => {
-    if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
+    if (currentProvider === 'openai' && !openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
+    if (currentProvider === 'deepgram' && !deepgramApiKey) return { success: false, error: 'No DEEPGRAM_API_KEY' }
+    if (currentProvider === 'amivoice' && !amivoiceAppKey) return { success: false, error: 'No AMIVOICE_APP_KEY' }
     try {
       const budgetCheck = await ensureBudget(getSupabase)
       if (!budgetCheck.allowed) {
@@ -192,14 +280,28 @@ export function registerTranscriptionHandlers(
         }
       }
 
+      // AmiVoice already strips fillers (keepFillerToken=0) and smart-formats output
+      // server-side, so the Gemini cleanup pass is unnecessary noise + cost on that
+      // path. The OpenAI/Deepgram paths still benefit from it.
+      const useLlmCleanup = currentProvider !== 'amivoice'
+      // Hallucination filter is specific to gpt-4o-transcribe / Whisper-family decoders;
+      // skip on dedicated JA engines that don't exhibit prompt-echo behavior.
+      const useHallucinationFilter = currentProvider === 'openai'
+
       const transcriptCallback = (segment: TranscriptSegment) => {
+        if (useHallucinationFilter && isLikelyPromptEcho(segment.text)) {
+          console.log(`[Transcription] dropped hallucination segment: "${segment.text.slice(0, 80)}"`)
+          return
+        }
         segments.push(segment)
         // Emit raw segment immediately — overlay shows text without any delay
         getOverlayWindow()?.webContents.send('transcript-segment', segment)
 
         // Fire-and-forget async LLM cleanup; non-fatal if it fails
-        if (_genAI) {
-          cleanSegmentWithLLM(_genAI, _getSupabase, segment).then((correctedText) => {
+        // Snapshot prior segments (excluding the one just pushed) for rolling context
+        if (useLlmCleanup && _genAI) {
+          const priorForContext = segments.slice(0, -1).slice(-5)
+          cleanSegmentWithLLM(_genAI, _getSupabase, segment, priorForContext).then((correctedText) => {
             if (correctedText && correctedText !== segment.text) {
               // Patch in-memory record so later summaries/titles use clean text
               const idx = segments.findIndex((s) => s.id === segment.id)
@@ -239,21 +341,17 @@ export function registerTranscriptionHandlers(
         }
       }
 
-      micSession = new TranscriptionSession(openaiApiKey, 'user', {
+      const sharedCallbacks: TranscriptionCallbacks = {
         onTranscript: transcriptCallback,
         onTranscriptDelta: transcriptDeltaCallback,
         onSpeechStarted: speechStartedCallback,
         onError: errorCallback,
         onUsage: usageCallback,
-      })
+      }
 
-      speakerSession = new TranscriptionSession(openaiApiKey, 'opponent', {
-        onTranscript: transcriptCallback,
-        onTranscriptDelta: transcriptDeltaCallback,
-        onSpeechStarted: speechStartedCallback,
-        onError: errorCallback,
-        onUsage: usageCallback,
-      })
+      console.log(`[Transcription] starting with provider: ${currentProvider}${currentProvider === 'amivoice' ? ` (engine: ${amivoiceEngine})` : ''}`)
+      micSession = createTranscriptionSession(currentProvider, keys, 'user', sharedCallbacks, amivoiceEngine)
+      speakerSession = createTranscriptionSession(currentProvider, keys, 'opponent', sharedCallbacks, amivoiceEngine)
 
       await micSession.start()
       await speakerSession.start()

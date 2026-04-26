@@ -498,7 +498,7 @@ export default function OverlayApp() {
                                 </div>
                             )}
                             {segments.length > 0 && (
-                                <div className="px-4 pt-2 pb-6 space-y-4">
+                                <div className="px-4 pt-4 pb-4 space-y-4">
                                     {groupedSegments.map((g, i) => (
                                         <div key={i}>
                                             <div className="flex items-baseline gap-2 mb-0.5">
@@ -646,7 +646,7 @@ export default function OverlayApp() {
 
                 {/* Transcript Q&A input bar — natural flex item, no absolute positioning */}
                 {activeTab === 'transcript' && !qaViewActive && segments.length > 0 && (
-                    <div className="shrink-0 bg-zinc-950 border-t border-zinc-800/60">
+                    <div className="shrink-0 bg-zinc-950">
                         {quickPrompts.length > 0 && (
                             <div className="px-3 pt-2 pb-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
                                 <Zap size={10} className="shrink-0 text-zinc-700" />

@@ -48,6 +48,8 @@ declare global {
             // ── Transcription ──────────────────────────────────────────────────────
             startTranscription: () => Promise<{ success: boolean; error?: string; transcriptId?: string }>
             stopTranscription: () => Promise<{ success: boolean; error?: string }>
+            getTranscriptionProvider: () => Promise<{ provider: 'openai' | 'deepgram' | 'amivoice'; available: { openai: boolean; deepgram: boolean; amivoice: boolean } }>
+            setTranscriptionProvider: (provider: 'openai' | 'deepgram' | 'amivoice') => Promise<{ success: boolean; error?: string; provider?: 'openai' | 'deepgram' | 'amivoice' }>
             processMicChunkTranscription: (data: Float32Array) => void
             getTranscriptSegments: () => Promise<TranscriptSegment[]>
             askTranscriptQuestion: (question: string) => Promise<{ success: boolean; error?: string }>

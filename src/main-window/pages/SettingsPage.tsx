@@ -145,6 +145,9 @@ export default function SettingsPage({ user }: Props) {
     const [checkoutLoading, setCheckoutLoading] = useState(false)
     const [businessModalOpen, setBusinessModalOpen] = useState(false)
     const [enterpriseModalOpen, setEnterpriseModalOpen] = useState(false)
+    const [asrProvider, setAsrProvider] = useState<'openai' | 'deepgram' | 'amivoice'>('openai')
+    const [asrAvailable, setAsrAvailable] = useState<{ openai: boolean; deepgram: boolean; amivoice: boolean }>({ openai: false, deepgram: false, amivoice: false })
+    const [asrError, setAsrError] = useState<string | null>(null)
     const refreshPlanData = () => {
         window.electronAPI?.getPlanInfo().then(setPlanInfo)
         window.electronAPI?.getMonthlyUsage().then(setMonthlyUsage)
@@ -161,9 +164,24 @@ export default function SettingsPage({ user }: Props) {
             if (result?.success) setAutoSummaryEnabled(result.auto_summary_enabled)
         }).finally(() => setAutoSummaryLoading(false))
 
+        window.electronAPI?.getTranscriptionProvider().then((r) => {
+            if (r) { setAsrProvider(r.provider); setAsrAvailable(r.available) }
+        })
+
         const unsubPlan = window.electronAPI?.onPlanChanged(() => refreshPlanData())
         return () => { unsubPlan?.() }
     }, [])
+
+    const handleAsrProviderChange = async (next: 'openai' | 'deepgram' | 'amivoice') => {
+        setAsrError(null)
+        const prev = asrProvider
+        setAsrProvider(next)
+        const result = await window.electronAPI?.setTranscriptionProvider(next)
+        if (!result?.success) {
+            setAsrProvider(prev)
+            setAsrError(result?.error || 'Failed to switch provider')
+        }
+    }
 
     const usagePercent = monthlyUsage && monthlyUsage.token_limit > 0
         ? Math.min(100, (monthlyUsage.normalized_tokens / monthlyUsage.token_limit) * 100)
@@ -285,6 +303,58 @@ export default function SettingsPage({ user }: Props) {
                 </div>
             </section>
 
+
+            {/* ── Transcription Provider (dev-only — production locks AmiVoice) ── */}
+            {import.meta.env.DEV && (
+            <section className="space-y-1 mb-10">
+                <SectionHeader title="文字起こしモデル" />
+                <div className="py-3 -mx-3 px-3 space-y-3">
+                    <p className="text-xs text-zinc-500 leading-relaxed">
+                        日本語の文字起こしに使用するエンジンを選択します。変更は次回「聞き取り開始」から反映されます。
+                    </p>
+                    <div className="flex gap-2">
+                        {((import.meta.env.DEV
+                            ? (['amivoice', 'deepgram', 'openai'] as const)
+                            : (['amivoice', 'deepgram'] as const)) as ReadonlyArray<'openai' | 'deepgram' | 'amivoice'>).map((p) => {
+                            const selected = asrProvider === p
+                            const available = asrAvailable[p]
+                            const label =
+                                p === 'openai' ? 'OpenAI (gpt-4o-transcribe)' :
+                                p === 'deepgram' ? 'Deepgram (nova-3)' :
+                                'AmiVoice (推奨)'
+                            const envVarName =
+                                p === 'openai' ? 'OPENAI_API_KEY' :
+                                p === 'deepgram' ? 'DEEPGRAM_API_KEY' :
+                                'AMIVOICE_APP_KEY'
+                            return (
+                                <button
+                                    key={p}
+                                    onClick={() => available && handleAsrProviderChange(p)}
+                                    disabled={!available}
+                                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
+                                        selected
+                                            ? 'bg-zinc-100 text-zinc-950 border-zinc-100'
+                                            : available
+                                                ? 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800'
+                                                : 'bg-zinc-950 text-zinc-600 border-zinc-900 cursor-not-allowed opacity-50'
+                                    }`}
+                                >
+                                    <div>{label}</div>
+                                    {!available && (
+                                        <div className="text-[10px] mt-1 text-amber-500/70">
+                                            {envVarName} 未設定
+                                        </div>
+                                    )}
+                                </button>
+                            )
+                        })}
+                    </div>
+                    {asrError && (
+                        <p className="text-[11px] text-amber-500/80">{asrError}</p>
+                    )}
+                </div>
+            </section>
+            )}
 
             {/* ── 4. Plan + Usage ──────────────────────────────────────── */}
             <section className="space-y-1 mb-10">

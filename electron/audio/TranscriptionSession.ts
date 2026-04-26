@@ -7,12 +7,65 @@ export interface TranscriptSegment {
   timestamp: number
 }
 
-interface TranscriptionCallbacks {
+export interface TranscriptionCallbacks {
   onTranscript: (segment: TranscriptSegment) => void
   onTranscriptDelta: (itemId: string, text: string, speaker: 'You' | 'Speaker') => void
   onSpeechStarted: (speaker: 'You' | 'Speaker') => void
   onError: (err: any) => void
   onUsage: (audioMs: number) => void
+}
+
+export interface ITranscriptionSession {
+  readonly active: boolean
+  start(): Promise<void>
+  stop(): Promise<void>
+  sendAudio(pcmBuffer: Buffer): void
+}
+
+// Fragment-style keywords rather than a complete sentence — still primes the
+// decoder toward JA + mixed English, but much less likely to be regurgitated
+// verbatim during silent/ambiguous audio.
+export const JA_PRIME_PROMPT = '日本語 英語混在 固有名詞そのまま'
+
+// Known hallucination patterns for gpt-4o-transcribe / Whisper-family models on JA.
+// Includes the current + prior prime prompts and common Whisper JA hallucinations
+// (YouTube training-data artifacts).
+const HALLUCINATION_PATTERNS = [
+  JA_PRIME_PROMPT,
+  // Legacy full-sentence prompts (still appear in the wild until sessions rotate)
+  'これは日本語の会話です。',
+  'これは日本語の会話です。固有名詞や専門用語は英語のままで構いません。',
+  '固有名詞や専門用語は英語のままで構いません。',
+  '固有名詞や専門用語は英語のままで構いません',
+  // Common Whisper JA hallucinations from YouTube pretraining
+  'ご視聴ありがとうございました。',
+  'ご視聴ありがとうございました',
+  'チャンネル登録をお願いします。',
+  'チャンネル登録をお願いします',
+  '字幕提供、ご視聴いただきありがとうございました。',
+]
+
+function normalizeForCompare(s: string): string {
+  return s.replace(/[\s　]+/g, '').trim()
+}
+
+/**
+ * Returns true if the transcript text is a likely prompt echo / known hallucination.
+ * Used to drop bogus segments caused by decoder regurgitation during silent audio.
+ */
+export function isLikelyPromptEcho(text: string): boolean {
+  const norm = normalizeForCompare(text)
+  if (!norm) return true
+  for (const pattern of HALLUCINATION_PATTERNS) {
+    const p = normalizeForCompare(pattern)
+    if (!p) continue
+    if (norm === p) return true
+    // Segment is a meaningful chunk of the prompt (e.g., first sentence of a longer prompt)
+    if (p.length >= 10 && p.includes(norm) && norm.length >= 8) return true
+    // Prompt is wholly contained in segment (prompt + extra garbage)
+    if (p.length >= 10 && norm.includes(p)) return true
+  }
+  return false
 }
 
 let segmentCounter = 0
@@ -21,7 +74,7 @@ let segmentCounter = 0
  * WebSocket client for OpenAI Realtime Transcription API.
  * Each instance handles one audio source (mic or system audio).
  */
-export class TranscriptionSession {
+export class TranscriptionSession implements ITranscriptionSession {
   private apiKey: string
   private source: 'user' | 'opponent'
   private speaker: 'You' | 'Speaker'
@@ -162,8 +215,9 @@ export class TranscriptionSession {
               input_audio_transcription: {
                 model: this.modelName,
                 language: 'ja',
-                // Prime the decoder toward Japanese; proper nouns in English are acceptable.
-                prompt: 'これは日本語の会話です。固有名詞や専門用語は英語のままで構いません。',
+                // Keyword-style prime (not a full sentence) to reduce prompt-echo
+                // hallucinations during silent audio. See JA_PRIME_PROMPT.
+                prompt: JA_PRIME_PROMPT,
               },
               turn_detection: {
                 type: 'server_vad',
