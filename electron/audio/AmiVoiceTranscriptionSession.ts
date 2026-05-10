@@ -260,9 +260,15 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
       console.log(`[AmiVoiceSession] ${this.source} — WebSocket OPEN, sending 's' start command`)
       // Start command: s <audioFormat> <engine> authorization=<appKey> [params]
       // Audio format '16K' = 16kHz PCM16 LE mono
-      // resultUpdatedInterval=300 → intermediate hypotheses every ~300ms
-      // keepFillerToken=0 → engine strips えーっと/あのー automatically
-      const startCmd = `s 16K ${this.engine} authorization=${this.appKey} resultUpdatedInterval=300 keepFillerToken=0`
+      // resultUpdatedInterval=200 → interim hypothesis ('U') packets every ~200ms
+      //   so the overlay can paint progressive text as the speaker talks (Notta-style).
+      // keepFillerToken=0 → engine strips えーっと/あのー automatically.
+      // segmenterProperties → cut phrase boundaries more aggressively in continuous
+      //   speech so 'A' (final) packets fire mid-monologue instead of waiting for a
+      //   true silence. postTime: trailing weak-audio ms before commit (default 550 →
+      //   300). decayTime: ms before postTime threshold relaxes (default 5000 →
+      //   2000). Quoted because the value contains spaces.
+      const startCmd = `s 16K ${this.engine} authorization=${this.appKey} resultUpdatedInterval=200 keepFillerToken=0 segmenterProperties="postTime=300 decayTime=2000"`
       socket.send(startCmd)
     })
 

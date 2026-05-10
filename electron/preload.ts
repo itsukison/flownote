@@ -115,6 +115,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
   updateSessionTitle: (id: string, title: string) =>
     ipcRenderer.invoke('session:update-title', id, title),
+  updateSessionSpeakerLabels: (id: string, labels: Record<string, string> | null) =>
+    ipcRenderer.invoke('session:update-speaker-labels', id, labels),
   generateSessionSummary: (id: string) =>
     ipcRenderer.invoke('session:generate-summary', id),
   askSessionQuestion: (id: string, question: string) =>

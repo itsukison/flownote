@@ -16,6 +16,7 @@ export function SessionDetailView({
   session,
   onBack,
   onTitleChange,
+  onSpeakerLabelsChange,
   summary,
   summaryGenerating,
   onGenerateSummary,
@@ -24,6 +25,7 @@ export function SessionDetailView({
   session: SessionTranscript
   onBack: () => void
   onTitleChange: (title: string) => void
+  onSpeakerLabelsChange: (labels: Record<string, string> | null) => void
   summary: string
   summaryGenerating: boolean
   onGenerateSummary: () => void
@@ -128,7 +130,9 @@ export function SessionDetailView({
             onGenerate={onGenerateSummary}
           />
         )}
-        {activeTab === 'transcript' && <TranscriptTab session={session} />}
+        {activeTab === 'transcript' && (
+          <TranscriptTab session={session} onSpeakerLabelsChange={onSpeakerLabelsChange} />
+        )}
         {activeTab === 'qaHistory' && <QAHistoryTab sessionId={session.id} />}
       </div>
 

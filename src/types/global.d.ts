@@ -65,6 +65,7 @@ declare global {
             getSessionDetail: (id: string) => Promise<{ success: boolean; data?: SessionTranscript; error?: string }>
             deleteSession: (id: string) => Promise<{ success: boolean; error?: string }>
             updateSessionTitle: (id: string, title: string) => Promise<{ success: boolean; error?: string }>
+            updateSessionSpeakerLabels: (id: string, labels: Record<string, string> | null) => Promise<{ success: boolean; error?: string }>
             generateSessionSummary: (id: string) => Promise<{ success: boolean; error?: string }>
             askSessionQuestion: (id: string, question: string) => Promise<{ success: boolean; error?: string }>
             getSessionMessages: (id: string) => Promise<{ success: boolean; data: SessionMessage[]; error?: string }>
@@ -218,6 +219,7 @@ declare global {
         ended_at: string | null
         segments?: TranscriptSegment[]
         summary: string | null
+        speaker_labels?: Record<string, string> | null
         created_at: string
     }
 

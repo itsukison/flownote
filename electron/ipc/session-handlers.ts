@@ -39,7 +39,7 @@ export function registerSessionHandlers(getSupabase: GetSupabaseFn) {
 
     const { data, error } = await supabase
       .from('transcripts')
-      .select('id, title, started_at, ended_at, segments, summary, created_at')
+      .select('id, title, started_at, ended_at, segments, summary, speaker_labels, created_at')
       .eq('id', transcriptId)
       .single()
 
@@ -64,6 +64,35 @@ export function registerSessionHandlers(getSupabase: GetSupabaseFn) {
     if (error) return { success: false, error: error.message }
     return { success: true }
   })
+
+  ipcMain.handle(
+    'session:update-speaker-labels',
+    async (_event, transcriptId: string, labels: Record<string, string> | null) => {
+      const supabase = getSupabase()
+      if (!supabase) return { success: false, error: 'no_database' }
+
+      // Sanitize: only known channel keys, trimmed strings, drop empties.
+      let sanitized: Record<string, string> | null = null
+      if (labels && typeof labels === 'object') {
+        const out: Record<string, string> = {}
+        for (const key of ['You', 'Speaker'] as const) {
+          const v = labels[key]
+          if (typeof v === 'string') {
+            const trimmed = v.trim().slice(0, 60)
+            if (trimmed) out[key] = trimmed
+          }
+        }
+        sanitized = Object.keys(out).length > 0 ? out : null
+      }
+
+      const { error } = await supabase
+        .from('transcripts')
+        .update({ speaker_labels: sanitized })
+        .eq('id', transcriptId)
+      if (error) return { success: false, error: error.message }
+      return { success: true }
+    }
+  )
 
   ipcMain.handle('session:get-messages', async (_event, transcriptId: string) => {
     const supabase = getSupabase()

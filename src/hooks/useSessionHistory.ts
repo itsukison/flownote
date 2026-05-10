@@ -67,6 +67,17 @@ export function useSessionHistory() {
     }
   }, [selectedSession])
 
+  const updateSpeakerLabels = useCallback(async (id: string, labels: Record<string, string> | null) => {
+    if (selectedSession?.id === id) {
+      setSelectedSession((prev) => prev ? { ...prev, speaker_labels: labels } : prev)
+    }
+    const result = await window.electronAPI?.updateSessionSpeakerLabels(id, labels)
+    if (!result?.success && selectedSession?.id === id) {
+      // Roll back optimistic update on failure
+      setSelectedSession((prev) => prev ? { ...prev, speaker_labels: selectedSession.speaker_labels ?? null } : prev)
+    }
+  }, [selectedSession])
+
   return {
     sessions,
     loading,
@@ -77,5 +88,6 @@ export function useSessionHistory() {
     deleteSession,
     updateTitle,
     updateSessionSummary,
+    updateSpeakerLabels,
   }
 }

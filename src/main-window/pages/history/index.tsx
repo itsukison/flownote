@@ -8,7 +8,7 @@ import { useSessionChat } from '@/hooks/useSessionChat'
 export default function HistoryPage() {
   const {
     sessions, loading, selectedSession,
-    selectSession, goBack, deleteSession, updateTitle, updateSessionSummary,
+    selectSession, goBack, deleteSession, updateTitle, updateSessionSummary, updateSpeakerLabels,
   } = useSessionHistory()
 
   const { summary, generating: summaryGenerating, generateSummary, initFromCached } = useSessionSummary()
@@ -47,6 +47,7 @@ export default function HistoryPage() {
       session={selectedSession}
       onBack={goBack}
       onTitleChange={(title) => updateTitle(selectedSession.id, title)}
+      onSpeakerLabelsChange={(labels) => updateSpeakerLabels(selectedSession.id, labels)}
       summary={summary}
       summaryGenerating={summaryGenerating}
       onGenerateSummary={handleGenerateSummary}

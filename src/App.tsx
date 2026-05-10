@@ -69,7 +69,6 @@ export default function App() {
         await startMicCapture()
         setListening(true)
         setPanelOpen(true)
-        setSettingsOpen(false)
       } catch (e: any) {
         setError(e.message || 'Failed to start listening')
       }

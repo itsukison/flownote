@@ -77,6 +77,89 @@ async function cleanSegmentWithLLM(
   return cleaned || null
 }
 
+/**
+ * Post-session batched polish for AmiVoice. AmiVoice already strips fillers and
+ * smart-formats output, but minor recognition errors (homophones, proper nouns,
+ * domain jargon) slip through. With the full session as context in a single
+ * Gemini call, we get global consistency (same term spelled the same way every
+ * time) with one round-trip instead of N. Returns the cleaned segment list, or
+ * null on parse failure (caller falls back to raw).
+ */
+async function polishTranscriptBatched(
+  genAI: GoogleGenerativeAI,
+  getSupabase: GetSupabaseFn,
+  segments: TranscriptSegment[]
+): Promise<TranscriptSegment[] | null> {
+  if (segments.length === 0) return null
+
+  const payload = segments.map((s) => ({
+    id: s.id,
+    speaker: s.speaker === 'You' ? '自分' : '相手',
+    text: s.text,
+  }))
+
+  const prompt = [
+    '以下は音声認識システム（AmiVoice）が出力した日本語の発話セグメントです。',
+    'ルール:',
+    '- 明らかな認識ミスを全体の文脈から修正する',
+    '- 固有名詞、英字の専門用語はそのまま維持し、同じ語が複数回出る場合は表記を揃える',
+    '- 日本語/英語以外の言語の文字が混入している場合は削除する',
+    '- 意味は変えない。推測で情報を追加しない',
+    '- セグメントの境界（id）は変えない。各 id に対して修正後の text を返す',
+    '- 出力は JSON 配列のみ：[{"id":"...","text":"..."}, ...]',
+    '',
+    'セグメント:',
+    JSON.stringify(payload),
+    '',
+    'Output JSON:',
+  ].join('\n')
+
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+    },
+  })
+
+  const result = await model.generateContent(prompt)
+  const raw = result.response.text().trim()
+
+  const usage = result.response.usageMetadata
+  if (usage) {
+    const promptTokens = usage.promptTokenCount ?? 0
+    const responseTokens = usage.candidatesTokenCount ?? 0
+    if (promptTokens > 0 || responseTokens > 0) {
+      trackNormalizedAndRecord(getSupabase, 'gemini', promptTokens, responseTokens)
+    }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+
+  const cleanedById = new Map<string, string>()
+  for (const item of parsed) {
+    if (item && typeof item === 'object' && 'id' in item && 'text' in item) {
+      const id = (item as any).id
+      const text = (item as any).text
+      if (typeof id === 'string' && typeof text === 'string' && text.trim().length > 0) {
+        cleanedById.set(id, text)
+      }
+    }
+  }
+
+  return segments.map((s) => {
+    const cleaned = cleanedById.get(s.id)
+    return cleaned && cleaned !== s.text ? { ...s, text: cleaned } : s
+  })
+}
+
 // ── Provider selection ────────────────────────────────────────────────────
 // Production default: AmiVoice (-a-bizmrr) — Japanese-business-domain ASR with
 // engine-driven phrase-boundary segmentation (handles continuous speech without
@@ -174,8 +257,29 @@ export async function saveAndResetSession(): Promise<void> {
       .eq('id', currentTranscriptId)
 
     const savedTranscriptId = currentTranscriptId
+    const segmentsSnapshot = [...segments]
 
     if (_genAI) {
+      // Post-session polish (AmiVoice only — Deepgram/OpenAI use live cleanup).
+      // Runs in parallel with title/summary; updates segments column when done.
+      if (currentProvider === 'amivoice') {
+        const supabase = _getSupabase()
+        polishTranscriptBatched(_genAI, _getSupabase, segmentsSnapshot)
+          .then((polished) => {
+            if (!polished || !supabase) return
+            return supabase
+              .from('transcripts')
+              .update({ segments: polished })
+              .eq('id', savedTranscriptId)
+              .then(() => {
+                console.log(`[Transcription] post-session polish applied to ${savedTranscriptId}`)
+              })
+          })
+          .catch((err) => {
+            console.warn('[Transcription] post-session polish failed (non-fatal):', err?.message ?? err)
+          })
+      }
+
       generateSessionTitle(_genAI, _getSupabase, savedTranscriptId, segments).catch(
         (err) => console.error('[Transcription] Auto-title error:', err)
       )

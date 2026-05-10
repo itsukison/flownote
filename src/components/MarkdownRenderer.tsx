@@ -42,8 +42,9 @@ export default function MarkdownRenderer({ content, className }: MarkdownRendere
                             {children}
                         </li>
                     ),
-                    code: ({ inline, children }) => (
-                        inline ? (
+                    code: ({ children, ...props }) => {
+                        const inline = (props as { inline?: boolean }).inline
+                        return inline ? (
                             <code className="px-1 py-0.5 rounded bg-zinc-800/70 text-current text-[0.85em]">
                                 {children}
                             </code>
@@ -52,7 +53,7 @@ export default function MarkdownRenderer({ content, className }: MarkdownRendere
                                 <code className="text-current">{children}</code>
                             </pre>
                         )
-                    ),
+                    },
                 }}
             >
                 {content}

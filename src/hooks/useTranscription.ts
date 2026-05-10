@@ -2,7 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 export function useTranscription() {
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
-  const [partialSegment, setPartialSegment] = useState<{ speaker: 'You' | 'Speaker' } | null>(null)
+  // partialSegment carries the in-progress utterance text alongside the speaker.
+  // AmiVoice sends a 'U' interim packet every ~200ms; we replace `text` with the
+  // latest hypothesis (each U is a full hypothesis, not a delta to append).
+  // `itemId` lets us scope the partial to a single utterance instance — once the
+  // matching 'A' (final) lands as a transcript-segment, we clear the partial.
+  const [partialSegment, setPartialSegment] = useState<{ speaker: 'You' | 'Speaker'; itemId?: string; text?: string } | null>(null)
   const [transcribing, setTranscribing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [transcriptId, setTranscriptId] = useState<string | null>(null)
@@ -17,6 +22,11 @@ export function useTranscription() {
     const offSpeechStarted = window.electronAPI.onTranscriptSpeechStarted((data: { speaker: 'You' | 'Speaker' }) => {
       setPartialSegment({ speaker: data.speaker })
     })
+    // Interim hypothesis from AmiVoice 'U' packets — render as tentative text.
+    // Replace (don't append): each delta is the full current hypothesis.
+    const offDelta = window.electronAPI.onTranscriptDelta?.((data) => {
+      setPartialSegment({ speaker: data.speaker, itemId: data.itemId, text: data.text })
+    })
     const offSegment = window.electronAPI.onTranscriptSegment((segment: TranscriptSegment) => {
       setSegments((prev) => [...prev, segment])
       setPartialSegment(null)
@@ -27,7 +37,7 @@ export function useTranscription() {
         prev.map((s) => (s.id === data.id ? { ...s, text: data.text } : s))
       )
     })
-    return () => { offSpeechStarted(); offSegment(); offCorrected?.() }
+    return () => { offSpeechStarted(); offDelta?.(); offSegment(); offCorrected?.() }
   }, [])
 
   const stopMicCapture = useCallback(() => {

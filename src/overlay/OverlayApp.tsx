@@ -19,6 +19,7 @@ import { useResponseStream } from '@/hooks/useResponseStream'
 import { useTranscription } from '@/hooks/useTranscription'
 import { useTranscriptQA } from '@/hooks/useTranscriptQA'
 import { DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
+import { splitTranscriptLines } from '@/utils/transcriptFormat'
 
 const t = ja
 
@@ -57,12 +58,24 @@ export default function OverlayApp() {
 
     const error = transcriptionError || listenError
 
+    // Merge short trailing segments into the previous line so slow speakers don't
+    // produce a stack of 2–3-word fragments. AmiVoice now cuts phrase boundaries
+    // aggressively (segmenterProperties postTime=300), which is great for fast
+    // talkers but fragments slow ones. If the prior line is below this threshold
+    // we concatenate into it instead of starting a new line. Japanese is dense, so
+    // ~15 chars ≈ a short clause that reads better as part of the next thought.
+    const SHORT_LINE_MERGE_THRESHOLD = 15
     const groupedSegments = useMemo(() => {
         const groups: { speaker: string; timestamp: number; lines: string[] }[] = []
         for (const seg of segments) {
             const last = groups[groups.length - 1]
             if (last && last.speaker === seg.speaker) {
-                last.lines.push(seg.text)
+                const lastLine = last.lines[last.lines.length - 1]
+                if (lastLine && lastLine.length < SHORT_LINE_MERGE_THRESHOLD) {
+                    last.lines[last.lines.length - 1] = lastLine + seg.text
+                } else {
+                    last.lines.push(seg.text)
+                }
             } else {
                 groups.push({ speaker: seg.speaker, timestamp: seg.timestamp, lines: [seg.text] })
             }
@@ -507,20 +520,25 @@ export default function OverlayApp() {
                                                 </span>
                                                 <span className="text-[10px] text-zinc-600 tabular-nums">{formatTimestamp(g.timestamp)}</span>
                                             </div>
-                                            <p className="text-xs text-zinc-300 leading-relaxed">{g.lines.join(' ')}</p>
+                                            <div className="space-y-1.5">
+                                                {splitTranscriptLines(g.lines).map((line, j) => (
+                                                    <p key={j} className="text-xs text-zinc-300 leading-relaxed">{line}</p>
+                                                ))}
+                                            </div>
                                         </div>
                                     ))}
-                                    {partialSegment && (
+                                    {/* Tentative interim text from AmiVoice 'U' packets — lower contrast
+                                        than finalized segments to signal it may be revised when the 'A'
+                                        (final) lands. AmiVoice's interim text already includes a trailing
+                                        '...' as its own non-final indicator, so we don't render an extra
+                                        bouncing-dots loader during the brief gap before the first U. */}
+                                    {partialSegment?.text && (
                                         <div>
                                             <span className="text-[10px] font-bold text-zinc-500">
                                                 {partialSegment.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
                                             </span>
-                                            <p className="flex items-center gap-1 mt-0.5">
-                                                <span className="flex gap-0.5">
-                                                    <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                    <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                    <span className="w-1 h-1 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: '300ms' }} />
-                                                </span>
+                                            <p className="text-xs text-zinc-500 leading-relaxed mt-0.5">
+                                                {partialSegment.text}
                                             </p>
                                         </div>
                                     )}

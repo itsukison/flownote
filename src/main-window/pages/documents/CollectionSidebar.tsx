@@ -58,10 +58,14 @@ export function CollectionSidebar({
             ) : (
               <div className="flex items-center justify-center gap-1.5 mt-1 w-full max-w-full">
                 {col.visibility === 'team_view' && (
-                  <Eye size={12} className="text-white/40 flex-shrink-0" title="チーム（閲覧のみ）" />
+                  <span title="チーム（閲覧のみ）" className="flex-shrink-0 inline-flex">
+                    <Eye size={12} className="text-white/40" />
+                  </span>
                 )}
                 {col.visibility === 'team_edit' && (
-                  <Users size={12} className="text-white/40 flex-shrink-0" title="チーム（編集可）" />
+                  <span title="チーム（編集可）" className="flex-shrink-0 inline-flex">
+                    <Users size={12} className="text-white/40" />
+                  </span>
                 )}
                 <span className="text-[13px] font-medium text-center truncate text-white/90 group-hover:text-white">
                   {col.name}
