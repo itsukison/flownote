@@ -147,9 +147,7 @@ export class OpenAIRealtimeQuestionDetector {
 
     const socket = new WebSocket(url, {
       headers: {
-        // Required by OpenAI Realtime API — must NOT be removed
         'Authorization': `Bearer ${this.apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
       },
     })
 
@@ -179,19 +177,28 @@ export class OpenAIRealtimeQuestionDetector {
   }
 
   private sendSessionUpdate(socket: WebSocket, source: 'user' | 'opponent'): void {
-    // Correct session.update schema per OpenAI Realtime API spec:
-    // - modalities (not output_modalities)
-    // - input_audio_format at root level (not nested under audio.input)
-    // - turn_detection at root level (not nested under audio.input)
-    // - no 'type' or 'model' field inside session object
+    // GA Realtime API session.update schema:
+    // - session.type: 'realtime' is required
+    // - output_modalities (not modalities)
+    // - audio.input.format is an object { type, rate }, not the flat 'pcm16' string
+    // - turn_detection lives under audio.input, not at session root
+    // Audio reaches this detector resampled to 24kHz PCM16 (see electron/ipc/listening.ts).
     const payload = {
       type: 'session.update',
       session: {
-        modalities: ['text'],
+        type: 'realtime',
+        output_modalities: ['text'],
         instructions: QUESTION_DETECTION_PROMPT,
-        input_audio_format: 'pcm16',
-        turn_detection: {
-          type: 'semantic_vad',
+        audio: {
+          input: {
+            format: {
+              type: 'audio/pcm',
+              rate: 24000,
+            },
+            turn_detection: {
+              type: 'semantic_vad',
+            },
+          },
         },
       },
     }
@@ -245,7 +252,7 @@ export class OpenAIRealtimeQuestionDetector {
 
       case 'session.created': {
         console.log(`[OpenAIRealtimeDetector] ${source} — session.created received. Server session id: ${msg.session?.id ?? 'unknown'}`)
-        console.log(`[OpenAIRealtimeDetector] ${source} — server default modalities: ${JSON.stringify(msg.session?.modalities)}`)
+        console.log(`[OpenAIRealtimeDetector] ${source} — server default output_modalities: ${JSON.stringify(msg.session?.output_modalities)}`)
         const socket = source === 'user' ? this.userSocket : this.opponentSocket
         if (socket && socket.readyState === WebSocket.OPEN) {
           this.sendSessionUpdate(socket, source)
@@ -256,13 +263,13 @@ export class OpenAIRealtimeQuestionDetector {
       }
 
       case 'session.updated': {
-        const confirmedModalities = msg.session?.modalities ?? 'unknown'
-        const confirmedVad = msg.session?.turn_detection?.type ?? 'unknown'
-        const confirmedInputFormat = msg.session?.input_audio_format ?? 'unknown'
+        const confirmedModalities = msg.session?.output_modalities ?? 'unknown'
+        const confirmedVad = msg.session?.audio?.input?.turn_detection?.type ?? 'unknown'
+        const confirmedInputFormat = msg.session?.audio?.input?.format ?? 'unknown'
         console.log(`[OpenAIRealtimeDetector] ${source} — session.updated confirmed:`)
-        console.log(`  modalities       = ${JSON.stringify(confirmedModalities)}`)
-        console.log(`  input_audio_fmt  = ${confirmedInputFormat}`)
-        console.log(`  turn_detection   = ${confirmedVad}`)
+        console.log(`  output_modalities = ${JSON.stringify(confirmedModalities)}`)
+        console.log(`  audio.input.fmt   = ${JSON.stringify(confirmedInputFormat)}`)
+        console.log(`  turn_detection    = ${confirmedVad}`)
         // Start session rotation timer only after config is confirmed
         this.scheduleRotation(source)
         break
