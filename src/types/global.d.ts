@@ -39,12 +39,13 @@ declare global {
             processMicChunk: (data: Float32Array) => void
             getQuestions: () => Promise<Question[]>
             clearQuestions: () => Promise<void>
-            generateResponse: (question: string, collectionId?: string) => Promise<{ success: boolean; error?: string }>
+            generateResponse: (question: string, collectionId?: string, questionId?: string, mode?: 'script' | 'support') => Promise<{ success: boolean; error?: string }>
             onSystemAudioSilent: (cb: () => void) => () => void
             onSystemAudioResumed: (cb: () => void) => () => void
             onQuestionDetected: (cb: (q: Question) => void) => () => void
-            onResponseChunk: (cb: (chunk: string) => void) => () => void
-            onResponseDone: (cb: () => void) => () => void
+            onResponseChunk: (cb: (data: { questionId: string | null; text: string }) => void) => () => void
+            onResponseDone: (cb: (data: { questionId: string | null }) => void) => () => void
+            onAdviceReceived: (cb: (advice: MeetingAdvice) => void) => () => void
             // ── Transcription ──────────────────────────────────────────────────────
             startTranscription: () => Promise<{ success: boolean; error?: string; transcriptId?: string }>
             stopTranscription: () => Promise<{ success: boolean; error?: string }>
@@ -88,6 +89,12 @@ declare global {
             updateTextDocument: (id: string, text: string, expectedUpdatedAt?: string) => Promise<{ success: boolean; error?: string; updatedAt?: string; serverContent?: string; serverUpdatedAt?: string; serverName?: string }>
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
             getDocumentFileUrl: (filePath: string, fileEtag?: string) => Promise<{ success: boolean; error?: string; url?: string }>
+            // ── MCP Knowledge Sources ─────────────────────────────────────────────────
+            mcpListSources: () => Promise<McpSource[]>
+            mcpAddSource: (payload: { name: string; url: string; token?: string }) => Promise<{ success: boolean; source?: McpSource; tools?: McpTool[]; error?: string }>
+            mcpUpdateSource: (id: string, patch: { enabled?: boolean; searchTool?: string; queryArg?: string }) => Promise<{ success: boolean; source?: McpSource; error?: string }>
+            mcpRemoveSource: (id: string) => Promise<{ success: boolean; error?: string }>
+            mcpTestSource: (id: string) => Promise<{ success: boolean; tools?: McpTool[]; error?: string }>
             // ── Usage ─────────────────────────────────────────────────────────────────
             getTokenUsage: () => Promise<{ questions_count: number; documents_count: number; tokens_used: number; realtime_tokens: number; embedding_tokens: number; gemini_tokens: number }>
             // ── Organization / Activation ─────────────────────────────────────────
@@ -177,6 +184,13 @@ declare global {
         source?: 'realtime'
     }
 
+    interface MeetingAdvice {
+        id: string
+        message: string
+        kind: 'time' | 'balance' | 'loop' | 'pending' | 'other'
+        timestamp: number
+    }
+
     interface Collection {
         id: string
         name: string
@@ -185,6 +199,23 @@ declare global {
         user_id?: string
         org_id?: string
         _owner?: ItemOwner
+    }
+
+    interface McpSource {
+        id: string
+        name: string
+        url: string
+        authType: 'bearer' | 'none'
+        searchTool: string
+        queryArg: string
+        enabled: boolean
+        hasToken: boolean
+    }
+
+    interface McpTool {
+        name: string
+        description?: string
+        inputSchema?: any
     }
 
     interface Doc {

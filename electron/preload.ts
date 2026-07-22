@@ -36,8 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('process-mic-chunk', data),
   getQuestions: () => ipcRenderer.invoke('get-questions'),
   clearQuestions: () => ipcRenderer.invoke('clear-questions'),
-  generateResponse: (question: string, collectionId?: string) =>
-    ipcRenderer.invoke('generate-response', question, collectionId),
+  generateResponse: (question: string, collectionId?: string, questionId?: string, mode?: 'script' | 'support') =>
+    ipcRenderer.invoke('generate-response', question, collectionId, questionId, mode),
 
   onSystemAudioSilent: (cb: () => void) => {
     const fn = () => cb()
@@ -54,15 +54,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('question-detected', fn)
     return () => ipcRenderer.removeListener('question-detected', fn)
   },
-  onResponseChunk: (cb: (chunk: string) => void) => {
-    const fn = (_: any, chunk: string) => cb(chunk)
+  onResponseChunk: (cb: (data: { questionId: string | null; text: string }) => void) => {
+    const fn = (_: any, data: any) => cb(data)
     ipcRenderer.on('response-chunk', fn)
     return () => ipcRenderer.removeListener('response-chunk', fn)
   },
-  onResponseDone: (cb: () => void) => {
-    const fn = () => cb()
+  onResponseDone: (cb: (data: { questionId: string | null }) => void) => {
+    const fn = (_: any, data: any) => cb(data)
     ipcRenderer.on('response-done', fn)
     return () => ipcRenderer.removeListener('response-done', fn)
+  },
+  onAdviceReceived: (cb: (advice: { id: string; message: string; kind: string; timestamp: number }) => void) => {
+    const fn = (_: any, advice: any) => cb(advice)
+    ipcRenderer.on('advice-received', fn)
+    return () => ipcRenderer.removeListener('advice-received', fn)
   },
 
   // ── Transcription ──────────────────────────────────────────────────────────
@@ -167,6 +172,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('doc:search', query, collectionId),
   getDocumentFileUrl: (filePath: string, fileEtag?: string) =>
     ipcRenderer.invoke('doc:get-file-url', filePath, fileEtag),
+
+  // ── MCP Knowledge Sources ─────────────────────────────────────────────────
+  mcpListSources: () => ipcRenderer.invoke('mcp:list-sources'),
+  mcpAddSource: (payload: { name: string; url: string; token?: string }) =>
+    ipcRenderer.invoke('mcp:add-source', payload),
+  mcpUpdateSource: (id: string, patch: { enabled?: boolean; searchTool?: string; queryArg?: string }) =>
+    ipcRenderer.invoke('mcp:update-source', id, patch),
+  mcpRemoveSource: (id: string) => ipcRenderer.invoke('mcp:remove-source', id),
+  mcpTestSource: (id: string) => ipcRenderer.invoke('mcp:test-source', id),
 
   // ── Usage ─────────────────────────────────────────────────────────────────
   getTokenUsage: () => ipcRenderer.invoke('token:get-usage'),

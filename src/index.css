@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Theme layering
+   ───────────────
+   The main window uses the ORIGINAL cool theme (Geist + zinc/#0e0e10) — this
+   is the default on :root / body below.
+
+   The floating overlay keeps the "Warm Dark Atelier" re-skin (see design-dark.md):
+   Inter Tight + EB Garamond, warm neutral ramp, ember/amber accents. That theme
+   is scoped under `html.theme-warm`, a class RootRouter adds only on the
+   /overlay route. Both windows share this one stylesheet, so scoping (rather
+   than reverting) keeps the overlay warm while the main app returns to original.
+
+   Note: the warm Tailwind color tokens (void…crimson) and the `fn-*` component
+   classes are defined globally — they're only referenced by the overlay and the
+   MCP settings section, so they don't affect the reverted main-app pages.
+   ───────────────────────────────────────────────────────────────────────── */
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -11,7 +28,7 @@
 body {
   background: #0e0e10;
   overflow: hidden;
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -41,9 +58,90 @@ body {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
 }
+html.theme-warm ::-webkit-scrollbar-thumb {
+  background: rgba(201, 196, 181, 0.18);
+}
 
 @layer base {
   :root {
+    /* ── Fonts — default (original main window) is Geist ── */
+    --font-display: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-serif: 'EB Garamond Variable', 'EB Garamond', Iowan Old Style, "Palatino Linotype", ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --font-apple-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ui-sans-serif, system-ui, sans-serif;
+
+    /* ── Radius — default (original) feel: lg 8 / md 6 / sm 4 ── */
+    --radius-modals: 8px;
+    --radius-cards: 6px;
+    --radius-buttons: 4px;
+    --radius-inputs: 4px;
+    --radius-tags: 4px;
+
+    /* ── Neutral ramp (cool zinc — matches the main window's #0e0e10 canvas) ──
+       Used ONLY by the overlay; kept global because the reverted main-app pages
+       don't reference these tokens. void = darkest canvas → chalk = lightest text. */
+    --color-void: #0e0e10;
+    --color-charcoal: #17171a;
+    --color-graphite: #1e1e22;
+    --color-slate: #29292e;
+    --color-iron: #34343a;
+    --color-ash: #71717a;
+    --color-fog: #a1a1aa;
+    --color-pearl: #d4d4d8;
+    --color-chalk: #f4f4f5;
+    --color-void-rgb: 14 14 16;
+    --color-charcoal-rgb: 23 23 26;
+    --color-graphite-rgb: 30 30 34;
+    --color-slate-rgb: 41 41 46;
+    --color-iron-rgb: 52 52 58;
+    --color-ash-rgb: 113 113 122;
+    --color-fog-rgb: 161 161 170;
+    --color-pearl-rgb: 212 212 216;
+    --color-chalk-rgb: 244 244 245;
+
+    /* ── Warm accents (ember = text-only, amber = fills, forest = success) ── */
+    --color-ember: #f54e00;
+    --color-amber: #c08532;
+    --color-forest: #34785c;
+    --color-verdant: #1f8a65;
+    --color-crimson: #cf2d56;
+    --color-ember-rgb: 245 78 0;
+    --color-amber-rgb: 192 133 50;
+    --color-forest-rgb: 52 120 92;
+    --color-verdant-rgb: 31 138 101;
+    --color-crimson-rgb: 207 45 86;
+    --color-danger: var(--color-crimson);
+    --color-danger-rgb: 207 45 86;
+
+    /* ── Type scale (used by fn-* editorial classes) ── */
+    --text-eyebrow: 11px;
+    --leading-eyebrow: 1.4;
+    --tracking-eyebrow: 0.06em;
+    --text-caption: 13px;
+    --leading-caption: 1.4;
+    --tracking-caption: -0.13px;
+    --text-body: 16px;
+    --leading-body: 1.4;
+    --tracking-body: -0.16px;
+    --text-subheading: 18px;
+    --leading-subheading: 1.4;
+    --tracking-subheading: -0.18px;
+    --text-heading-sm: 22px;
+    --leading-heading-sm: 1.3;
+    --tracking-heading-sm: -0.11px;
+    --text-heading: 26px;
+    --leading-heading: 1.25;
+    --tracking-heading: -0.31px;
+    --text-heading-lg: 36px;
+    --leading-heading-lg: 1.2;
+    --tracking-heading-lg: -0.72px;
+
+    /* ── Elevation ── */
+    --shadow-sm: rgba(0, 0, 0, 0.4) 0px 1px 4px 0px;
+    --shadow-floating: rgba(0, 0, 0, 0.55) 0px 8px 28px -6px, rgba(0, 0, 0, 0.35) 0px 2px 8px -2px;
+    --shadow-subtle: rgb(var(--color-iron-rgb)) 0px 0px 0px 1px;
+
+    /* ── shadcn tokens — ORIGINAL (light) values ── */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -95,5 +193,189 @@ body {
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+  }
+
+  /* ── Overlay theme — cool neutral dark (matches main window), softer corners.
+       Scoped to the overlay window only via RootRouter's html.theme-warm class. ── */
+  html.theme-warm,
+  html.theme-warm .dark {
+    /* fonts */
+    --font-display: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* radius — softer: 16px floating panel, 8px controls */
+    --radius-modals: 16px;
+    --radius-cards: 8px;
+    --radius-buttons: 8px;
+    --radius-inputs: 8px;
+    --radius-tags: 6px;
+    /* shadcn tokens (cool neutral dark, zinc-based) */
+    --background: 240 7% 6%;
+    --foreground: 240 4% 84%;
+    --card: 240 6% 10%;
+    --card-foreground: 240 4% 84%;
+    --popover: 240 6% 10%;
+    --popover-foreground: 240 4% 84%;
+    --primary: 240 5% 96%;
+    --primary-foreground: 240 7% 6%;
+    --secondary: 240 6% 17%;
+    --secondary-foreground: 240 4% 84%;
+    --muted: 240 6% 17%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 6% 17%;
+    --accent-foreground: 240 4% 84%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 240 5% 96%;
+    --border: 240 5% 22%;
+    --input: 240 5% 22%;
+    --ring: 240 5% 40%;
+    --chart-1: 240 5% 84%;
+    --chart-2: 240 4% 65%;
+    --chart-3: 240 4% 46%;
+    --chart-4: 240 5% 34%;
+    --chart-5: 240 5% 22%;
+    --radius: 8px;
+  }
+  html.theme-warm body {
+    background: var(--color-void);
+    color: var(--color-pearl);
+    letter-spacing: var(--tracking-body);
+  }
+}
+
+@layer components {
+  .fn-canvas {
+    background: var(--color-void);
+    color: var(--color-pearl);
+  }
+
+  .fn-panel {
+    background: var(--color-charcoal);
+    border: 1px solid var(--color-iron);
+  }
+
+  .fn-floating-panel {
+    background: rgb(var(--color-charcoal-rgb) / 0.96);
+    border: 1px solid rgb(var(--color-iron-rgb) / 0.7);
+    border-radius: var(--radius-modals);
+    box-shadow: var(--shadow-floating);
+    color: var(--color-pearl);
+  }
+
+  .fn-card {
+    background: var(--color-graphite);
+    border: 1px solid var(--color-iron);
+    border-radius: var(--radius-cards);
+  }
+
+  /* Primary = the light pill: warm-white fill on ink canvas (highest contrast). */
+  .fn-button-primary {
+    background: var(--color-chalk);
+    color: var(--color-void);
+    border-radius: var(--radius-buttons);
+    box-shadow: var(--shadow-subtle);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: var(--tracking-caption);
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease;
+  }
+
+  .fn-button-primary:hover {
+    background: #ffffff;
+  }
+
+  .fn-button-secondary {
+    background: transparent;
+    color: var(--color-pearl);
+    border: 1px solid var(--color-iron);
+    border-radius: var(--radius-buttons);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+
+  .fn-button-secondary:hover {
+    background: var(--color-slate);
+    border-color: var(--color-fog);
+    color: var(--color-chalk);
+  }
+
+  /* Amber action = warm chromatic punctuation (Build / Continue / Generate). */
+  .fn-button-amber {
+    background: var(--color-amber);
+    color: var(--color-void);
+    border-radius: var(--radius-buttons);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: var(--tracking-caption);
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease;
+  }
+
+  .fn-button-amber:hover {
+    background: #d0954a;
+  }
+
+  .fn-icon-button {
+    border-radius: var(--radius-buttons);
+    color: var(--color-ash);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  .fn-icon-button:hover {
+    background: var(--color-slate);
+    color: var(--color-pearl);
+  }
+
+  .fn-input {
+    background: var(--color-graphite);
+    border: 1px solid var(--color-iron);
+    border-radius: var(--radius-inputs);
+    color: var(--color-pearl);
+    font-size: 14px;
+    letter-spacing: var(--tracking-caption);
+    outline: none;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .fn-input::placeholder {
+    color: var(--color-ash);
+  }
+
+  .fn-input:focus {
+    border-color: var(--color-amber);
+  }
+
+  /* Mono metadata — timestamps, speaker labels, model names, file paths, eyebrows. */
+  .fn-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-ash);
+    letter-spacing: 0;
+  }
+
+  .fn-eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--text-eyebrow);
+    line-height: var(--leading-eyebrow);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--color-ash);
+  }
+
+  /* Editorial serif — detected question, Q&A prompt, empty-state prose. */
+  .fn-serif {
+    font-family: var(--font-serif);
+  }
+
+  .fn-caption {
+    color: var(--color-ash);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
+    letter-spacing: var(--tracking-caption);
+  }
+
+  .fn-body {
+    color: var(--color-pearl);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    letter-spacing: var(--tracking-body);
   }
 }

@@ -122,5 +122,8 @@ export const en = {
     noTranscriptYet: 'Start listening to begin transcription',
     you: 'You',
     speaker: 'Speaker',
+    advice: 'AI Advice',
+    adviceDismiss: 'Dismiss',
+    generateAnswer: 'Generate answer support',
   },
 }

@@ -23,7 +23,14 @@ export default function RootRouter() {
         }
     }, [])
 
-    if (location.pathname.startsWith('/overlay')) {
+    // The warm-dark re-skin is scoped to the overlay window only; the main
+    // window keeps the original theme. See index.css (html.theme-warm).
+    const isOverlay = location.pathname.startsWith('/overlay')
+    useEffect(() => {
+        document.documentElement.classList.toggle('theme-warm', isOverlay)
+    }, [isOverlay])
+
+    if (isOverlay) {
         return <OverlayApp />
     }
 

@@ -6,16 +6,39 @@ export default {
   	extend: {
   		fontFamily: {
   			sans: [
-  				'Geist',
-  				'sans-serif'
-  			]
+  				'var(--font-display)'
+  			],
+        display: [
+          'var(--font-display)'
+        ],
+        serif: [
+          'var(--font-serif)'
+        ],
+        mono: [
+          'var(--font-mono)'
+        ]
   		},
   		borderRadius: {
-  			lg: 'var(--radius)',
-  			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
+  			lg: 'var(--radius-modals)',
+  			md: 'var(--radius-cards)',
+  			sm: 'var(--radius-buttons)'
   		},
   		colors: {
+        void: 'rgb(var(--color-void-rgb) / <alpha-value>)',
+        charcoal: 'rgb(var(--color-charcoal-rgb) / <alpha-value>)',
+        graphite: 'rgb(var(--color-graphite-rgb) / <alpha-value>)',
+        slate: 'rgb(var(--color-slate-rgb) / <alpha-value>)',
+        iron: 'rgb(var(--color-iron-rgb) / <alpha-value>)',
+        ash: 'rgb(var(--color-ash-rgb) / <alpha-value>)',
+        fog: 'rgb(var(--color-fog-rgb) / <alpha-value>)',
+        pearl: 'rgb(var(--color-pearl-rgb) / <alpha-value>)',
+        chalk: 'rgb(var(--color-chalk-rgb) / <alpha-value>)',
+        ember: 'rgb(var(--color-ember-rgb) / <alpha-value>)',
+        amber: 'rgb(var(--color-amber-rgb) / <alpha-value>)',
+        forest: 'rgb(var(--color-forest-rgb) / <alpha-value>)',
+        verdant: 'rgb(var(--color-verdant-rgb) / <alpha-value>)',
+        crimson: 'rgb(var(--color-crimson-rgb) / <alpha-value>)',
+        danger: 'rgb(var(--color-danger-rgb) / <alpha-value>)',
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

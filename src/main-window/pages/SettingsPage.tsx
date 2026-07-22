@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { PlanCards, BusinessModal, EnterpriseModal } from '@/components/PlanSelection'
 import { formatTokens } from '@/utils/format'
 import { PageHeader, SectionHeader } from '@/components/PageShell'
+import McpSourcesSection from './settings/McpSourcesSection'
 
 const t = ja
 
@@ -309,6 +310,8 @@ export default function SettingsPage({ user }: Props) {
                 </div>
             </section>
 
+            {/* ── External knowledge (MCP) ── */}
+            <McpSourcesSection />
 
             {/* ── Transcription Provider (dev-only — production locks AmiVoice) ── */}
             {import.meta.env.DEV && (

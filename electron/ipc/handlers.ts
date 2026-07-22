@@ -10,6 +10,7 @@ import { registerSessionHandlers } from './session-handlers'
 import { registerSessionAIHandlers } from './ai-handlers'
 import { registerWorkflowHandlers } from './workflow-handlers'
 import { registerSharingHandlers } from './sharing'
+import { registerMcpHandlers } from './mcp'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -38,4 +39,5 @@ export function registerHandlers(
   registerSessionAIHandlers(getMainWindow, getSupabaseFn, genAI)
   registerWorkflowHandlers(getOverlayWindow, getMainWindow, getSupabaseFn, genAI)
   registerSharingHandlers(getMainWindow, getOverlayWindow, getSupabaseFn)
+  registerMcpHandlers(getSupabaseFn)
 }

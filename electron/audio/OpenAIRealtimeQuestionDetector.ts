@@ -20,8 +20,20 @@ function logFirstTime(tag: string, msg: string) {
 
 export class OpenAIRealtimeQuestionDetector {
   private apiKey: string
-  // Cost-efficient Realtime model for question detection
+  // Cost-efficient Realtime model for question detection.
+  // NOTE: gpt-realtime-2.1-mini was tried and reverted — it is a *reasoning* model
+  // whose output is phased (`phase:"final_answer"`) with empty content[] and no
+  // response.text.*/output_text.* delta events, which this detector consumes.
   private readonly modelName = 'gpt-realtime-mini'
+
+  // Turn detection uses semantic_vad, NOT server_vad. server_vad commits a turn on
+  // a fixed silence window; at anything short enough to feel fast (~250ms) it chops
+  // natural speech at mid-sentence pauses, which both truncates long questions and
+  // feeds the model fragments it misreads as questions. semantic_vad ends a turn on
+  // *meaning*, so it waits for the speaker to finish and hands the model a complete
+  // turn to judge. eagerness is the only latency knob: 'auto' (~4s, balanced),
+  // 'high' (~2s, faster but can split multi-clause questions), 'low' (~8s, safest).
+  private readonly vadEagerness: 'low' | 'medium' | 'high' | 'auto' = 'auto'
 
   private userSocket: WebSocket | null = null
   private opponentSocket: WebSocket | null = null
@@ -43,6 +55,12 @@ export class OpenAIRealtimeQuestionDetector {
 
   // Per-source audio chunk counter for throttled logging
   private audioChunkCount: Record<'user' | 'opponent', number> = { user: 0, opponent: 0 }
+
+  // Latency instrumentation: when the server's VAD declared speech over, and when
+  // generation started, so every emitted question logs its detection latency split
+  // into VAD-commit time vs generation time.
+  private speechStoppedAt: Record<'user' | 'opponent', number> = { user: 0, opponent: 0 }
+  private responseCreatedAt: Record<'user' | 'opponent', number> = { user: 0, opponent: 0 }
 
   private onQuestion?: (q: Question) => void
   private onError?: (err: any) => void
@@ -183,6 +201,10 @@ export class OpenAIRealtimeQuestionDetector {
     // - audio.input.format is an object { type, rate }, not the flat 'pcm16' string
     // - turn_detection lives under audio.input, not at session root
     // Audio reaches this detector resampled to 24kHz PCM16 (see electron/ipc/listening.ts).
+    // interrupt_response:false is important for a passive detector: semantic_vad
+    // defaults it to true, which would cancel an in-flight detection response the
+    // moment the next utterance starts. Each committed turn must generate its
+    // {"question": ...} independently, never interrupted by subsequent speech.
     const payload = {
       type: 'session.update',
       session: {
@@ -197,6 +219,9 @@ export class OpenAIRealtimeQuestionDetector {
             },
             turn_detection: {
               type: 'semantic_vad',
+              eagerness: this.vadEagerness,
+              create_response: true,
+              interrupt_response: false,
             },
           },
         },
@@ -283,6 +308,7 @@ export class OpenAIRealtimeQuestionDetector {
       }
 
       case 'input_audio_buffer.speech_stopped': {
+        this.speechStoppedAt[source] = Date.now()
         console.log(`[OpenAIRealtimeDetector] ${source} — VAD: speech stopped — model will now generate a response`)
         break
       }
@@ -295,9 +321,18 @@ export class OpenAIRealtimeQuestionDetector {
       // ─── Response lifecycle ───────────────────────────────────────────────────────────────────
 
       case 'response.created': {
+        this.responseCreatedAt[source] = Date.now()
         console.log(`[OpenAIRealtimeDetector] ${source} — response.created (id=${msg.response?.id ?? 'n/a'}) — resetting processed flag`)
-        if (source === 'user') this.userResponseProcessed = false
-        else this.opponentResponseProcessed = false
+        // Reset the text buffer along with the processed flag: when the previous
+        // turn was emitted early (from a delta), the .done handlers skipped and
+        // never cleared the buffer, so it must not leak into this turn.
+        if (source === 'user') {
+          this.userResponseProcessed = false
+          this.userTextBuffer = ''
+        } else {
+          this.opponentResponseProcessed = false
+          this.opponentTextBuffer = ''
+        }
         break
       }
 
@@ -318,6 +353,7 @@ export class OpenAIRealtimeQuestionDetector {
         const delta = msg.delta ?? ''
         if (source === 'user') this.userTextBuffer += delta
         else this.opponentTextBuffer += delta
+        this.tryEarlyEmit(source, 'output_text.delta (early)')
         break
       }
 
@@ -344,6 +380,7 @@ export class OpenAIRealtimeQuestionDetector {
         const delta = msg.delta ?? ''
         if (source === 'user') this.userTextBuffer += delta
         else this.opponentTextBuffer += delta
+        this.tryEarlyEmit(source, 'response.text.delta (early)')
         break
       }
 
@@ -483,15 +520,58 @@ export class OpenAIRealtimeQuestionDetector {
       return
     }
 
+    this.emitQuestion(question, source, via)
+  }
+
+  // Fires as soon as the streaming text buffer contains a complete "question"
+  // string value, without waiting for a response.*.done event — saves the tail
+  // of generation (closing brace, done event round trip). {"question": null}
+  // never matches (no quotes around null) and falls through to the done handlers.
+  private tryEarlyEmit(source: 'user' | 'opponent', via: string): void {
+    const alreadyProcessed = source === 'user' ? this.userResponseProcessed : this.opponentResponseProcessed
+    if (alreadyProcessed) return
+
+    const buffer = source === 'user' ? this.userTextBuffer : this.opponentTextBuffer
+    const match = buffer.match(/"question"\s*:\s*"((?:\\.|[^"\\])*)"/)
+    if (!match) return
+
+    // Unescape the captured JSON string value (handles \" and \n etc.)
+    let question: string
+    try {
+      question = JSON.parse(`"${match[1]}"`)
+    } catch {
+      question = match[1]
+    }
+    if (!question.trim()) return
+
+    // Mark processed so the .done / response.done handlers skip this turn
+    if (source === 'user') this.userResponseProcessed = true
+    else this.opponentResponseProcessed = true
+
+    console.log(`[OpenAIRealtimeDetector] ${source} — early emit from streaming delta: "${question.slice(0, 80)}"`)
+    this.emitQuestion(question.trim(), source, via)
+  }
+
+  private emitQuestion(question: string, source: 'user' | 'opponent', via: string): void {
     if (!this.looksLikeQuestion(question)) {
       console.log(`[OpenAIRealtimeDetector] ${source} — looksLikeQuestion filtered out: "${question.slice(0, 80)}"`)
       return
     }
 
+    const now = Date.now()
+    const stopped = this.speechStoppedAt[source]
+    const created = this.responseCreatedAt[source]
+    if (stopped && created >= stopped) {
+      console.log(
+        `[OpenAIRealtimeDetector] ${source} — [latency] speech_stopped→emit: ${now - stopped}ms ` +
+          `(commit→generation start: ${created - stopped}ms, generation→emit: ${now - created}ms) via [${via}]`
+      )
+    }
+
     const q: Question = {
       id: uuidv4(),
       text: question,
-      timestamp: Date.now(),
+      timestamp: now,
       source: 'realtime',
     }
     console.log(`[OpenAIRealtimeDetector] ${source} — QUESTION DETECTED: "${question.slice(0, 100)}"`)

@@ -14,6 +14,7 @@ import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { generateSessionTitle, generateSummaryForTranscript } from './ai-handlers'
 import { workflowEvents } from '../services/workflow-engine'
+import { MeetingAdvisor } from '../services/meetingAdvisor'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -197,6 +198,12 @@ let speakerSession: ITranscriptionSession | null = null
 let segments: TranscriptSegment[] = []
 let currentTranscriptId: string | null = null
 let sysAudioChunkCount = 0
+let advisor: MeetingAdvisor | null = null
+
+function stopAdvisor() {
+  advisor?.stop()
+  advisor = null
+}
 
 // Module-level refs set during registerTranscriptionHandlers, used by stopTranscriptionAndSave
 let _getSupabase: GetSupabaseFn = () => null
@@ -215,6 +222,8 @@ export function getCurrentSegments(): TranscriptSegment[] {
 
 export async function stopTranscriptionAndSave(): Promise<void> {
   if (!micSession?.active && !currentTranscriptId) return
+
+  stopAdvisor()
 
   // Stop audio capture
   if (_sysAudioDataHandler) sharedAudioRouter.removeListener('audio-data', _sysAudioDataHandler)
@@ -468,6 +477,15 @@ export function registerTranscriptionHandlers(
       _sysAudioSilentHandler = onSystemAudioSilent
       _sysAudioResumedHandler = onSystemAudioResumed
 
+      // Proactive meeting coach — watches the accumulating transcript and pushes
+      // occasional advice cards to the overlay. Lives and dies with transcription.
+      if (_genAI && !advisor) {
+        advisor = new MeetingAdvisor(_genAI, getSupabase, () => segments, (advice) => {
+          getOverlayWindow()?.webContents.send('advice-received', advice)
+        })
+        advisor.start()
+      }
+
       return { success: true, transcriptId: currentTranscriptId }
     } catch (err: any) {
       console.error('[Transcription] start error:', err)
@@ -518,6 +536,7 @@ export function registerTranscriptionHandlers(
   }
 
   async function stopTranscription() {
+    stopAdvisor()
     sharedAudioRouter.removeListener('audio-data', onSystemAudioForTranscription)
     sharedAudioRouter.removeListener('system-audio-silent', onSystemAudioSilent)
     sharedAudioRouter.removeListener('system-audio-resumed', onSystemAudioResumed)

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { assetUrl } from '@/utils/assetUrl'
 const logoUrl = assetUrl('logo.png')
-import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap, History } from 'lucide-react'
+import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap, History, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
 
 export type HistoryItem = { id: string; question: string; answer: string; source: 'detected' | 'manual'; timestamp: number; }
 import { Loader } from '../components/ui/loader'
@@ -18,6 +18,7 @@ import { useListening } from '@/hooks/useListening'
 import { useResponseStream } from '@/hooks/useResponseStream'
 import { useTranscription } from '@/hooks/useTranscription'
 import { useTranscriptQA } from '@/hooks/useTranscriptQA'
+import { useAdvice } from '@/hooks/useAdvice'
 import { DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
 import { splitTranscriptLines } from '@/utils/transcriptFormat'
 
@@ -29,6 +30,7 @@ export default function OverlayApp() {
     const [session, setSession] = useState<any>(undefined)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
+    const [mcpSources, setMcpSources] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
     const [budgetChecked, setBudgetChecked] = useState(false)
     const [limitExceeded, setLimitExceeded] = useState(false)
@@ -42,12 +44,24 @@ export default function OverlayApp() {
     const transcriptEndRef = useRef<HTMLDivElement>(null)
     const transcriptContainerRef = useRef<HTMLDivElement>(null)
     const [autoScroll, setAutoScroll] = useState(true)
+    // Questions are shown one at a time; ‹ › arrows page through them
+    const [questionIndex, setQuestionIndex] = useState(0)
 
     const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
-    const { questions, selectedId, response, generating, viewMode, selectedQuestion, selectQuestion, clearAll, goBack } = useResponseStream({
+    const { advice, dismissAdvice } = useAdvice()
+    const { questions, answers, generateAnswer, clearAll } = useResponseStream({
         onGenerateComplete: (qText, finalResponse) => {
             setSessionHistory(prev => [...prev, { id: 'd-' + Date.now().toString(), question: qText, answer: finalResponse, source: 'detected', timestamp: Date.now() }])
-        }
+        },
+        // While the detection toggle is on, detected questions are answered
+        // automatically with supporting bullet points — no click required.
+        autoAnswer: questionDetectionOn,
+        collectionId: selectedCollectionId,
+        onAutoAnswerStarted: () => {
+            // Pull the questions tab up so the answer is visible without a click,
+            // but never yank the user out of an open Q&A answer or the history view.
+            if (!qaViewActive && activeTab !== 'history') setActiveTab('questions')
+        },
     })
     const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription, resetSession } = useTranscription()
     const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA({
@@ -83,11 +97,12 @@ export default function OverlayApp() {
         return groups
     }, [segments])
 
-    // Track new questions for badge
+    // Track new questions for badge + snap the pager to the newest question
     useEffect(() => {
         if (activeTab !== 'questions') {
             setNewQuestionCount(prev => prev + 1)
         }
+        setQuestionIndex(Math.max(0, questions.length - 1))
     // Only trigger on questions array length change
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [questions.length])
@@ -116,6 +131,9 @@ export default function OverlayApp() {
         window.electronAPI?.listCollections().then((cols) => {
             setCollections(cols)
             if (cols.length > 0) setSelectedCollectionId(cols[0].id)
+        })
+        window.electronAPI?.mcpListSources?.().then((sources) => {
+            setMcpSources(sources.filter((s) => s.enabled).map((s) => ({ id: s.id, name: s.name })))
         })
     }, [])
 
@@ -146,11 +164,12 @@ export default function OverlayApp() {
         await forceStopAll()
         resetSession()
         clearAll()
+        dismissAdvice()
         setSessionHistory([])
         setSelectedHistoryId(null)
         setActiveTab('transcript')
         window.electronAPI.hideOverlay()
-    }, [forceStopAll, resetSession, clearAll])
+    }, [forceStopAll, resetSession, clearAll, dismissAdvice])
 
     // Session check
     useEffect(() => {
@@ -197,20 +216,17 @@ export default function OverlayApp() {
     // Global keyboard navigation
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (viewMode === 'detail') {
-                if (e.key === 'Backspace' || e.key === 'Escape') {
-                    goBack()
-                }
+            if (qaViewActive && e.key === 'Escape') {
+                goBackQA()
             }
-            if (qaViewActive) {
-                if (e.key === 'Escape') {
-                    goBackQA()
-                }
+            if (activeTab === 'questions' && questions.length > 0) {
+                if (e.key === 'ArrowLeft') setQuestionIndex((i) => Math.max(0, i - 1))
+                if (e.key === 'ArrowRight') setQuestionIndex((i) => Math.min(questions.length - 1, i + 1))
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [viewMode, goBack, qaViewActive, goBackQA])
+    }, [qaViewActive, goBackQA, activeTab, questions.length])
 
     // Toggle question detection (secondary feature)
     const handleToggleQuestionDetection = useCallback(() => {
@@ -254,8 +270,8 @@ export default function OverlayApp() {
     // Loading state
     if (session === undefined) {
         return (
-            <div className="flex items-center justify-center h-full w-full rounded-2xl bg-zinc-950/90 backdrop-blur-xl border border-zinc-800">
-                <Loader2 size={20} className="animate-spin text-zinc-400" />
+            <div className="fn-floating-panel flex items-center justify-center h-full w-full">
+                <Loader2 size={20} className="animate-spin text-fog" />
             </div>
         )
     }
@@ -263,24 +279,24 @@ export default function OverlayApp() {
     // Not logged in
     if (!session) {
         return (
-            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
+            <div className="fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
+                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-pearl/5 bg-charcoal">
                     <div className="flex items-center">
                         <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                     </div>
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="cursor-pointer p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="fn-icon-button cursor-pointer p-1.5">
                         <X size={13} />
                     </button>
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <LogIn size={28} strokeWidth={1.5} className="text-zinc-800" />
+                    <LogIn size={28} strokeWidth={1.5} className="text-iron" />
                     <div>
-                        <p className="text-sm text-zinc-400 font-medium">{t.overlay.notSignedIn}</p>
-                        <p className="text-xs text-zinc-500 mt-1">{t.overlay.loginFromMain}</p>
+                        <p className="text-sm text-pearl font-medium">{t.overlay.notSignedIn}</p>
+                        <p className="text-xs text-ash mt-1">{t.overlay.loginFromMain}</p>
                     </div>
                     <button
                         onClick={() => window.electronAPI.showMainWindow()}
-                        className="cursor-pointer px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs text-zinc-500 transition-all"
+                        className="fn-button-primary cursor-pointer px-4 py-2 text-xs"
                     >
                         {t.overlay.openMainWindow}
                     </button>
@@ -292,8 +308,8 @@ export default function OverlayApp() {
     // Budget not yet checked
     if (!budgetChecked) {
         return (
-            <div className="flex items-center justify-center h-full w-full rounded-2xl bg-zinc-950/90 backdrop-blur-xl border border-zinc-800">
-                <Loader2 size={20} className="animate-spin text-zinc-400" />
+            <div className="fn-floating-panel flex items-center justify-center h-full w-full">
+                <Loader2 size={20} className="animate-spin text-fog" />
             </div>
         )
     }
@@ -301,20 +317,20 @@ export default function OverlayApp() {
     // Limit exceeded (free credits exhausted, or subscription usage maxed)
     if (limitExceeded) {
         return (
-            <div className="flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-100 select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/10">
+            <div className="fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
+                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-pearl/5 bg-charcoal">
                     <div className="flex items-center">
                         <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                     </div>
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="cursor-pointer p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={() => window.electronAPI.hideOverlay()} className="fn-icon-button cursor-pointer p-1.5">
                         <X size={13} />
                     </button>
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <AlertTriangle size={28} strokeWidth={1.5} className="text-amber-600" />
+                    <AlertTriangle size={28} strokeWidth={1.5} className="text-fog" />
                     <div>
-                        <p className="text-sm text-zinc-400 font-medium">{t.activation.limitReached}</p>
-                        <p className="text-xs text-zinc-500 mt-1">{t.activation.limitReachedHint}</p>
+                        <p className="text-sm text-pearl font-medium">{t.activation.limitReached}</p>
+                        <p className="text-xs text-ash mt-1">{t.activation.limitReachedHint}</p>
                     </div>
                 </div>
             </div>
@@ -322,15 +338,15 @@ export default function OverlayApp() {
     }
 
     return (
-        <div className="dark flex flex-col h-full w-full rounded-2xl overflow-hidden bg-zinc-950/90 backdrop-blur-xl border border-zinc-800 text-zinc-200 select-none">
+        <div className="dark fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
             {/* Header */}
-            <div className="drag-handle flex items-center justify-between px-3 py-2.5 border-b border-zinc-800 bg-zinc-900/10">
+            <div className="drag-handle flex items-center justify-between px-3 py-2.5 border-b border-pearl/5 bg-charcoal">
                 <div className="flex items-center gap-2">
-                    {/* Back button for detail views (hidden in history tab to avoid duplication) */}
-                    {(viewMode === 'detail' || qaViewActive) && activeTab !== 'history' && (
+                    {/* Back button for the Q&A detail view (hidden in history tab to avoid duplication) */}
+                    {qaViewActive && activeTab !== 'history' && (
                         <button
-                            onClick={qaViewActive ? goBackQA : goBack}
-                            className="cursor-pointer no-drag p-1 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors -ml-0.5"
+                            onClick={goBackQA}
+                            className="fn-icon-button cursor-pointer no-drag p-1 -ml-0.5"
                         >
                             <ArrowLeft size={13} />
                         </button>
@@ -350,21 +366,21 @@ export default function OverlayApp() {
                                         setSelectedHistoryId(null)
                                     }
                                 }}
-                                className="cursor-pointer p-1 -ml-1 rounded-lg hover:bg-zinc-800 transition-colors flex items-center"
+                                className="fn-icon-button cursor-pointer p-1 -ml-1 flex items-center"
                             >
                                 {activeTab === 'history' ? (
-                                    <ArrowLeft size={14} className="text-zinc-400 m-[1px]" />
+                                    <ArrowLeft size={14} className="text-fog m-[1px]" />
                                 ) : (
                                     <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
                                 )}
                             </button>
-                            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-zinc-800 text-zinc-300 text-[10px] font-medium rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-slate text-pearl text-[10px] font-medium rounded-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                                 {activeTab === 'history' ? t.common.back : t.overlay.pastResponses}
                             </div>
                         </div>
                         {transcribing && activeTab !== 'history' && (
-                            <span className="flex items-center gap-1 text-[10px] text-zinc-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" />
+                            <span className="flex items-center gap-1 text-[10px] text-fog">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
                                 {t.overlay.live}
                             </span>
                         )}
@@ -380,7 +396,7 @@ export default function OverlayApp() {
                         className="flex items-center gap-1.5 mr-0.5"
                     >
                         {qdHovered && (
-                            <span className="text-[10px] font-medium text-zinc-300 tracking-wide whitespace-nowrap">
+                            <span className="text-[10px] font-medium text-pearl tracking-[-0.1px] whitespace-nowrap">
                                 {t.overlay.questionDetection}
                             </span>
                         )}
@@ -389,12 +405,12 @@ export default function OverlayApp() {
                             disabled={!transcribing}
                             aria-label={t.overlay.questionDetection}
                             className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 ease-in-out border border-transparent ${
-                                questionDetectionOn ? 'bg-zinc-200' : 'bg-zinc-800'
-                            } ${!transcribing ? 'opacity-40 cursor-not-allowed' : 'hover:bg-zinc-700'}`}
+                                questionDetectionOn ? 'bg-chalk' : 'bg-slate'
+                            } ${!transcribing ? 'opacity-40 cursor-not-allowed' : 'hover:bg-iron'}`}
                         >
                             <span
                                 className={`pointer-events-none inline-block h-3 w-3 transform rounded-full shadow-sm ring-0 transition-transform duration-300 ease-in-out ${
-                                    questionDetectionOn ? 'translate-x-[14px] bg-zinc-900' : 'translate-x-[2px] bg-zinc-400'
+                                    questionDetectionOn ? 'translate-x-[14px] bg-void' : 'translate-x-[2px] bg-fog'
                                 }`}
                             />
                         </button>
@@ -403,9 +419,9 @@ export default function OverlayApp() {
                     {/* Listen button (controls transcription) */}
                     <button
                         onClick={handleToggleListen}
-                        className={`cursor-pointer flex items-center justify-center gap-1.5 py-1.5 w-[68px] rounded-lg text-xs font-medium transition-all ${transcribing
-                            ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                            : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800 border border-zinc-800'
+                        className={`cursor-pointer flex items-center justify-center gap-1.5 py-1.5 w-[68px] rounded-md text-xs font-medium transition-all ${transcribing
+                            ? 'bg-slate text-chalk border border-pearl/10'
+                            : 'bg-graphite text-ash hover:bg-slate border border-pearl/5'
                             }`}
                     >
                         {transcribing ? <MicOff size={12} className="shrink-0" /> : <Mic size={12} className="shrink-0" />}
@@ -415,12 +431,12 @@ export default function OverlayApp() {
                     {/* Settings */}
                     <button
                         onClick={() => setSettingsOpen((o) => !o)}
-                        className={`cursor-pointer p-1.5 rounded-lg transition-colors ${settingsOpen ? 'bg-zinc-800 text-zinc-300' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400'}`}
+                        className={`fn-icon-button cursor-pointer p-1.5 ${settingsOpen ? 'bg-slate text-chalk' : ''}`}
                     >
                         <Settings size={13} />
                     </button>
 
-                    <button onClick={handleClose} className="cursor-pointer p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-400 transition-colors">
+                    <button onClick={handleClose} className="fn-icon-button cursor-pointer p-1.5">
                         <X size={13} />
                     </button>
                 </div>
@@ -428,54 +444,71 @@ export default function OverlayApp() {
 
             {/* Settings panel */}
             {settingsOpen && (
-                <div className="border-b border-zinc-800 px-4 py-3 bg-zinc-900/5 space-y-4">
-                    {collections.length > 0 && (
+                <div className="border-b border-pearl/5 px-4 py-3 bg-charcoal space-y-4">
+                    {(collections.length > 0 || mcpSources.length > 0) && (
                         <div className="space-y-2">
-                            <p className="text-[10px] tracking-tight text-zinc-500 font-medium">{t.overlay.context}</p>
+                            <p className="text-[10px] tracking-[-0.1px] text-ash font-medium">{t.overlay.context}</p>
                             <Select
                                 value={selectedCollectionId ?? "none"}
                                 onValueChange={(val) => setSelectedCollectionId(val === "none" ? null : val)}
                             >
-                                <SelectTrigger className="cursor-pointer w-full bg-zinc-900/50 border-zinc-800 text-zinc-500 h-8 text-xs focus:ring-0 focus:ring-offset-0 hover:bg-zinc-900/80 transition-colors">
+                                <SelectTrigger className="cursor-pointer w-full h-8 text-xs">
                                     <SelectValue placeholder={t.overlay.selectCollection} />
                                 </SelectTrigger>
-                                <SelectContent className="bg-zinc-950 border-zinc-800 text-zinc-400">
-                                    <SelectItem value="none" className="cursor-pointer text-xs focus:bg-zinc-800 focus:text-zinc-100 transition-colors">{t.overlay.noProjectContext}</SelectItem>
+                                <SelectContent>
+                                    <SelectItem value="none" className="cursor-pointer text-xs">{t.overlay.noProjectContext}</SelectItem>
                                     {collections.map((c) => (
-                                        <SelectItem key={c.id} value={c.id} className="cursor-pointer text-xs focus:bg-zinc-800 focus:text-zinc-100 transition-colors">{c.name}</SelectItem>
+                                        <SelectItem key={c.id} value={c.id} className="cursor-pointer text-xs">{c.name}</SelectItem>
+                                    ))}
+                                    {mcpSources.map((s) => (
+                                        <SelectItem key={s.id} value={`mcp:${s.id}`} className="cursor-pointer text-xs">{s.name}（{t.overlay.externalSource}）</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
                     )}
-                    {!collections.length && (
-                        <p className="text-[10px] text-zinc-500 py-1 italic">{t.overlay.noProjectContext}</p>
+                    {!collections.length && !mcpSources.length && (
+                        <p className="text-[10px] text-ash py-1 italic">{t.overlay.noProjectContext}</p>
                     )}
                 </div>
             )}
 
             {/* Error */}
-            {error && <div className="px-4 py-2 bg-zinc-950 border-b border-zinc-800 text-zinc-600 text-xs">{error}</div>}
+            {error && <div className="px-4 py-2 bg-charcoal border-b border-pearl/5 text-ash text-xs">{error}</div>}
 
             {/* Mode switch strip — always visible outside detail views */}
-            {viewMode !== 'detail' && !qaViewActive && activeTab !== 'history' && (
+            {!qaViewActive && activeTab !== 'history' && (
                 <div className="px-3 pt-2 pb-0.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         {activeTab === 'questions' && questions.length > 0 && (
                             <button
                                 onClick={clearAll}
-                                className="cursor-pointer px-2 py-0.5 rounded-md bg-zinc-900/50 border border-zinc-800/50 text-[10px] text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all shadow-sm"
+                                className="fn-button-secondary cursor-pointer px-2 py-0.5 text-[10px]"
                             >
                                 {t.overlay.clear}
                             </button>
                         )}
                     </div>
-                    <button
-                        onClick={() => setActiveTab(activeTab === 'transcript' ? 'questions' : 'transcript')}
-                        className="cursor-pointer px-2 py-0.5 rounded-md bg-zinc-900/50 border border-zinc-800/50 text-[10px] text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all shadow-sm"
-                    >
-                        {activeTab === 'transcript' ? t.overlay.questions : t.overlay.transcript}
-                    </button>
+                    {/* Segmented control — a clearer, architectural mode switch than a
+                        single button that flips its own label. */}
+                    <div className="inline-flex items-center gap-0.5 rounded-md border border-pearl/10 bg-graphite p-0.5">
+                        <button
+                            onClick={() => setActiveTab('transcript')}
+                            className={`cursor-pointer rounded-[6px] px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                activeTab === 'transcript' ? 'bg-slate text-chalk' : 'text-ash hover:text-pearl'
+                            }`}
+                        >
+                            {t.overlay.transcript}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('questions')}
+                            className={`cursor-pointer rounded-[6px] px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                activeTab === 'questions' ? 'bg-slate text-chalk' : 'text-ash hover:text-pearl'
+                            }`}
+                        >
+                            {t.overlay.questions}
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -484,28 +517,73 @@ export default function OverlayApp() {
                 {/* Scroll area */}
                 <div className="relative flex-1 min-h-0">
                     {/* Top fade — softens content disappearing under the header */}
-                    <div className="absolute top-0 left-0 right-0 h-5 pointer-events-none bg-gradient-to-b from-zinc-950/75 to-transparent z-10" />
+                    <div className="absolute top-0 left-0 right-0 h-5 pointer-events-none bg-gradient-to-b from-charcoal/75 to-transparent z-10" />
                     {/* Bottom fade — transitions into the input bar or panel edge */}
-                    <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-zinc-950/90 to-transparent z-10" />
+                    <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-charcoal/90 to-transparent z-10" />
+
+                    {/* Question pager — ‹ n/total › floating at the bottom of the questions tab */}
+                    {activeTab === 'questions' && questions.length > 0 && (
+                        <div className="absolute bottom-2 left-0 right-0 z-20 flex items-center justify-center gap-2">
+                            <button
+                                onClick={() => setQuestionIndex((i) => Math.max(0, i - 1))}
+                                disabled={questionIndex <= 0}
+                                aria-label={t.common.back}
+                                className="fn-icon-button cursor-pointer p-1 bg-graphite border border-pearl/5 disabled:opacity-30 disabled:cursor-default"
+                            >
+                                <ChevronLeft size={13} />
+                            </button>
+                            <span className="text-[10px] text-ash tabular-nums px-1">
+                                {Math.min(questionIndex, questions.length - 1) + 1} / {questions.length}
+                            </span>
+                            <button
+                                onClick={() => setQuestionIndex((i) => Math.min(questions.length - 1, i + 1))}
+                                disabled={questionIndex >= questions.length - 1}
+                                aria-label={t.overlay.questions}
+                                className="fn-icon-button cursor-pointer p-1 bg-graphite border border-pearl/5 disabled:opacity-30 disabled:cursor-default"
+                            >
+                                <ChevronRight size={13} />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Proactive AI advice card — floats over the transcript, stays until dismissed */}
+                    {advice && activeTab === 'transcript' && !qaViewActive && (
+                        <div className="absolute bottom-2 left-3 right-3 z-20 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                            <div className="fn-card flex items-start gap-2 px-3 py-2.5 shadow-sm">
+                                <Lightbulb size={12} className="shrink-0 mt-0.5 text-ember" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] font-medium text-ash mb-0.5">{t.overlay.advice}</p>
+                                    <p className="text-xs text-pearl leading-relaxed">{advice.message}</p>
+                                </div>
+                                <button
+                                    onClick={dismissAdvice}
+                                    aria-label={t.overlay.adviceDismiss}
+                                    className="fn-icon-button cursor-pointer shrink-0 p-0.5"
+                                >
+                                    <X size={11} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="h-full overflow-y-auto" ref={transcriptContainerRef} onScroll={handleTranscriptScroll}>
                     {/* Transcript Tab */}
                     {activeTab === 'transcript' && !qaViewActive && (
                         <>
                             {!transcribing && segments.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
+                                <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
                                     <Mic size={32} strokeWidth={1} />
-                                    <p className="text-xs text-center px-10 text-zinc-500 leading-relaxed">
+                                    <p className="text-xs text-center px-10 text-ash leading-relaxed">
                                         {t.overlay.noTranscriptYet}
                                     </p>
                                 </div>
                             )}
                             {transcribing && segments.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-4 text-zinc-700 py-12">
+                                <div className="flex flex-col items-center justify-center h-full gap-4 text-iron py-12">
                                     <div className="h-8 flex items-center justify-center">
-                                        <Loader variant="dots" className="text-zinc-500" />
+                                        <Loader variant="dots" className="text-fog" />
                                     </div>
-                                    <p className="text-xs text-zinc-500 font-medium tracking-wide">
+                                    <p className="text-xs text-ash font-medium tracking-[-0.12px]">
                                         {t.overlay.transcribing}
                                     </p>
                                 </div>
@@ -515,14 +593,14 @@ export default function OverlayApp() {
                                     {groupedSegments.map((g, i) => (
                                         <div key={i}>
                                             <div className="flex items-baseline gap-2 mb-0.5">
-                                                <span className="text-[10px] font-bold text-zinc-400">
+                                                <span className="text-[10px] font-medium text-fog">
                                                     {g.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
                                                 </span>
-                                                <span className="text-[10px] text-zinc-600 tabular-nums">{formatTimestamp(g.timestamp)}</span>
+                                                <span className="text-[10px] text-ash tabular-nums">{formatTimestamp(g.timestamp)}</span>
                                             </div>
                                             <div className="space-y-1.5">
                                                 {splitTranscriptLines(g.lines).map((line, j) => (
-                                                    <p key={j} className="text-xs text-zinc-300 leading-relaxed">{line}</p>
+                                                    <p key={j} className="text-xs text-pearl leading-relaxed">{line}</p>
                                                 ))}
                                             </div>
                                         </div>
@@ -534,10 +612,10 @@ export default function OverlayApp() {
                                         bouncing-dots loader during the brief gap before the first U. */}
                                     {partialSegment?.text && (
                                         <div>
-                                            <span className="text-[10px] font-bold text-zinc-500">
+                                            <span className="text-[10px] font-medium text-ash">
                                                 {partialSegment.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
                                             </span>
-                                            <p className="text-xs text-zinc-500 leading-relaxed mt-0.5">
+                                            <p className="text-xs text-ash leading-relaxed mt-0.5">
                                                 {partialSegment.text}
                                             </p>
                                         </div>
@@ -551,73 +629,65 @@ export default function OverlayApp() {
                     {/* Transcript Q&A detail view */}
                     {activeTab === 'transcript' && qaViewActive && (
                         <div className="p-4 space-y-3">
-                            <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
+                            <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
                                 {currentQuestion}
                             </p>
-                            <div className="text-sm text-zinc-300 leading-relaxed">
+                            <div className="text-sm text-pearl leading-relaxed">
                                 {qaResponse ? (
                                     <MarkdownRenderer content={qaResponse} />
                                 ) : qaGenerating ? (
-                                    <Loader variant="loading-dots" text={t.overlay.thinking} className="text-zinc-500" />
+                                    <Loader variant="loading-dots" text={t.overlay.thinking} className="text-fog" />
                                 ) : null}
                             </div>
                         </div>
                     )}
 
-                    {/* Questions Tab */}
+                    {/* Questions Tab — one question at a time, paged with ‹ › */}
                     {activeTab === 'questions' && (
                         <>
-                            {viewMode === 'detail' ? (
-                                <div className="p-4 space-y-3">
-                                    <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
-                                        {selectedQuestion?.text}
+                            {!questionDetectionOn && questions.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
+                                    <MessageSquareMore size={32} strokeWidth={1} />
+                                    <p className="text-xs text-center px-10 text-ash leading-relaxed">
+                                        {t.overlay.pressListenToBegin}
                                     </p>
-                                    <div className="text-sm text-zinc-300 leading-relaxed">
-                                        {response ? (
-                                            <MarkdownRenderer content={response} />
-                                        ) : generating ? (
-                                            <Loader variant="loading-dots" text={t.overlay.thinking} className="text-zinc-500" />
-                                        ) : null}
-                                    </div>
                                 </div>
-                            ) : (
-                                <>
-                                    {!questionDetectionOn && questions.length === 0 && (
-                                        <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
-                                            <MessageSquareMore size={32} strokeWidth={1} />
-                                            <p className="text-xs text-center px-10 text-zinc-500 leading-relaxed">
-                                                {t.overlay.pressListenToBegin}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {questionDetectionOn && questions.length === 0 && (
-                                        <div className="flex flex-col items-center justify-center h-full gap-4 text-zinc-700 py-12">
-                                            <div className="h-8 flex items-center justify-center">
-                                                <Loader variant="dots" className="text-zinc-500" />
-                                            </div>
-                                            <p className="text-xs text-zinc-500 font-medium tracking-wide">
-                                                {t.overlay.waitingForQuestions}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {questions.length > 0 && (
-                                        <div className="p-3 pt-0 space-y-2">
-                                            {questions.map((q) => (
-                                                <button
-                                                    key={q.id}
-                                                    onClick={() => selectQuestion(q, selectedCollectionId)}
-                                                    className={`cursor-pointer w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all ${selectedId === q.id
-                                                        ? 'bg-zinc-900 text-zinc-100 border border-zinc-800'
-                                                        : 'bg-zinc-900/30 text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200 border border-transparent'
-                                                        }`}
-                                                >
-                                                    <span>{q.text}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </>
                             )}
+                            {questionDetectionOn && questions.length === 0 && (
+                                <div className="flex flex-col items-center justify-center h-full gap-4 text-iron py-12">
+                                    <div className="h-8 flex items-center justify-center">
+                                        <Loader variant="dots" className="text-fog" />
+                                    </div>
+                                    <p className="text-xs text-ash font-medium tracking-[-0.12px]">
+                                        {t.overlay.waitingForQuestions}
+                                    </p>
+                                </div>
+                            )}
+                            {questions.length > 0 && (() => {
+                                const q = questions[Math.min(questionIndex, questions.length - 1)]
+                                const answer = answers[q.id]
+                                return (
+                                    <div className="px-4 pt-4 pb-12 space-y-3">
+                                        <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
+                                            {q.text}
+                                        </p>
+                                        <div className="text-xs text-pearl leading-relaxed">
+                                            {answer?.text ? (
+                                                <MarkdownRenderer content={answer.text} />
+                                            ) : answer?.status === 'streaming' ? (
+                                                <Loader variant="loading-dots" text={t.overlay.thinking} className="text-fog" />
+                                            ) : (
+                                                <button
+                                                    onClick={() => generateAnswer(q, selectedCollectionId)}
+                                                    className="fn-button-primary cursor-pointer px-3 py-1.5 text-xs"
+                                                >
+                                                    {t.overlay.generateAnswer}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )
+                            })()}
                         </>
                     )}
 
@@ -626,19 +696,19 @@ export default function OverlayApp() {
                         <>
                             {selectedHistoryId ? (
                                 <div className="p-4 space-y-3">
-                                    <p className="text-[10px] text-zinc-400 leading-relaxed border-b border-zinc-800/50 pb-3">
+                                    <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
                                         {sessionHistory.find(h => h.id === selectedHistoryId)?.question}
                                     </p>
-                                    <div className="text-sm text-zinc-300 leading-relaxed">
+                                    <div className="text-sm text-pearl leading-relaxed">
                                         <MarkdownRenderer content={sessionHistory.find(h => h.id === selectedHistoryId)?.answer || ''} />
                                     </div>
                                 </div>
                             ) : (
                                 <>
                                     {sessionHistory.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-700 py-12">
+                                        <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
                                             <History size={32} strokeWidth={1} />
-                                            <p className="text-xs text-center px-10 text-zinc-500 leading-relaxed">
+                                            <p className="text-xs text-center px-10 text-ash leading-relaxed">
                                                 {t.overlay.noHistoryYet}
                                             </p>
                                         </div>
@@ -648,7 +718,7 @@ export default function OverlayApp() {
                                                 <button
                                                     key={h.id}
                                                     onClick={() => setSelectedHistoryId(h.id)}
-                                                    className="cursor-pointer w-full text-left px-3 py-2.5 rounded-xl text-xs leading-relaxed transition-all bg-zinc-900/30 text-zinc-400 hover:bg-zinc-900/50 hover:text-zinc-200 border border-transparent"
+                                                    className="cursor-pointer w-full text-left px-3 py-2.5 rounded-md text-xs leading-relaxed transition-all bg-graphite text-pearl hover:bg-slate border border-transparent"
                                                 >
                                                     <span>{h.question}</span>
                                                 </button>
@@ -664,16 +734,16 @@ export default function OverlayApp() {
 
                 {/* Transcript Q&A input bar — natural flex item, no absolute positioning */}
                 {activeTab === 'transcript' && !qaViewActive && segments.length > 0 && (
-                    <div className="shrink-0 bg-zinc-950">
+                    <div className="shrink-0 bg-charcoal">
                         {quickPrompts.length > 0 && (
                             <div className="px-3 pt-2 pb-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
-                                <Zap size={10} className="shrink-0 text-zinc-700" />
+                                <Zap size={10} className="shrink-0 text-iron" />
                                 {quickPrompts.map((qp) => (
                                     <button
                                         key={qp.id}
                                         onClick={() => { askQuestion(qp.content) }}
                                         disabled={qaGenerating}
-                                        className="cursor-pointer shrink-0 px-2 py-1 text-[10px] text-zinc-400 bg-zinc-900/60 hover:bg-zinc-800 hover:text-zinc-300 border border-zinc-800/60 hover:border-zinc-700 rounded-md disabled:opacity-40 transition-all whitespace-nowrap shadow-sm"
+                                        className="fn-button-secondary cursor-pointer shrink-0 px-2 py-1 text-[10px] disabled:opacity-40 whitespace-nowrap"
                                     >
                                         {qp.name}
                                     </button>
@@ -681,19 +751,19 @@ export default function OverlayApp() {
                             </div>
                         )}
                         <form onSubmit={handleQASubmit} className="px-3 pt-2 pb-3.5">
-                            <div className="flex items-center gap-2 bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 rounded-xl px-3 py-2">
+                            <div className="fn-input flex items-center gap-2 px-3 py-2">
                                 <input
                                     type="text"
                                     value={qaInput}
                                     onChange={(e) => setQaInput(e.target.value)}
                                     placeholder={t.overlay.askAboutTranscript}
-                                    className="flex-1 bg-transparent text-xs text-zinc-300 placeholder-zinc-600 outline-none"
+                                    className="flex-1 bg-transparent text-xs text-pearl placeholder:text-ash outline-none"
                                     disabled={qaGenerating}
                                 />
                                 <button
                                     type="submit"
                                     disabled={!qaInput.trim() || qaGenerating}
-                                    className="cursor-pointer p-1 text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700 transition-colors"
+                                    className="cursor-pointer p-1 text-fog hover:text-pearl disabled:text-iron transition-colors"
                                 >
                                     <ArrowUp size={12} />
                                 </button>
