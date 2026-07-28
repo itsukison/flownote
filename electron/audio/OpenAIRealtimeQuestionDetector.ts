@@ -1,6 +1,6 @@
 import WebSocket from 'ws'
 import { v4 as uuidv4 } from 'uuid'
-import { QUESTION_DETECTION_PROMPT } from './questionPrompt'
+import { buildQuestionDetectionPrompt } from './questionPrompt'
 
 export interface Question {
   id: string
@@ -16,7 +16,31 @@ export interface Question {
   channel?: 'user' | 'opponent'
   /** speech_stopped → emit, in ms. Null when VAD timing wasn't observed. */
   detectLatencyMs?: number | null
+  /** Model's self-reported confidence, 0–1. Null when the model didn't supply one. */
+  confidence?: number | null
 }
+
+/**
+ * Minimum confidence to emit. Default 0 — the model now reports a confidence and
+ * it is logged on every detection, but nothing is filtered until the replay
+ * harness says where the cut belongs. Set FLOWNOTE_DETECT_MIN_CONFIDENCE to try one.
+ */
+const MIN_CONFIDENCE = Number(process.env.FLOWNOTE_DETECT_MIN_CONFIDENCE ?? 0)
+
+/**
+ * The user's own mic is a separate detection channel. On speakers, the
+ * counterpart's voice bleeds into it and the same question gets detected twice;
+ * the rest of what it hears is the user answering, which is never a question they
+ * need answered. Default stays on — flip with FLOWNOTE_DETECT_USER_CHANNEL=0 to
+ * A/B it against the logs before changing the default for everyone.
+ */
+const DETECT_USER_CHANNEL = process.env.FLOWNOTE_DETECT_USER_CHANNEL !== '0'
+
+/**
+ * Cross-channel dedup window. Mic and system audio finalise independently, so the
+ * same utterance arrives twice a few seconds apart.
+ */
+const DEDUP_WINDOW_MS = 15_000
 
 // Tracks which text events have fired at least once, for first-occurrence logs
 const _seenEventTypes = new Set<string>()
@@ -58,6 +82,7 @@ export class OpenAIRealtimeQuestionDetector {
 
   private isListening = false
   private questions: Question[] = []
+  private recentEmits: { key: string; at: number }[] = []
 
   private userRotationTimer: NodeJS.Timeout | null = null
   private opponentRotationTimer: NodeJS.Timeout | null = null
@@ -111,8 +136,11 @@ export class OpenAIRealtimeQuestionDetector {
       return
     }
     this.isListening = true
-    console.log('[OpenAIRealtimeDetector] Starting two sessions (user + opponent)...')
-    this.userSocket = this.createSession('user')
+    this.recentEmits = []
+    console.log(
+      `[OpenAIRealtimeDetector] Starting sessions (opponent${DETECT_USER_CHANNEL ? ' + user' : ', user channel DISABLED'})...`
+    )
+    if (DETECT_USER_CHANNEL) this.userSocket = this.createSession('user')
     this.opponentSocket = this.createSession('opponent')
     console.log('[OpenAIRealtimeDetector] Sessions created, waiting for session.created from server...')
   }
@@ -133,6 +161,7 @@ export class OpenAIRealtimeQuestionDetector {
   }
 
   async sendAudio(pcmBuffer: Buffer, source: 'user' | 'opponent'): Promise<void> {
+    if (source === 'user' && !DETECT_USER_CHANNEL) return
     const socket = source === 'user' ? this.userSocket : this.opponentSocket
 
     if (!this.isListening) return
@@ -219,7 +248,9 @@ export class OpenAIRealtimeQuestionDetector {
       session: {
         type: 'realtime',
         output_modalities: ['text'],
-        instructions: QUESTION_DETECTION_PROMPT,
+        // Per-channel instructions: the mic hears the user themselves, so their
+        // own explanations must not be read as questions.
+        instructions: buildQuestionDetectionPrompt(source),
         audio: {
           input: {
             format: {
@@ -523,13 +554,13 @@ export class OpenAIRealtimeQuestionDetector {
     if (source === 'user') this.userResponseProcessed = true
     else this.opponentResponseProcessed = true
 
-    const question = this.parseQuestionFromJson(text)
-    if (!question) {
+    const parsed = this.parseQuestionFromJson(text)
+    if (!parsed) {
       console.log(`[OpenAIRealtimeDetector] ${source} — parseQuestionFromJson returned null — no question in this turn`)
       return
     }
 
-    this.emitQuestion(question, source, via)
+    this.emitQuestion(parsed.question, parsed.confidence, source, via)
   }
 
   // Fires as soon as the streaming text buffer contains a complete "question"
@@ -543,6 +574,11 @@ export class OpenAIRealtimeQuestionDetector {
     const buffer = source === 'user' ? this.userTextBuffer : this.opponentTextBuffer
     const match = buffer.match(/"question"\s*:\s*"((?:\\.|[^"\\])*)"/)
     if (!match) return
+
+    // The prompt puts "confidence" before "question" precisely so it is already
+    // in the buffer here. Missing → treat as unknown (1) rather than blocking.
+    const confMatch = buffer.match(/"confidence"\s*:\s*([0-9]*\.?[0-9]+)/)
+    const confidence = confMatch ? Number(confMatch[1]) : null
 
     // Unescape the captured JSON string value (handles \" and \n etc.)
     let question: string
@@ -558,12 +594,29 @@ export class OpenAIRealtimeQuestionDetector {
     else this.opponentResponseProcessed = true
 
     console.log(`[OpenAIRealtimeDetector] ${source} — early emit from streaming delta: "${question.slice(0, 80)}"`)
-    this.emitQuestion(question.trim(), source, via)
+    this.emitQuestion(question.trim(), confidence, source, via)
   }
 
-  private emitQuestion(question: string, source: 'user' | 'opponent', via: string): void {
+  private emitQuestion(
+    question: string,
+    confidence: number | null,
+    source: 'user' | 'opponent',
+    via: string
+  ): void {
     if (!this.looksLikeQuestion(question)) {
       console.log(`[OpenAIRealtimeDetector] ${source} — looksLikeQuestion filtered out: "${question.slice(0, 80)}"`)
+      return
+    }
+
+    if (confidence !== null && confidence < MIN_CONFIDENCE) {
+      console.log(
+        `[OpenAIRealtimeDetector] ${source} — below confidence floor (${confidence} < ${MIN_CONFIDENCE}): "${question.slice(0, 60)}"`
+      )
+      return
+    }
+
+    if (this.isDuplicate(question)) {
+      console.log(`[OpenAIRealtimeDetector] ${source} — duplicate within ${DEDUP_WINDOW_MS}ms, dropping: "${question.slice(0, 60)}"`)
       return
     }
 
@@ -585,13 +638,16 @@ export class OpenAIRealtimeQuestionDetector {
       source: 'realtime',
       channel: source,
       detectLatencyMs,
+      confidence,
     }
     console.log(`[OpenAIRealtimeDetector] ${source} — QUESTION DETECTED: "${question.slice(0, 100)}"`)
     this.questions.push(q)
     this.onQuestion?.(q)
   }
 
-  private parseQuestionFromJson(text: string): string | null {
+  private parseQuestionFromJson(text: string): { question: string; confidence: number | null } | null {
+    const readConfidence = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+
     try {
       const clean = text.replace(/```json/g, '').replace(/```/g, '').trim()
       const data = JSON.parse(clean)
@@ -601,8 +657,11 @@ export class OpenAIRealtimeQuestionDetector {
         return null
       }
       if (data?.question && typeof data.question === 'string' && data.question.trim().length > 0) {
-        console.log(`[OpenAIRealtimeDetector] parseQuestionFromJson: extracted question from JSON: "${data.question.slice(0, 80)}"`)
-        return data.question.trim()
+        const confidence = readConfidence(data.confidence)
+        console.log(
+          `[OpenAIRealtimeDetector] parseQuestionFromJson: extracted question (confidence ${confidence ?? 'n/a'}): "${data.question.slice(0, 80)}"`
+        )
+        return { question: data.question.trim(), confidence }
       }
       console.log('[OpenAIRealtimeDetector] parseQuestionFromJson: JSON parsed but no valid question field:', JSON.stringify(data).slice(0, 100))
       return null
@@ -611,12 +670,37 @@ export class OpenAIRealtimeQuestionDetector {
       console.log(`[OpenAIRealtimeDetector] parseQuestionFromJson: JSON.parse failed — trying regex fallback on: ${text.slice(0, 100)}`)
       const match = text.match(/"question"\s*:\s*"([^"]+)"/)
       if (match?.[1]?.trim()) {
+        const confMatch = text.match(/"confidence"\s*:\s*([0-9]*\.?[0-9]+)/)
         console.log(`[OpenAIRealtimeDetector] parseQuestionFromJson: regex fallback extracted: "${match[1].slice(0, 80)}"`)
-        return match[1].trim()
+        return { question: match[1].trim(), confidence: confMatch ? Number(confMatch[1]) : null }
       }
       console.log('[OpenAIRealtimeDetector] parseQuestionFromJson: regex fallback also failed — returning null')
       return null
     }
+  }
+
+  /**
+   * The same utterance reaches both channels when the counterpart's voice comes
+   * out of the laptop speakers and back into the mic, and the two sockets
+   * finalise independently. Without this, one question becomes two cards and two
+   * paid answers (the renderer dedupes on question id, which is unique per emit).
+   */
+  private isDuplicate(question: string): boolean {
+    const now = Date.now()
+    this.recentEmits = this.recentEmits.filter((e) => now - e.at < DEDUP_WINDOW_MS)
+
+    const key = question.replace(/[\s、。，．,.？?！!「」『』（）()]/g, '')
+    if (!key) return false
+
+    for (const prev of this.recentEmits) {
+      if (prev.key === key) return true
+      // One channel often catches a slightly clipped version of the other's text.
+      const [shorter, longer] = prev.key.length < key.length ? [prev.key, key] : [key, prev.key]
+      if (longer.includes(shorter) && shorter.length / longer.length >= 0.7) return true
+    }
+
+    this.recentEmits.push({ key, at: now })
+    return false
   }
 
   private looksLikeQuestion(text: string): boolean {

@@ -40,6 +40,7 @@ export function registerListeningHandlers(
             channel: q.channel ?? null,
             text: q.text,
             detectLatencyMs: q.detectLatencyMs ?? null,
+            confidence: q.confidence ?? null,
           })
           trackNormalizedAndRecord(getSupabase, 'realtime', 0, 0, { incrementQuestions: true })
 

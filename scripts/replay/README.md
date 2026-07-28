@@ -74,3 +74,14 @@ what each candidate RAG floor would keep.
   fire off an `interim` event — compare against the `interim`→`segment` gap in the
   log, not just against zero.
 - The retrieval **floor table** is how `FLOWNOTE_RAG_MIN_SIMILARITY` gets set.
+- The `confidence` on each `detection` event is how `FLOWNOTE_DETECT_MIN_CONFIDENCE`
+  gets set. It defaults to 0 (nothing filtered) so the distribution can be observed
+  before a cut is chosen.
+
+## Knobs currently unset on purpose
+
+| env var | default | set it from |
+|---|---|---|
+| `FLOWNOTE_RAG_MIN_SIMILARITY` | 0.3 (placeholder) | the floor table |
+| `FLOWNOTE_DETECT_MIN_CONFIDENCE` | 0 (off) | confidence distribution vs labels |
+| `FLOWNOTE_DETECT_USER_CHANNEL` | 1 (on) | per-channel precision in `--variant live` |
