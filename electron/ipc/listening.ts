@@ -3,6 +3,7 @@ import { OpenAIRealtimeQuestionDetector } from '../audio/OpenAIRealtimeQuestionD
 import { resamplePcm16To24k } from '../audio/AudioResampler'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
+import { logEvent } from '../services/detectionLog'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { getCurrentTranscriptIdValue } from './transcription-handlers'
 
@@ -30,6 +31,12 @@ export function registerListeningHandlers(
         onQuestion: (q) => {
           const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
+          logEvent('detection', {
+            questionId: q.id,
+            channel: q.channel ?? null,
+            text: q.text,
+            detectLatencyMs: q.detectLatencyMs ?? null,
+          })
           trackNormalizedAndRecord(getSupabase, 'realtime', 0, 0, { incrementQuestions: true })
 
           // Persist question to database

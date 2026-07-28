@@ -7,6 +7,15 @@ export interface Question {
   text: string
   timestamp: number
   source?: 'realtime'
+  /**
+   * Which audio channel produced it: 'opponent' = system audio (the counterpart),
+   * 'user' = the mic (the user's own voice, which is usually a false positive for
+   * "a question the user needs answered"). Carried so the log/harness can score
+   * precision per channel; nothing acts on it yet.
+   */
+  channel?: 'user' | 'opponent'
+  /** speech_stopped → emit, in ms. Null when VAD timing wasn't observed. */
+  detectLatencyMs?: number | null
 }
 
 // Tracks which text events have fired at least once, for first-occurrence logs
@@ -561,9 +570,10 @@ export class OpenAIRealtimeQuestionDetector {
     const now = Date.now()
     const stopped = this.speechStoppedAt[source]
     const created = this.responseCreatedAt[source]
-    if (stopped && created >= stopped) {
+    const detectLatencyMs = stopped && created >= stopped ? now - stopped : null
+    if (detectLatencyMs !== null) {
       console.log(
-        `[OpenAIRealtimeDetector] ${source} — [latency] speech_stopped→emit: ${now - stopped}ms ` +
+        `[OpenAIRealtimeDetector] ${source} — [latency] speech_stopped→emit: ${detectLatencyMs}ms ` +
           `(commit→generation start: ${created - stopped}ms, generation→emit: ${now - created}ms) via [${via}]`
       )
     }
@@ -573,6 +583,8 @@ export class OpenAIRealtimeQuestionDetector {
       text: question,
       timestamp: now,
       source: 'realtime',
+      channel: source,
+      detectLatencyMs,
     }
     console.log(`[OpenAIRealtimeDetector] ${source} — QUESTION DETECTED: "${question.slice(0, 100)}"`)
     this.questions.push(q)

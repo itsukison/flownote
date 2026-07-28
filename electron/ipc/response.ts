@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { searchSimilar } from '../services/rag'
 import { searchMcpSource } from '../services/mcpClient'
+import { getConversationContext } from '../services/conversationContext'
+import { logEvent } from '../services/detectionLog'
 import { ensureBudget, trackTypedTokenUsage, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 
 type GetWindowFn = () => BrowserWindow | null
@@ -139,29 +141,68 @@ export function registerResponseHandlers(
     if (!genAI || !win) return { success: false, error: 'AI not available' }
     const qId = questionId ?? null
 
+    const startedAt = Date.now()
     try {
       const isRag = !!collectionId
       // The overlay's context picker sends either a collection uuid or an
       // MCP knowledge source as `mcp:<sourceId>`.
       const mcpSourceId = collectionId?.startsWith('mcp:') ? collectionId.slice(4) : null
       const supabase = getSupabase()
+      const conversation = getConversationContext()
+
+      // Retrieval runs on a *resolved* query, not the raw question: 「その店舗の
+      // 年商は？」 has no content word to embed. The rewrite is gated (only fires
+      // on deictic/elliptical questions) and hard-timeboxed, so the common case
+      // pays nothing and the worst case falls back to the raw question.
+      const resolveQuery = async (): Promise<string> => {
+        if (!collectionId || !conversation) return question
+        const r = await conversation.resolveSearchQuery(question)
+        logEvent('rewrite', {
+          questionId: qId,
+          original: question,
+          searchText: r.searchText,
+          rewritten: r.rewritten,
+          reason: r.reason,
+          latencyMs: r.latencyMs,
+        })
+        if (r.rewritten) {
+          console.log(`[Handlers] search query rewritten (${r.reason}, ${r.latencyMs}ms): "${question}" → "${r.searchText}"`)
+        }
+        return r.searchText
+      }
+
+      const emptyResult = { chunks: [] as string[], tokensUsed: 0 }
 
       const [budgetCheck, { basePrompt, ragPrompt }, ragResult] = await Promise.all([
         ensureBudget(getSupabase),
         getSelectedPrompts(getSupabase),
         mcpSourceId
-          ? getCurrentUserId(getSupabase)
-              .then((userId) => searchMcpSource(userId, mcpSourceId, question))
+          ? resolveQuery()
+              .then((q) => getCurrentUserId(getSupabase).then((userId) => searchMcpSource(userId, mcpSourceId, q)))
               .catch((e) => {
                 console.warn('[Handlers] MCP search failed, proceeding without context:', e)
-                return { chunks: [] as string[], tokensUsed: 0 }
+                return emptyResult
               })
           : (collectionId && supabase)
-            ? searchSimilar(supabase, question, collectionId).catch((e) => {
-                console.warn('[Handlers] RAG search failed, proceeding without context:', e)
-                return { chunks: [] as string[], tokensUsed: 0 }
-              })
-            : Promise.resolve({ chunks: [] as string[], tokensUsed: 0 }),
+            ? resolveQuery()
+                .then((q) =>
+                  searchSimilar(supabase, q, collectionId).then((r) => {
+                    logEvent('retrieval', {
+                      questionId: qId,
+                      searchText: q,
+                      collectionId,
+                      kept: r.chunks.length,
+                      dropped: r.droppedCount,
+                      similarities: r.allSimilarities,
+                    })
+                    return r
+                  })
+                )
+                .catch((e) => {
+                  console.warn('[Handlers] RAG search failed, proceeding without context:', e)
+                  return emptyResult
+                })
+            : Promise.resolve(emptyResult),
       ])
 
       if (!budgetCheck.allowed) {
@@ -175,9 +216,18 @@ export function registerResponseHandlers(
       }
       if (ragResult.tokensUsed > 0) trackTypedTokenUsage(getSupabase, ragResult.tokensUsed, 'embedding_tokens')
 
+      // Compressed conversation state (rolling memo + last few turns). Null when
+      // there is no live transcript, so the no-transcript prompt is unchanged.
+      // It goes into the same {{context}} slot as the documents but under its own
+      // 【会話の文脈】 heading, so the model never confuses hearsay with 参考資料.
+      const conversationBlock = conversation?.buildContextBlock() ?? null
+      const withConversation = (docs: string) =>
+        conversationBlock ? `${conversationBlock}\n\n${docs}` : docs
+
       let prompt: string
       if (mode === 'support') {
-        const contextText = contextBlock ? `【参考資料】\n${contextBlock}` : ''
+        const docs = contextBlock ? `【参考資料】\n${contextBlock}` : ''
+        const contextText = withConversation(docs).trim()
         prompt = HARDCODED_SUPPORT_PROMPT
           .replace(/{{context}}/g, contextText)
           .replace(/{{question}}/g, question)
@@ -187,7 +237,7 @@ export function registerResponseHandlers(
         const hasContext = template.includes('{{context}}')
         const hasQuestion = template.includes('{{question}}')
         const hasAny = hasContext || hasQuestion
-        const contextText = contextBlock || '参考資料はありません'
+        const contextText = withConversation(contextBlock || '参考資料はありません')
         if (hasAny) {
           prompt = template
             .replace(/{{context}}/g, contextText)
@@ -198,7 +248,9 @@ export function registerResponseHandlers(
           prompt = `${template}\n\n${contextText}\n\n質問: ${question}`
         }
       } else {
-        prompt = `${basePrompt.content}\n\n質問: ${question}`
+        prompt = conversationBlock
+          ? `${basePrompt.content}\n\n${conversationBlock}\n\n質問: ${question}`
+          : `${basePrompt.content}\n\n質問: ${question}`
       }
 
       const model = genAI.getGenerativeModel({
@@ -209,13 +261,30 @@ export function registerResponseHandlers(
       const result = await model.generateContentStream(prompt)
 
       let lastUsageMetadata: any = null
+      let firstChunkAt = 0
+      let answerText = ''
       for await (const chunk of result.stream) {
         const text = chunk.text()
-        if (text) win.webContents.send('response-chunk', { questionId: qId, text })
+        if (text) {
+          if (!firstChunkAt) firstChunkAt = Date.now()
+          answerText += text
+          win.webContents.send('response-chunk', { questionId: qId, text })
+        }
         if (chunk.usageMetadata) {
           lastUsageMetadata = chunk.usageMetadata
         }
       }
+
+      logEvent('answer', {
+        questionId: qId,
+        mode,
+        question,
+        answer: answerText,
+        hadDocumentContext: ragResult.chunks.length > 0,
+        hadConversationContext: !!conversationBlock,
+        firstChunkMs: firstChunkAt ? firstChunkAt - startedAt : null,
+        totalMs: Date.now() - startedAt,
+      })
 
       if (lastUsageMetadata) {
         const promptTokens = lastUsageMetadata.promptTokenCount || 0

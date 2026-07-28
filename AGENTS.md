@@ -144,7 +144,7 @@ Renderer is Vite+React; Electron main is compiled via `tsc -p electron/tsconfig.
 - Supabase RLS on all tables. Usage/billing is gated in `usageLimiter.ts` + `tokenNormalization.ts`.
 - UI copy is Japanese; strings live in `src/i18n/ja.ts`.
 
----
+---Do 
 
 ## 7. Known pain points / active work (2026-07)
 
@@ -168,6 +168,35 @@ Product feedback flagged real-time usability. If you're picking up that work, th
    already parallelizes budget/prompt/RAG via `Promise.all`.
 4. **System-audio permission UX** — the #1 cause of "only my voice is captured." Improve onboarding
    around the macOS "System Audio Recording" grant; there is no system-audio path on Windows.
+
+### Measuring detection & retrieval (added 2026-07)
+
+Every transcription session writes a JSONL log to
+`<userData>/detection-logs/` (`electron/services/detectionLog.ts`, disable with
+`FLOWNOTE_DETECTION_LOG=0`): transcript segments, throttled interim hypotheses,
+detections (with channel + `speech_stopped→emit` latency), query rewrites,
+retrieved chunks **with similarities**, and answers. Local only, never uploaded.
+
+Score changes against it instead of guessing — `scripts/replay/README.md`:
+
+```bash
+npm run log:labels -- <log.jsonl>                    # label worksheet
+npm run log:replay -- <log.jsonl> --variant live     # shipped Realtime detector
+npm run log:replay -- <log.jsonl> --variant gate     # regex stage-1 recall ceiling
+npm run log:replay -- <log.jsonl> --variant gemini   # proposed transcript-driven stage 2
+```
+
+Two other things changed with it, both aimed at the "right question, wrong
+answer" failure:
+
+- `searchSimilar` now enforces a similarity floor (`DEFAULT_MIN_SIMILARITY`, env
+  `FLOWNOTE_RAG_MIN_SIMILARITY`, default 0.3). `match_chunks` has none, so before
+  this every query injected 5 chunks no matter how irrelevant.
+- `electron/services/conversationContext.ts` keeps a rolling ~400-char memo plus a
+  verbatim tail, injects them into answer prompts as 【会話の文脈】, and rewrites
+  deictic questions (「その店舗の年商は？」) into self-contained retrieval queries
+  before `embedQuery`. Gated by a heuristic and timeboxed at 1.5s, so
+  self-contained questions pay nothing.
 
 See `agent/docs/` for provider-specific notes (`realtimegpt.md`, `transcription.md`) and
 `agent/docs/pricing.md` for the cost model.

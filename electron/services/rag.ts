@@ -135,12 +135,33 @@ export async function storeDocument(
 
 // ── Semantic search ───────────────────────────────────────────────────────────
 
+/**
+ * Relevance floor for retrieved chunks (cosine similarity, text-embedding-3-small).
+ * `match_chunks` has no threshold — it returns the top K by distance no matter how
+ * far away they are — so without this every off-target question (a mis-detected
+ * one, or one whose referent never got resolved) still injects 5 chunks of noise
+ * into the answer prompt, and the model answers confidently from them. Tune against
+ * the similarity distribution reported by `npm run log:replay`.
+ */
+export const DEFAULT_MIN_SIMILARITY = Number(process.env.FLOWNOTE_RAG_MIN_SIMILARITY ?? 0.3)
+
+export interface SearchResult {
+    chunks: string[]
+    /** Similarity of each kept chunk, same order as `chunks`. */
+    similarities: number[]
+    /** Similarities of everything the RPC returned, kept or not — for tuning the floor. */
+    allSimilarities: number[]
+    droppedCount: number
+    tokensUsed: number
+}
+
 export async function searchSimilar(
     supabase: SupabaseClient,
     query: string,
     collectionId: string,
-    topK = 5
-): Promise<{ chunks: string[], tokensUsed: number }> {
+    topK = 5,
+    minSimilarity = DEFAULT_MIN_SIMILARITY
+): Promise<SearchResult> {
     const { embedding: queryEmbedding, tokensUsed } = await embedQuery(query)
 
     const { data, error } = await supabase.rpc('match_chunks', {
@@ -151,11 +172,26 @@ export async function searchSimilar(
 
     if (error) {
         console.error('[RAG] Search error:', error)
-        return { chunks: [], tokensUsed }
+        return { chunks: [], similarities: [], allSimilarities: [], droppedCount: 0, tokensUsed }
+    }
+
+    const rows = (data ?? []) as { content: string; similarity: number | null }[]
+    const allSimilarities = rows.map((r) => (typeof r.similarity === 'number' ? r.similarity : NaN))
+    // Keep rows with no similarity value (defensive — older RPC versions).
+    const kept = rows.filter((r) => typeof r.similarity !== 'number' || r.similarity >= minSimilarity)
+
+    if (kept.length < rows.length) {
+        console.log(
+            `[RAG] dropped ${rows.length - kept.length}/${rows.length} chunks below similarity ${minSimilarity} ` +
+            `(similarities: ${allSimilarities.map((s) => (Number.isNaN(s) ? '?' : s.toFixed(3))).join(', ')})`
+        )
     }
 
     return {
-        chunks: (data ?? []).map((row: any) => row.content as string),
+        chunks: kept.map((r) => r.content),
+        similarities: kept.map((r) => (typeof r.similarity === 'number' ? r.similarity : NaN)),
+        allSimilarities,
+        droppedCount: rows.length - kept.length,
         tokensUsed,
     }
 }

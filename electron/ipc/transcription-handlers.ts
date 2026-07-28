@@ -15,6 +15,8 @@ import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn
 import { generateSessionTitle, generateSummaryForTranscript } from './ai-handlers'
 import { workflowEvents } from '../services/workflow-engine'
 import { MeetingAdvisor } from '../services/meetingAdvisor'
+import { startConversationContext, stopConversationContext } from '../services/conversationContext'
+import { startLogSession, endLogSession, logEvent, logInterim } from '../services/detectionLog'
 
 type GetWindowFn = () => BrowserWindow | null
 
@@ -200,9 +202,15 @@ let currentTranscriptId: string | null = null
 let sysAudioChunkCount = 0
 let advisor: MeetingAdvisor | null = null
 
-function stopAdvisor() {
+/**
+ * Tear down everything that lives and dies with a transcription session:
+ * the meeting coach, the conversation-context memo loop, and the detection log.
+ */
+function stopSessionServices() {
   advisor?.stop()
   advisor = null
+  stopConversationContext()
+  endLogSession()
 }
 
 // Module-level refs set during registerTranscriptionHandlers, used by stopTranscriptionAndSave
@@ -223,7 +231,7 @@ export function getCurrentSegments(): TranscriptSegment[] {
 export async function stopTranscriptionAndSave(): Promise<void> {
   if (!micSession?.active && !currentTranscriptId) return
 
-  stopAdvisor()
+  stopSessionServices()
 
   // Stop audio capture
   if (_sysAudioDataHandler) sharedAudioRouter.removeListener('audio-data', _sysAudioDataHandler)
@@ -401,12 +409,24 @@ export function registerTranscriptionHandlers(
       // skip on dedicated JA engines that don't exhibit prompt-echo behavior.
       const useHallucinationFilter = currentProvider === 'openai'
 
+      startLogSession(currentTranscriptId ?? 'adhoc', {
+        provider: currentProvider,
+        amivoiceEngine: currentProvider === 'amivoice' ? amivoiceEngine : null,
+      })
+
       const transcriptCallback = (segment: TranscriptSegment) => {
         if (useHallucinationFilter && isLikelyPromptEcho(segment.text)) {
           console.log(`[Transcription] dropped hallucination segment: "${segment.text.slice(0, 80)}"`)
+          logEvent('segment_dropped', { id: segment.id, speaker: segment.speaker, text: segment.text })
           return
         }
         segments.push(segment)
+        logEvent('segment', {
+          id: segment.id,
+          speaker: segment.speaker,
+          text: segment.text,
+          segmentTimestamp: segment.timestamp,
+        })
         // Emit raw segment immediately — overlay shows text without any delay
         getOverlayWindow()?.webContents.send('transcript-segment', segment)
 
@@ -434,6 +454,10 @@ export function registerTranscriptionHandlers(
 
       const transcriptDeltaCallback = (itemId: string, text: string, speaker: 'You' | 'Speaker') => {
         getOverlayWindow()?.webContents.send('transcript-delta', { itemId, text, speaker })
+        // Interim hypotheses are what a future transcript-driven detector would
+        // gate on — logged (throttled) so the replay harness can measure how
+        // early a question is recognisable versus when the 'A' final lands.
+        logInterim(itemId, speaker, text)
       }
 
       const speechStartedCallback = (speaker: 'You' | 'Speaker') => {
@@ -486,6 +510,10 @@ export function registerTranscriptionHandlers(
         advisor.start()
       }
 
+      // Rolling compressed context (memo + verbatim tail) that generate-response
+      // uses to resolve referents like 「その店舗」 before retrieval.
+      if (_genAI) startConversationContext(_genAI, getSupabase, () => segments)
+
       return { success: true, transcriptId: currentTranscriptId }
     } catch (err: any) {
       console.error('[Transcription] start error:', err)
@@ -536,7 +564,7 @@ export function registerTranscriptionHandlers(
   }
 
   async function stopTranscription() {
-    stopAdvisor()
+    stopSessionServices()
     sharedAudioRouter.removeListener('audio-data', onSystemAudioForTranscription)
     sharedAudioRouter.removeListener('system-audio-silent', onSystemAudioSilent)
     sharedAudioRouter.removeListener('system-audio-resumed', onSystemAudioResumed)
