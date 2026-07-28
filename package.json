@@ -29,6 +29,10 @@
         "to": "audiotee"
       },
       {
+        "from": "custom-binaries/notchinfo",
+        "to": "notchinfo"
+      },
+      {
         "from": ".env.production",
         "to": ".env"
       }
