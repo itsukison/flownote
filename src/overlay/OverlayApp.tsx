@@ -1,74 +1,56 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { assetUrl } from '@/utils/assetUrl'
-const logoUrl = assetUrl('logo.png')
-import { Mic, MicOff, X, Loader2, Settings, LogIn, ArrowLeft, AlertTriangle, MessageSquareMore, ArrowUp, Zap, History, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react'
-
-export type HistoryItem = { id: string; question: string; answer: string; source: 'detected' | 'manual'; timestamp: number; }
-import { Loader } from '../components/ui/loader'
-import MarkdownRenderer from '../components/MarkdownRenderer'
 import { ja } from '@/i18n/ja'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
 import { useListening } from '@/hooks/useListening'
 import { useResponseStream } from '@/hooks/useResponseStream'
 import { useTranscription } from '@/hooks/useTranscription'
 import { useTranscriptQA } from '@/hooks/useTranscriptQA'
 import { useAdvice } from '@/hooks/useAdvice'
+import { useOverlayMode } from '@/hooks/useOverlayMode'
+import NotchOverlay, { type Lens } from './NotchOverlay'
 import { DEFAULT_QUICK_PROMPTS } from '@/constants/defaultPrompts'
-import { splitTranscriptLines } from '@/utils/transcriptFormat'
 
 const t = ja
 
+/**
+ * Overlay container: owns the session state and hands it to a single presentation
+ * component. All rendering lives in NotchOverlay — see its header for why.
+ */
+
 export default function OverlayApp() {
-    const [sessionHistory, setSessionHistory] = useState<HistoryItem[]>([])
-    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
     const [session, setSession] = useState<any>(undefined)
-    const [settingsOpen, setSettingsOpen] = useState(false)
     const [collections, setCollections] = useState<{ id: string; name: string }[]>([])
     const [mcpSources, setMcpSources] = useState<{ id: string; name: string }[]>([])
     const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
     const [budgetChecked, setBudgetChecked] = useState(false)
     const [limitExceeded, setLimitExceeded] = useState(false)
-    const [activeTab, setActiveTab] = useState<'transcript' | 'questions' | 'history'>('transcript')
+    // Which lens the panel is showing. Lifted out of the presentation because the unseen
+    // badge and ←/→ paging both depend on whether the questions are actually on screen.
+    const [lens, setLens] = useState<Lens>('talk')
     const [newQuestionCount, setNewQuestionCount] = useState(0)
     const [questionDetectionOn, setQuestionDetectionOn] = useState(false)
     const [qaInput, setQaInput] = useState('')
-    const [qdHovered, setQdHovered] = useState(false)
     const [quickPrompts, setQuickPrompts] = useState<{ id: string; name: string; content: string }[]>([])
+    // Heartbeat for the session clock; see elapsedLabel below.
+    const [clockTick, setClockTick] = useState(0)
 
-    const transcriptEndRef = useRef<HTMLDivElement>(null)
-    const transcriptContainerRef = useRef<HTMLDivElement>(null)
-    const [autoScroll, setAutoScroll] = useState(true)
-    // Questions are shown one at a time; ‹ › arrows page through them
+    // Questions are shown one at a time; ‹ › and ←/→ page through them
     const [questionIndex, setQuestionIndex] = useState(0)
 
     const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
     const { advice, dismissAdvice } = useAdvice()
+    const overlay = useOverlayMode()
     const { questions, answers, generateAnswer, clearAll } = useResponseStream({
-        onGenerateComplete: (qText, finalResponse) => {
-            setSessionHistory(prev => [...prev, { id: 'd-' + Date.now().toString(), question: qText, answer: finalResponse, source: 'detected', timestamp: Date.now() }])
-        },
         // While the detection toggle is on, detected questions are answered
         // automatically with supporting bullet points — no click required.
         autoAnswer: questionDetectionOn,
         collectionId: selectedCollectionId,
         onAutoAnswerStarted: () => {
-            // Pull the questions tab up so the answer is visible without a click,
-            // but never yank the user out of an open Q&A answer or the history view.
-            if (!qaViewActive && activeTab !== 'history') setActiveTab('questions')
+            // Show the answer without a click, but never yank the user out of an open Q&A.
+            if (!qaViewActive) setLens('ask')
         },
     })
     const { segments, partialSegment, transcribing, error: transcriptionError, toggleTranscription, forceStop: forceStopTranscription, resetSession } = useTranscription()
-    const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA({
-        onGenerateComplete: (qText, finalResponse) => {
-            setSessionHistory(prev => [...prev, { id: 'm-' + Date.now().toString(), question: qText, answer: finalResponse, source: 'manual', timestamp: Date.now() }])
-        }
-    })
+    const { response: qaResponse, generating: qaGenerating, qaViewActive, currentQuestion, askQuestion, goBack: goBackQA } = useTranscriptQA()
 
     const error = transcriptionError || listenError
 
@@ -97,35 +79,39 @@ export default function OverlayApp() {
         return groups
     }, [segments])
 
-    // Track new questions for badge + snap the pager to the newest question
+    // Track new questions for badge + snap the pager to the newest question.
+    // Guarded by a previous-length ref so the mount pass (0 questions) doesn't count as
+    // an arrival, and so a detection can raise the notch card exactly once per question.
+    const prevQuestionCount = useRef(0)
     useEffect(() => {
-        if (activeTab !== 'questions') {
-            setNewQuestionCount(prev => prev + 1)
-        }
+        const arrived = questions.length - prevQuestionCount.current
+        prevQuestionCount.current = questions.length
         setQuestionIndex(Math.max(0, questions.length - 1))
+        if (arrived <= 0) return
+        setNewQuestionCount(prev => prev + arrived)
+        // A question nobody can see isn't worth detecting. Manual generation aside, the
+        // answers lens is where it lands — unless the user is reading an open Q&A answer.
+        if (!qaViewActive) setLens('ask')
+        // Raise the pill into the glanceable card. The hook decides whether that's
+        // appropriate (it isn't, if the user already has the full panel open).
+        overlay.notifyCue('question')
     // Only trigger on questions array length change
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [questions.length])
 
-    // Reset badge when switching to questions tab
+    // Advice is worth interrupting for on the same terms as a question: the whole point is
+    // that the user is looking at the other person, not at us. Keyed on id so a replacement
+    // advice raises the card again.
     useEffect(() => {
-        if (activeTab === 'questions') setNewQuestionCount(0)
-    }, [activeTab])
+        if (advice) overlay.notifyCue('advice')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [advice?.id])
 
-    // Auto-scroll transcript
+    // The badge clears once the questions are actually on screen — which means the panel is
+    // expanded and on that lens, not merely that the lens is selected behind a pill.
     useEffect(() => {
-        if (autoScroll && transcriptEndRef.current) {
-            transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' })
-        }
-    }, [segments, partialSegment, autoScroll])
-
-    // Detect scroll position for auto-scroll toggle
-    const handleTranscriptScroll = useCallback(() => {
-        const el = transcriptContainerRef.current
-        if (!el) return
-        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        setAutoScroll(atBottom)
-    }, [])
+        if (lens === 'ask' && overlay.mode === 'expanded') setNewQuestionCount(0)
+    }, [lens, overlay.mode])
 
     const refreshCollections = useCallback(() => {
         window.electronAPI?.listCollections().then((cols) => {
@@ -165,9 +151,7 @@ export default function OverlayApp() {
         resetSession()
         clearAll()
         dismissAdvice()
-        setSessionHistory([])
-        setSelectedHistoryId(null)
-        setActiveTab('transcript')
+        setLens('talk')
         window.electronAPI.hideOverlay()
     }, [forceStopAll, resetSession, clearAll, dismissAdvice])
 
@@ -177,7 +161,7 @@ export default function OverlayApp() {
         window.electronAPI.getSession().then(({ session }) => setSession(session))
         const off = window.electronAPI.onSessionChange(({ session }) => {
             setSession(session)
-            if (!session) { forceStopAll(); setSessionHistory([]); setSelectedHistoryId(null); setActiveTab('transcript'); }
+            if (!session) { forceStopAll(); setLens('talk') }
         })
         return off
     }, [forceStopAll])
@@ -216,17 +200,23 @@ export default function OverlayApp() {
     // Global keyboard navigation
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (qaViewActive && e.key === 'Escape') {
-                goBackQA()
+            if (e.key === 'Escape') {
+                // Escape backs out one level at a time: Q&A detail first, then the panel.
+                if (qaViewActive) goBackQA()
+                else if (overlay.presentation === 'notch' && overlay.mode === 'expanded') overlay.collapse()
             }
-            if (activeTab === 'questions' && questions.length > 0) {
+            // ←/→ page through detected answers, but only where they're visible, and never
+            // while typing — the same keys move the caret there.
+            const tag = (e.target as HTMLElement | null)?.tagName
+            const typing = tag === 'INPUT' || tag === 'TEXTAREA'
+            if (!typing && lens === 'ask' && overlay.mode === 'expanded' && questions.length > 0) {
                 if (e.key === 'ArrowLeft') setQuestionIndex((i) => Math.max(0, i - 1))
                 if (e.key === 'ArrowRight') setQuestionIndex((i) => Math.min(questions.length - 1, i + 1))
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [qaViewActive, goBackQA, activeTab, questions.length])
+    }, [qaViewActive, goBackQA, lens, questions.length, overlay.presentation, overlay.mode, overlay.collapse])
 
     // Toggle question detection (secondary feature)
     const handleToggleQuestionDetection = useCallback(() => {
@@ -239,7 +229,6 @@ export default function OverlayApp() {
     // Listen button now controls transcription
     const handleToggleListen = useCallback(() => {
         if (!transcribing) {
-            setSettingsOpen(false)
             toggleTranscription({ onStarted: () => {} }).catch(() => {})
         } else {
             if (questionDetectionOn) {
@@ -267,511 +256,93 @@ export default function OverlayApp() {
         return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
     }, [segments])
 
-    // Loading state
-    if (session === undefined) {
-        return (
-            <div className="fn-floating-panel flex items-center justify-center h-full w-full">
-                <Loader2 size={20} className="animate-spin text-fog" />
-            </div>
-        )
-    }
+    // Session clock for the notch header. Only ticks while transcribing — there is nothing
+    // to count otherwise, and a running timer on an idle overlay reads as a live recording.
+    useEffect(() => {
+        if (!transcribing) return
+        const id = setInterval(() => setClockTick((n) => n + 1), 1000)
+        return () => clearInterval(id)
+    }, [transcribing])
 
-    // Not logged in
-    if (!session) {
-        return (
-            <div className="fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-pearl/5 bg-charcoal">
-                    <div className="flex items-center">
-                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
-                    </div>
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="fn-icon-button cursor-pointer p-1.5">
-                        <X size={13} />
-                    </button>
-                </div>
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <LogIn size={28} strokeWidth={1.5} className="text-iron" />
-                    <div>
-                        <p className="text-sm text-pearl font-medium">{t.overlay.notSignedIn}</p>
-                        <p className="text-xs text-ash mt-1">{t.overlay.loginFromMain}</p>
-                    </div>
-                    <button
-                        onClick={() => window.electronAPI.showMainWindow()}
-                        className="fn-button-primary cursor-pointer px-4 py-2 text-xs"
-                    >
-                        {t.overlay.openMainWindow}
-                    </button>
-                </div>
-            </div>
-        )
-    }
+    const elapsedLabel = useMemo(() => {
+        const start = segments.length > 0 ? segments[0].timestamp : null
+        if (!start) return '00:00'
+        const secs = Math.max(0, Math.floor((Date.now() - start) / 1000))
+        return `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`
+    // clockTick is the heartbeat that recomputes this
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [segments, clockTick])
 
-    // Budget not yet checked
-    if (!budgetChecked) {
-        return (
-            <div className="fn-floating-panel flex items-center justify-center h-full w-full">
-                <Loader2 size={20} className="animate-spin text-fog" />
-            </div>
-        )
-    }
+    // Collections and MCP sources are one list to the user — "what should the answers draw
+    // on" — so the notch picker flattens them, keeping the `mcp:` prefix the backend expects.
+    const docOptions = useMemo(() => ([
+        ...collections.map((c) => ({ id: c.id, name: c.name })),
+        ...mcpSources.map((s) => ({ id: `mcp:${s.id}`, name: `${s.name}（${t.overlay.externalSource}）` })),
+    ]), [collections, mcpSources])
 
-    // Limit exceeded (free credits exhausted, or subscription usage maxed)
-    if (limitExceeded) {
-        return (
-            <div className="fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
-                <div className="drag-handle flex items-center justify-between px-4 py-3 border-b border-pearl/5 bg-charcoal">
-                    <div className="flex items-center">
-                        <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
-                    </div>
-                    <button onClick={() => window.electronAPI.hideOverlay()} className="fn-icon-button cursor-pointer p-1.5">
-                        <X size={13} />
-                    </button>
-                </div>
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-                    <AlertTriangle size={28} strokeWidth={1.5} className="text-fog" />
-                    <div>
-                        <p className="text-sm text-pearl font-medium">{t.activation.limitReached}</p>
-                        <p className="text-xs text-ash mt-1">{t.activation.limitReachedHint}</p>
-                    </div>
-                </div>
-            </div>
-        )
-    }
-
+    // ── One panel, two places ────────────────────────────────────────────────────
+    // The notch presentation and the floating panel are the same component; `presentation`
+    // only decides whether it is attached to the menu-bar strip (with its collapsed pill
+    // and glanceable card) or a free-floating draggable window. Rendered ahead of the
+    // auth/budget branches so the collapsed pill stays a quiet status light instead of
+    // pushing a sign-in panel onto the screen unasked.
     return (
-        <div className="dark fn-floating-panel flex flex-col h-full w-full overflow-hidden select-none">
-            {/* Header */}
-            <div className="drag-handle flex items-center justify-between px-3 py-2.5 border-b border-pearl/5 bg-charcoal">
-                <div className="flex items-center gap-2">
-                    {/* Back button for the Q&A detail view (hidden in history tab to avoid duplication) */}
-                    {qaViewActive && activeTab !== 'history' && (
-                        <button
-                            onClick={goBackQA}
-                            className="fn-icon-button cursor-pointer no-drag p-1 -ml-0.5"
-                        >
-                            <ArrowLeft size={13} />
-                        </button>
-                    )}
-                    <div className="flex items-center gap-2">
-                        <div className="no-drag relative group flex items-center">
-                            <button
-                                onClick={() => {
-                                    if (activeTab === 'history') {
-                                        if (selectedHistoryId) {
-                                            setSelectedHistoryId(null)
-                                        } else {
-                                            setActiveTab('transcript')
-                                        }
-                                    } else {
-                                        setActiveTab('history')
-                                        setSelectedHistoryId(null)
-                                    }
-                                }}
-                                className="fn-icon-button cursor-pointer p-1 -ml-1 flex items-center"
-                            >
-                                {activeTab === 'history' ? (
-                                    <ArrowLeft size={14} className="text-fog m-[1px]" />
-                                ) : (
-                                    <img src={logoUrl} alt="Logo" className="w-4 h-4 object-contain" />
-                                )}
-                            </button>
-                            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-slate text-pearl text-[10px] font-medium rounded-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                                {activeTab === 'history' ? t.common.back : t.overlay.pastResponses}
-                            </div>
-                        </div>
-                        {transcribing && activeTab !== 'history' && (
-                            <span className="flex items-center gap-1 text-[10px] text-fog">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-                                {t.overlay.live}
-                            </span>
-                        )}
-                    </div>
+        <NotchOverlay
+            mode={overlay.mode}
+            layout={overlay.layout}
+            alertKind={overlay.alertKind}
+            onExpand={overlay.expand}
+            onCollapse={overlay.collapse}
+            onPointerEnter={overlay.handlePointerEnter}
+            onPointerLeave={overlay.handlePointerLeave}
+            presentation={overlay.presentation}
+            onSetPresentation={overlay.setPresentation}
+            onClose={handleClose}
 
-                </div>
+            signedIn={!!session}
+            // Signed out is a resolved state; `undefined` means we haven't asked yet.
+            ready={session === null || (session !== undefined && budgetChecked)}
+            limitExceeded={limitExceeded}
+            error={error}
 
-                <div className="no-drag flex items-center gap-1.5">
-                    {/* Question detection iOS style switch */}
-                    <div
-                        onMouseEnter={() => setQdHovered(true)}
-                        onMouseLeave={() => setQdHovered(false)}
-                        className="flex items-center gap-1.5 mr-0.5"
-                    >
-                        {qdHovered && (
-                            <span className="text-[10px] font-medium text-pearl tracking-[-0.1px] whitespace-nowrap">
-                                {t.overlay.questionDetection}
-                            </span>
-                        )}
-                        <button
-                            onClick={handleToggleQuestionDetection}
-                            disabled={!transcribing}
-                            aria-label={t.overlay.questionDetection}
-                            className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-300 ease-in-out border border-transparent ${
-                                questionDetectionOn ? 'bg-chalk' : 'bg-slate'
-                            } ${!transcribing ? 'opacity-40 cursor-not-allowed' : 'hover:bg-iron'}`}
-                        >
-                            <span
-                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full shadow-sm ring-0 transition-transform duration-300 ease-in-out ${
-                                    questionDetectionOn ? 'translate-x-[14px] bg-void' : 'translate-x-[2px] bg-fog'
-                                }`}
-                            />
-                        </button>
-                    </div>
+            transcribing={transcribing}
+            onToggleListen={handleToggleListen}
+            detectionOn={questionDetectionOn}
+            onToggleDetection={handleToggleQuestionDetection}
 
-                    {/* Listen button (controls transcription) */}
-                    <button
-                        onClick={handleToggleListen}
-                        className={`cursor-pointer flex items-center justify-center gap-1.5 py-1.5 w-[68px] rounded-md text-xs font-medium transition-all ${transcribing
-                            ? 'bg-slate text-chalk border border-pearl/10'
-                            : 'bg-graphite text-ash hover:bg-slate border border-pearl/5'
-                            }`}
-                    >
-                        {transcribing ? <MicOff size={12} className="shrink-0" /> : <Mic size={12} className="shrink-0" />}
-                        <span className="truncate">{transcribing ? t.overlay.stop : t.overlay.listen}</span>
-                    </button>
+            groupedSegments={groupedSegments}
+            partialSegment={partialSegment}
+            formatTimestamp={formatTimestamp}
+            elapsedLabel={elapsedLabel}
 
-                    {/* Settings */}
-                    <button
-                        onClick={() => setSettingsOpen((o) => !o)}
-                        className={`fn-icon-button cursor-pointer p-1.5 ${settingsOpen ? 'bg-slate text-chalk' : ''}`}
-                    >
-                        <Settings size={13} />
-                    </button>
+            questions={questions}
+            answers={answers}
+            questionIndex={questionIndex}
+            onQuestionIndex={setQuestionIndex}
+            onGenerateAnswer={(q) => generateAnswer(q, selectedCollectionId)}
+            onClearQuestions={clearAll}
+            unseenCount={newQuestionCount}
 
-                    <button onClick={handleClose} className="fn-icon-button cursor-pointer p-1.5">
-                        <X size={13} />
-                    </button>
-                </div>
-            </div>
+            docs={docOptions}
+            selectedDocId={selectedCollectionId}
+            onSelectDoc={setSelectedCollectionId}
 
-            {/* Settings panel */}
-            {settingsOpen && (
-                <div className="border-b border-pearl/5 px-4 py-3 bg-charcoal space-y-4">
-                    {(collections.length > 0 || mcpSources.length > 0) && (
-                        <div className="space-y-2">
-                            <p className="text-[10px] tracking-[-0.1px] text-ash font-medium">{t.overlay.context}</p>
-                            <Select
-                                value={selectedCollectionId ?? "none"}
-                                onValueChange={(val) => setSelectedCollectionId(val === "none" ? null : val)}
-                            >
-                                <SelectTrigger className="cursor-pointer w-full h-8 text-xs">
-                                    <SelectValue placeholder={t.overlay.selectCollection} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="none" className="cursor-pointer text-xs">{t.overlay.noProjectContext}</SelectItem>
-                                    {collections.map((c) => (
-                                        <SelectItem key={c.id} value={c.id} className="cursor-pointer text-xs">{c.name}</SelectItem>
-                                    ))}
-                                    {mcpSources.map((s) => (
-                                        <SelectItem key={s.id} value={`mcp:${s.id}`} className="cursor-pointer text-xs">{s.name}（{t.overlay.externalSource}）</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    )}
-                    {!collections.length && !mcpSources.length && (
-                        <p className="text-[10px] text-ash py-1 italic">{t.overlay.noProjectContext}</p>
-                    )}
-                </div>
-            )}
+            quickPrompts={quickPrompts}
+            onQuickPrompt={askQuestion}
+            askValue={qaInput}
+            onAskChange={setQaInput}
+            onAskSubmit={() => handleQASubmit()}
+            asking={qaGenerating}
+            qaOpen={qaViewActive}
+            qaQuestion={currentQuestion}
+            qaAnswer={qaResponse}
+            onQaBack={goBackQA}
 
-            {/* Error */}
-            {error && <div className="px-4 py-2 bg-charcoal border-b border-pearl/5 text-ash text-xs">{error}</div>}
+            lens={lens}
+            onLens={setLens}
 
-            {/* Mode switch strip — always visible outside detail views */}
-            {!qaViewActive && activeTab !== 'history' && (
-                <div className="px-3 pt-2 pb-0.5 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        {activeTab === 'questions' && questions.length > 0 && (
-                            <button
-                                onClick={clearAll}
-                                className="fn-button-secondary cursor-pointer px-2 py-0.5 text-[10px]"
-                            >
-                                {t.overlay.clear}
-                            </button>
-                        )}
-                    </div>
-                    {/* Segmented control — a clearer, architectural mode switch than a
-                        single button that flips its own label. */}
-                    <div className="inline-flex items-center gap-0.5 rounded-md border border-pearl/10 bg-graphite p-0.5">
-                        <button
-                            onClick={() => setActiveTab('transcript')}
-                            className={`cursor-pointer rounded-[6px] px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                activeTab === 'transcript' ? 'bg-slate text-chalk' : 'text-ash hover:text-pearl'
-                            }`}
-                        >
-                            {t.overlay.transcript}
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('questions')}
-                            className={`cursor-pointer rounded-[6px] px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                activeTab === 'questions' ? 'bg-slate text-chalk' : 'text-ash hover:text-pearl'
-                            }`}
-                        >
-                            {t.overlay.questions}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Body */}
-            <div className="flex flex-col flex-1 min-h-0">
-                {/* Scroll area */}
-                <div className="relative flex-1 min-h-0">
-                    {/* Top fade — softens content disappearing under the header */}
-                    <div className="absolute top-0 left-0 right-0 h-5 pointer-events-none bg-gradient-to-b from-charcoal/75 to-transparent z-10" />
-                    {/* Bottom fade — transitions into the input bar or panel edge */}
-                    <div className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-charcoal/90 to-transparent z-10" />
-
-                    {/* Question pager — ‹ n/total › floating at the bottom of the questions tab */}
-                    {activeTab === 'questions' && questions.length > 0 && (
-                        <div className="absolute bottom-2 left-0 right-0 z-20 flex items-center justify-center gap-2">
-                            <button
-                                onClick={() => setQuestionIndex((i) => Math.max(0, i - 1))}
-                                disabled={questionIndex <= 0}
-                                aria-label={t.common.back}
-                                className="fn-icon-button cursor-pointer p-1 bg-graphite border border-pearl/5 disabled:opacity-30 disabled:cursor-default"
-                            >
-                                <ChevronLeft size={13} />
-                            </button>
-                            <span className="text-[10px] text-ash tabular-nums px-1">
-                                {Math.min(questionIndex, questions.length - 1) + 1} / {questions.length}
-                            </span>
-                            <button
-                                onClick={() => setQuestionIndex((i) => Math.min(questions.length - 1, i + 1))}
-                                disabled={questionIndex >= questions.length - 1}
-                                aria-label={t.overlay.questions}
-                                className="fn-icon-button cursor-pointer p-1 bg-graphite border border-pearl/5 disabled:opacity-30 disabled:cursor-default"
-                            >
-                                <ChevronRight size={13} />
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Proactive AI advice card — floats over the transcript, stays until dismissed */}
-                    {advice && activeTab === 'transcript' && !qaViewActive && (
-                        <div className="absolute bottom-2 left-3 right-3 z-20 animate-in slide-in-from-bottom-2 fade-in duration-300">
-                            <div className="fn-card flex items-start gap-2 px-3 py-2.5 shadow-sm">
-                                <Lightbulb size={12} className="shrink-0 mt-0.5 text-ember" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[10px] font-medium text-ash mb-0.5">{t.overlay.advice}</p>
-                                    <p className="text-xs text-pearl leading-relaxed">{advice.message}</p>
-                                </div>
-                                <button
-                                    onClick={dismissAdvice}
-                                    aria-label={t.overlay.adviceDismiss}
-                                    className="fn-icon-button cursor-pointer shrink-0 p-0.5"
-                                >
-                                    <X size={11} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="h-full overflow-y-auto" ref={transcriptContainerRef} onScroll={handleTranscriptScroll}>
-                    {/* Transcript Tab */}
-                    {activeTab === 'transcript' && !qaViewActive && (
-                        <>
-                            {!transcribing && segments.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
-                                    <Mic size={32} strokeWidth={1} />
-                                    <p className="text-xs text-center px-10 text-ash leading-relaxed">
-                                        {t.overlay.noTranscriptYet}
-                                    </p>
-                                </div>
-                            )}
-                            {transcribing && segments.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-4 text-iron py-12">
-                                    <div className="h-8 flex items-center justify-center">
-                                        <Loader variant="dots" className="text-fog" />
-                                    </div>
-                                    <p className="text-xs text-ash font-medium tracking-[-0.12px]">
-                                        {t.overlay.transcribing}
-                                    </p>
-                                </div>
-                            )}
-                            {segments.length > 0 && (
-                                <div className="px-4 pt-4 pb-4 space-y-4">
-                                    {groupedSegments.map((g, i) => (
-                                        <div key={i}>
-                                            <div className="flex items-baseline gap-2 mb-0.5">
-                                                <span className="text-[10px] font-medium text-fog">
-                                                    {g.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
-                                                </span>
-                                                <span className="text-[10px] text-ash tabular-nums">{formatTimestamp(g.timestamp)}</span>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                {splitTranscriptLines(g.lines).map((line, j) => (
-                                                    <p key={j} className="text-xs text-pearl leading-relaxed">{line}</p>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {/* Tentative interim text from AmiVoice 'U' packets — lower contrast
-                                        than finalized segments to signal it may be revised when the 'A'
-                                        (final) lands. AmiVoice's interim text already includes a trailing
-                                        '...' as its own non-final indicator, so we don't render an extra
-                                        bouncing-dots loader during the brief gap before the first U. */}
-                                    {partialSegment?.text && (
-                                        <div>
-                                            <span className="text-[10px] font-medium text-ash">
-                                                {partialSegment.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
-                                            </span>
-                                            <p className="text-xs text-ash leading-relaxed mt-0.5">
-                                                {partialSegment.text}
-                                            </p>
-                                        </div>
-                                    )}
-                                    <div ref={transcriptEndRef} />
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {/* Transcript Q&A detail view */}
-                    {activeTab === 'transcript' && qaViewActive && (
-                        <div className="p-4 space-y-3">
-                            <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
-                                {currentQuestion}
-                            </p>
-                            <div className="text-sm text-pearl leading-relaxed">
-                                {qaResponse ? (
-                                    <MarkdownRenderer content={qaResponse} />
-                                ) : qaGenerating ? (
-                                    <Loader variant="loading-dots" text={t.overlay.thinking} className="text-fog" />
-                                ) : null}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Questions Tab — one question at a time, paged with ‹ › */}
-                    {activeTab === 'questions' && (
-                        <>
-                            {!questionDetectionOn && questions.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
-                                    <MessageSquareMore size={32} strokeWidth={1} />
-                                    <p className="text-xs text-center px-10 text-ash leading-relaxed">
-                                        {t.overlay.pressListenToBegin}
-                                    </p>
-                                </div>
-                            )}
-                            {questionDetectionOn && questions.length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full gap-4 text-iron py-12">
-                                    <div className="h-8 flex items-center justify-center">
-                                        <Loader variant="dots" className="text-fog" />
-                                    </div>
-                                    <p className="text-xs text-ash font-medium tracking-[-0.12px]">
-                                        {t.overlay.waitingForQuestions}
-                                    </p>
-                                </div>
-                            )}
-                            {questions.length > 0 && (() => {
-                                const q = questions[Math.min(questionIndex, questions.length - 1)]
-                                const answer = answers[q.id]
-                                return (
-                                    <div className="px-4 pt-4 pb-12 space-y-3">
-                                        <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
-                                            {q.text}
-                                        </p>
-                                        <div className="text-xs text-pearl leading-relaxed">
-                                            {answer?.text ? (
-                                                <MarkdownRenderer content={answer.text} />
-                                            ) : answer?.status === 'streaming' ? (
-                                                <Loader variant="loading-dots" text={t.overlay.thinking} className="text-fog" />
-                                            ) : (
-                                                <button
-                                                    onClick={() => generateAnswer(q, selectedCollectionId)}
-                                                    className="fn-button-primary cursor-pointer px-3 py-1.5 text-xs"
-                                                >
-                                                    {t.overlay.generateAnswer}
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )
-                            })()}
-                        </>
-                    )}
-
-                    {/* History Tab */}
-                    {activeTab === 'history' && (
-                        <>
-                            {selectedHistoryId ? (
-                                <div className="p-4 space-y-3">
-                                    <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-tight border-b border-pearl/10 pb-3">
-                                        {sessionHistory.find(h => h.id === selectedHistoryId)?.question}
-                                    </p>
-                                    <div className="text-sm text-pearl leading-relaxed">
-                                        <MarkdownRenderer content={sessionHistory.find(h => h.id === selectedHistoryId)?.answer || ''} />
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                    {sessionHistory.length === 0 ? (
-                                        <div className="flex flex-col items-center justify-center h-full gap-3 text-iron py-12">
-                                            <History size={32} strokeWidth={1} />
-                                            <p className="text-xs text-center px-10 text-ash leading-relaxed">
-                                                {t.overlay.noHistoryYet}
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="p-3 pt-0 space-y-2 mt-2">
-                                            {[...sessionHistory].reverse().map((h) => (
-                                                <button
-                                                    key={h.id}
-                                                    onClick={() => setSelectedHistoryId(h.id)}
-                                                    className="cursor-pointer w-full text-left px-3 py-2.5 rounded-md text-xs leading-relaxed transition-all bg-graphite text-pearl hover:bg-slate border border-transparent"
-                                                >
-                                                    <span>{h.question}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </>
-                    )}
-                    </div>
-                </div>
-
-                {/* Transcript Q&A input bar — natural flex item, no absolute positioning */}
-                {activeTab === 'transcript' && !qaViewActive && segments.length > 0 && (
-                    <div className="shrink-0 bg-charcoal">
-                        {quickPrompts.length > 0 && (
-                            <div className="px-3 pt-2 pb-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
-                                <Zap size={10} className="shrink-0 text-iron" />
-                                {quickPrompts.map((qp) => (
-                                    <button
-                                        key={qp.id}
-                                        onClick={() => { askQuestion(qp.content) }}
-                                        disabled={qaGenerating}
-                                        className="fn-button-secondary cursor-pointer shrink-0 px-2 py-1 text-[10px] disabled:opacity-40 whitespace-nowrap"
-                                    >
-                                        {qp.name}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        <form onSubmit={handleQASubmit} className="px-3 pt-2 pb-3.5">
-                            <div className="fn-input flex items-center gap-2 px-3 py-2">
-                                <input
-                                    type="text"
-                                    value={qaInput}
-                                    onChange={(e) => setQaInput(e.target.value)}
-                                    placeholder={t.overlay.askAboutTranscript}
-                                    className="flex-1 bg-transparent text-xs text-pearl placeholder:text-ash outline-none"
-                                    disabled={qaGenerating}
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!qaInput.trim() || qaGenerating}
-                                    className="cursor-pointer p-1 text-fog hover:text-pearl disabled:text-iron transition-colors"
-                                >
-                                    <ArrowUp size={12} />
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                )}
-            </div>
-        </div>
+            advice={advice}
+            onDismissAdvice={dismissAdvice}
+        />
     )
 }

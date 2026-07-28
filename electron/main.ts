@@ -11,6 +11,14 @@ import { getStoredSession } from './services/tokenStorage'
 import { initUpdater, flushPendingUpdate } from './services/updater'
 import { getCacheRoot } from './services/documentCache'
 import { fetchUsageState } from './services/usageLimiter'
+import {
+  applyOverlayLayout,
+  getOverlayLayout,
+  pinAboveEverything,
+  type OverlayMode,
+  type OverlayPresentation,
+} from './services/overlayLayout'
+import { invalidateNotchGeometry } from './services/notchGeometry'
 
 let mainWindow: BrowserWindow | null = null
 let overlayWindow: BrowserWindow | null = null
@@ -18,6 +26,9 @@ let tray: Tray | null = null
 let supabase: SupabaseClient | null = null
 let supabaseConfigErrorMsg: string | null = null
 let isQuitting = false
+// Last layout the renderer asked for, so display changes and re-shows can re-apply it.
+let overlayPresentation: OverlayPresentation = 'notch'
+let overlayMode: OverlayMode = 'collapsed'
 
 const DEV = process.env.NODE_ENV === 'development' || !app.isPackaged
 const BASE_URL = 'http://localhost:5182'
@@ -56,11 +67,18 @@ function createOverlayWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    resizable: true,
+    // Notch modes drive size from the main process; `setBounds` still resizes a
+    // non-resizable window, and resizable:true is the prime suspect for the
+    // over-fullscreen anomaly in notch-overlay-plan.md §0.5 F6. Classic
+    // presentation re-enables it via applyOverlayLayout().
+    resizable: false,
     hasShadow: process.platform === 'darwin',
     skipTaskbar: true,
     show: false,
     fullscreenable: false,
+    // MANDATORY for the notch presentation: without it macOS clamps every y:0
+    // request to below the menu bar. See notch-overlay-plan.md §0.5 F1.
+    enableLargerThanScreen: true,
     icon: path.join(__dirname, '../public/app-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -70,10 +88,10 @@ function createOverlayWindow() {
     backgroundColor: '#00000000',
   })
 
-  if (process.platform === 'darwin') {
-    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
+  // Order matters — setVisibleOnAllWorkspaces() clobbers the native window level, so
+  // calling it after setAlwaysOnTop() leaves the overlay invisible over fullscreen apps
+  // (Zoom/Meet) while still reporting isVisible() === true. See §0.5 F2.
+  pinAboveEverything(overlayWindow)
 
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
@@ -192,6 +210,11 @@ function toggleOverlay() {
   if (overlayWindow.isVisible()) {
     overlayWindow.hide()
   } else {
+    // Re-apply geometry before showing: the display may have changed while hidden, and a
+    // window that lost its always-on-top level can only be fixed by re-running the
+    // setVisibleOnAllWorkspaces → setAlwaysOnTop pair. See §0.5 F2.
+    applyOverlayLayout(overlayWindow, overlayPresentation, overlayMode, { animate: false })
+    pinAboveEverything(overlayWindow)
     overlayWindow.show()
     overlayWindow.focus()
     if (mainWindow?.isFullScreen()) {
@@ -296,6 +319,30 @@ async function init() {
     app.quit()
   })
 
+  // ── Overlay presentation (notch vs classic) ─────────────────────────────────
+  // The renderer owns the state machine (it knows about hover, detections and pinning);
+  // the main process owns geometry and the window animation.
+  ipcMain.handle('overlay:get-layout', () => getOverlayLayout())
+
+  ipcMain.handle(
+    'overlay:apply-layout',
+    async (
+      _e,
+      args: { presentation: OverlayPresentation; mode: OverlayMode; animate?: boolean }
+    ) => {
+      const win = getOverlayWindow()
+      overlayPresentation = args.presentation
+      overlayMode = args.mode
+      const bounds = await applyOverlayLayout(win, args.presentation, args.mode, {
+        animate: args.animate,
+      })
+      // Resizing can drop the window level on macOS; cheap to re-assert, and the
+      // failure mode (invisible over fullscreen Zoom) is silent. See §0.5 F2.
+      pinAboveEverything(win)
+      return bounds
+    }
+  )
+
   // Register auth state listener after supabase is ready
   if (supabase) {
     registerAuthStateListener(supabase, getMainWindow, getOverlayWindow)
@@ -330,6 +377,19 @@ async function init() {
     createTray()
     mainWindow?.show()
     mainWindow?.focus()
+
+    // Notch state is per-display: a Mac mini on an external monitor has none, and
+    // resolution changes move the top-center anchor. Recompute on any display change.
+    const relayoutForDisplays = () => {
+      invalidateNotchGeometry()
+      if (!overlayWindow || overlayWindow.isDestroyed()) return
+      applyOverlayLayout(overlayWindow, overlayPresentation, overlayMode, { animate: false })
+      pinAboveEverything(overlayWindow)
+      overlayWindow.webContents.send('overlay:layout-changed', getOverlayLayout())
+    }
+    screen.on('display-metrics-changed', relayoutForDisplays)
+    screen.on('display-added', relayoutForDisplays)
+    screen.on('display-removed', relayoutForDisplays)
 
     // Initialize auto-updater (packaged builds only)
     if (app.isPackaged) {

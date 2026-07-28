@@ -17,6 +17,21 @@ declare global {
         email: string
     }
 
+    type OverlayPresentation = 'notch' | 'classic'
+    type OverlayMode = 'collapsed' | 'card' | 'expanded'
+
+    interface OverlayLayout {
+        /** true only on built-in displays with a physical camera cutout */
+        hasNotch: boolean
+        notchWidth: number
+        /** menu-bar strip height in points — equals notch height when hasNotch */
+        stripHeight: number
+        collapsedWidth: number
+        panelWidth: number
+        cardHeight: number
+        expandedHeight: number
+    }
+
     interface Window {
         electronAPI: {
             // ── Auth ────────────────────────────────────────────────────────────────
@@ -33,6 +48,14 @@ declare global {
             hideOverlay: () => Promise<void>
             quitApp: () => void
             setWindowSize: (w: number, h: number) => void
+            // ── Overlay presentation ─────────────────────────────────────────────────
+            overlayGetLayout: () => Promise<OverlayLayout>
+            overlayApplyLayout: (args: {
+                presentation: OverlayPresentation
+                mode: OverlayMode
+                animate?: boolean
+            }) => Promise<{ x: number; y: number; width: number; height: number } | null>
+            onOverlayLayoutChanged: (cb: (layout: OverlayLayout) => void) => () => void
             // ── Audio / question detection ────────────────────────────────────────────
             startListening: () => Promise<{ success: boolean; error?: string }>
             stopListening: () => Promise<{ success: boolean; error?: string }>

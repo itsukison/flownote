@@ -29,6 +29,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowSize: (width: number, height: number) =>
     ipcRenderer.invoke('set-window-size', width, height),
 
+  // ── Overlay presentation (notch pill ↔ card ↔ expanded panel) ──────────────
+  overlayGetLayout: () => ipcRenderer.invoke('overlay:get-layout'),
+  overlayApplyLayout: (args: {
+    presentation: 'notch' | 'classic'
+    mode: 'collapsed' | 'card' | 'expanded'
+    animate?: boolean
+  }) => ipcRenderer.invoke('overlay:apply-layout', args),
+  onOverlayLayoutChanged: (cb: (layout: any) => void) => {
+    const fn = (_: any, layout: any) => cb(layout)
+    ipcRenderer.on('overlay:layout-changed', fn)
+    return () => ipcRenderer.removeListener('overlay:layout-changed', fn)
+  },
+
   // ── Audio / question detection ────────────────────────────────────────────
   startListening: () => ipcRenderer.invoke('start-listening'),
   stopListening: () => ipcRenderer.invoke('stop-listening'),
