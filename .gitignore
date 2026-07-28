@@ -44,3 +44,6 @@ flownoteweb/
 Mybrain/
 pannel.png
 
+
+# Scratch build for scripts/test
+.tmp-test-build

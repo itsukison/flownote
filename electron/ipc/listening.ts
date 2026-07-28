@@ -4,6 +4,7 @@ import { resamplePcm16To24k } from '../audio/AudioResampler'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
 import { logEvent } from '../services/detectionLog'
+import { getConversationContext } from '../services/conversationContext'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { getCurrentTranscriptIdValue } from './transcription-handlers'
 
@@ -31,6 +32,9 @@ export function registerListeningHandlers(
         onQuestion: (q) => {
           const win = getOverlayWindow()
           win?.webContents.send('question-detected', q)
+          // Pin the conversation as it is *now* to this question — by the time
+          // the user taps it, the live transcript may be on another topic.
+          getConversationContext()?.captureForQuestion(q.id, q.text)
           logEvent('detection', {
             questionId: q.id,
             channel: q.channel ?? null,

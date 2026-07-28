@@ -10,6 +10,7 @@
     "clean": "rimraf dist dist-electron",
     "build:native": "bash scripts/build-native-binary.sh",
     "build:notch-probe": "bash scripts/build-notch-probe.sh",
+    "test:context": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/conversation-context.test.cjs",
     "log:labels": "node scripts/replay/extract-labels.mjs",
     "log:replay": "node scripts/replay/replay.mjs",
     "app:build": "npm run build && electron-builder",

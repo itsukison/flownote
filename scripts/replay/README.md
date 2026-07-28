@@ -17,8 +17,12 @@ Contents (transcript text, detected questions, retrieved chunks, answers) stay o
 the machine — they are never uploaded. Delete the directory to purge.
 
 Event types: `session_start`, `segment`, `segment_dropped`, `interim` (throttled
-to ~1/800ms), `detection`, `context_memo`, `rewrite`, `retrieval`, `answer`,
-`session_end`.
+to ~1/800ms), `detection`, `context_snapshot`, `context_memo`, `rewrite`,
+`retrieval`, `answer`, `session_end`.
+
+`answer.snapshotAgeMs` is worth watching: it is how long a question sat before
+the user asked for an answer. Large values are exactly the case where resolving
+a referent against the *live* transcript would have picked the wrong one.
 
 Aim for **5–10 real sessions** before drawing conclusions.
 

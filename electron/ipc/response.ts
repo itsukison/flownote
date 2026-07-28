@@ -150,13 +150,25 @@ export function registerResponseHandlers(
       const supabase = getSupabase()
       const conversation = getConversationContext()
 
+      // Context snapshot taken when this question was detected. Preferred over
+      // live context: it describes the conversation the question was asked in,
+      // and its rewrite is usually already in flight (or done) by now.
+      const snapshot = conversation?.getQuestionContext(qId) ?? null
+
       // Retrieval runs on a *resolved* query, not the raw question: 「その店舗の
       // 年商は？」 has no content word to embed. The rewrite is gated (only fires
       // on deictic/elliptical questions) and hard-timeboxed, so the common case
       // pays nothing and the worst case falls back to the raw question.
       const resolveQuery = async (): Promise<string> => {
-        if (!collectionId || !conversation) return question
-        const r = await conversation.resolveSearchQuery(question)
+        if (!collectionId) return question
+        // A snapshot with no pending rewrite means the question was already
+        // self-contained at detection time — don't re-resolve it against a tail
+        // that has since moved on.
+        if (snapshot && !snapshot.resolve) return question
+        const pending = snapshot?.resolve
+        if (!pending && !conversation) return question
+
+        const r = await (pending ?? conversation!.resolveSearchQuery(question))
         logEvent('rewrite', {
           questionId: qId,
           original: question,
@@ -164,9 +176,13 @@ export function registerResponseHandlers(
           rewritten: r.rewritten,
           reason: r.reason,
           latencyMs: r.latencyMs,
+          speculative: !!pending,
         })
         if (r.rewritten) {
-          console.log(`[Handlers] search query rewritten (${r.reason}, ${r.latencyMs}ms): "${question}" → "${r.searchText}"`)
+          console.log(
+            `[Handlers] search query rewritten (${r.reason}, ${r.latencyMs}ms${pending ? ', speculative' : ''}): ` +
+              `"${question}" → "${r.searchText}"`
+          )
         }
         return r.searchText
       }
@@ -220,7 +236,8 @@ export function registerResponseHandlers(
       // there is no live transcript, so the no-transcript prompt is unchanged.
       // It goes into the same {{context}} slot as the documents but under its own
       // 【会話の文脈】 heading, so the model never confuses hearsay with 参考資料.
-      const conversationBlock = conversation?.buildContextBlock() ?? null
+      // Snapshot first: the conversation as of detection, not as of the tap.
+      const conversationBlock = snapshot ? snapshot.block : conversation?.buildContextBlock() ?? null
       const withConversation = (docs: string) =>
         conversationBlock ? `${conversationBlock}\n\n${docs}` : docs
 
@@ -282,6 +299,8 @@ export function registerResponseHandlers(
         answer: answerText,
         hadDocumentContext: ragResult.chunks.length > 0,
         hadConversationContext: !!conversationBlock,
+        usedSnapshot: !!snapshot,
+        snapshotAgeMs: snapshot ? startedAt - snapshot.at : null,
         firstChunkMs: firstChunkAt ? firstChunkAt - startedAt : null,
         totalMs: Date.now() - startedAt,
       })

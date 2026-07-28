@@ -39,6 +39,30 @@ const TAIL_MAX_CHARS = 800
 const REWRITE_TIMEOUT_MS = 1_500
 const REWRITE_MAX_TAIL_CHARS = 600
 
+// Per-question context snapshots. A question can be answered long after it was
+// asked (the overlay lists it and the user clicks when they get a chance), by
+// which point the live tail describes a different topic entirely — resolving
+// 「その店舗」 against it would confidently pick the wrong referent. Snapshots are
+// bounded and expire; they are pure derived state, so losing one just falls back
+// to live context.
+const MAX_QUESTION_CONTEXTS = 50
+const QUESTION_CONTEXT_TTL_MS = 30 * 60_000
+
+export interface ResolvedQuery {
+  searchText: string
+  rewritten: boolean
+  latencyMs: number
+  reason: string
+}
+
+interface QuestionSnapshot {
+  /** 【会話の文脈】 block as it read when the question was detected. */
+  block: string | null
+  /** Speculative rewrite started at detection time; null when none was needed. */
+  resolve: Promise<ResolvedQuery> | null
+  at: number
+}
+
 /**
  * Demonstratives / ellipsis markers. Their presence means the question almost
  * certainly depends on something said earlier, so it is worth a rewrite call.
@@ -82,6 +106,7 @@ export class ConversationContext {
   private memo = ''
   private lastMemoAt = 0
   private lastMemoCharCount = 0
+  private questionContexts = new Map<string, QuestionSnapshot>()
 
   constructor(
     private genAI: GoogleGenerativeAI,
@@ -105,7 +130,71 @@ export class ConversationContext {
     this.memo = ''
     this.lastMemoAt = 0
     this.lastMemoCharCount = 0
+    this.questionContexts.clear()
     console.log('[ConversationContext] stopped')
+  }
+
+  /**
+   * Pin the conversation as it stands right now to a detected question, and
+   * speculatively start its rewrite. Called the moment a question is detected.
+   *
+   * Two things this buys, in order of importance:
+   *  1. correctness — the referent is resolved against the conversation the
+   *     question was actually asked in, not whatever is being discussed when the
+   *     user gets around to tapping it
+   *  2. latency — the ~800ms rewrite overlaps the user reading the question, so
+   *     the answer path sees an already-resolved query
+   *
+   * The speculative call only fires for deictic/elliptical questions (a minority),
+   * costs ~200 input tokens on a lite model, and is wasted only when the user
+   * never asks for that answer.
+   */
+  captureForQuestion(questionId: string, questionText: string): void {
+    if (!questionId) return
+    this.pruneQuestionContexts()
+
+    const block = this.buildContextBlock()
+    const resolve = this.needsRewrite(questionText) ? this.resolveSearchQuery(questionText) : null
+    // Nothing awaits this until answer time; make sure a rejection can never
+    // surface as an unhandled rejection in the main process.
+    resolve?.catch(() => undefined)
+
+    this.questionContexts.set(questionId, { block, resolve, at: Date.now() })
+    logEvent('context_snapshot', {
+      questionId,
+      question: questionText,
+      hasBlock: !!block,
+      speculativeRewrite: !!resolve,
+    })
+  }
+
+  /**
+   * The snapshot taken at detection time, or null when there is none (free-text
+   * questions, or a detection from before this context started). Non-destructive:
+   * a retry after a failed generation reuses the same snapshot.
+   */
+  getQuestionContext(questionId: string | null | undefined): QuestionSnapshot | null {
+    if (!questionId) return null
+    const snap = this.questionContexts.get(questionId)
+    if (!snap) return null
+    if (Date.now() - snap.at > QUESTION_CONTEXT_TTL_MS) {
+      this.questionContexts.delete(questionId)
+      return null
+    }
+    return snap
+  }
+
+  private pruneQuestionContexts(): void {
+    const now = Date.now()
+    for (const [id, snap] of this.questionContexts) {
+      if (now - snap.at > QUESTION_CONTEXT_TTL_MS) this.questionContexts.delete(id)
+    }
+    // Map iterates in insertion order — drop the oldest first.
+    while (this.questionContexts.size >= MAX_QUESTION_CONTEXTS) {
+      const oldest = this.questionContexts.keys().next().value
+      if (oldest === undefined) break
+      this.questionContexts.delete(oldest)
+    }
   }
 
   getMemo(): string {
@@ -144,9 +233,7 @@ export class ConversationContext {
    * never blocks longer than REWRITE_TIMEOUT_MS — on any failure the original
    * question is returned unchanged.
    */
-  async resolveSearchQuery(
-    question: string
-  ): Promise<{ searchText: string; rewritten: boolean; latencyMs: number; reason: string }> {
+  async resolveSearchQuery(question: string): Promise<ResolvedQuery> {
     const started = Date.now()
     const fallback = (reason: string) => ({
       searchText: question,
