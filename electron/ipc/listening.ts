@@ -37,6 +37,14 @@ const DETECTOR_MODE: DetectorMode =
 
 let detector: OpenAIRealtimeQuestionDetector | null = null
 let sysAudioChunkCount = 0
+/**
+ * Whether *this* handler holds a SharedAudioRouter reference. Only the realtime
+ * detector takes one; the transcript detector reads segments and never touches
+ * audio. Releasing what was never acquired would decrement the reference the
+ * transcription session holds — turning question detection off mid-meeting would
+ * stop system-audio capture for the rest of it.
+ */
+let holdsAudioRouter = false
 
 export function registerListeningHandlers(
   getOverlayWindow: GetWindowFn,
@@ -93,6 +101,14 @@ export function registerListeningHandlers(
     setTranscriptQuestionDetector(null)
   }
 
+  /** Drop the realtime detector's audio subscription, if it has one. */
+  function releaseAudioRouter() {
+    sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
+    if (!holdsAudioRouter) return
+    holdsAudioRouter = false
+    sharedAudioRouter.release()
+  }
+
   ipcMain.handle('start-listening', async () => {
     try {
       const budgetCheck = await ensureBudget(getSupabase)
@@ -141,8 +157,7 @@ export function registerListeningHandlers(
             getOverlayWindow()?.webContents.send('usage-limit-exceeded')
             detector?.stop()
             detector = null
-            sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
-            sharedAudioRouter.release()
+            releaseAudioRouter()
           }
         },
         onUsageLimitExceeded: () => {
@@ -153,6 +168,7 @@ export function registerListeningHandlers(
 
       sysAudioChunkCount = 0
       sharedAudioRouter.acquire()
+      holdsAudioRouter = true
       sharedAudioRouter.on('audio-data', onSystemAudioForDetection)
 
       return { success: true, mode: DETECTOR_MODE }
@@ -174,8 +190,7 @@ export function registerListeningHandlers(
   ipcMain.handle('stop-listening', async () => {
     try {
       stopTranscriptDetection()
-      sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
-      sharedAudioRouter.release()
+      releaseAudioRouter()
       await detector?.stop()
       detector = null
       sysAudioChunkCount = 0
