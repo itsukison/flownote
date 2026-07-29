@@ -13,10 +13,35 @@ import fs from 'node:fs'
  * scoring at all. `npm run test:transcript` fails if the two literals drift.
  */
 export const QUESTION_GATE =
-  /[?？]|(です|ます|でしょう|ました|ません)か(?!ら)|(ください|下さい|いただけますか|もらえますか|願えますか)|(教えて|聞かせて|伺|いかが|どう(です|でしょう)?|どちら|どれ|どの|どこ|いつ|誰|だれ|なぜ|なんで(?!す)|何|なに|いくら|どのくらい|どれくらい|どんな)/
+  /[?？]|(です|ます|でしょう|ました|ません)か(?!ら)|(ください|下さい|いただけますか|もらえますか|願えますか)|(教えて|聞かせて|伺|いかが|どう(です|でしょう)?|どちら|どれ|どの|どこ|いつ|誰|だれ|なぜ|なんで(?!す)|何(?!か)|なに(?!か)|いくら|どのくらい|どれくらい|どんな)/
 
 export function questionGate(text) {
   return QUESTION_GATE.test(text ?? '')
+}
+
+/** MIRROR of hasExplicitQuestionMarker in electron/audio/questionGate.ts. */
+export const hasExplicitQuestionMarker = questionGate
+
+/**
+ * MIRROR of NON_CANDIDATE in electron/audio/questionGate.ts — keep byte-identical.
+ */
+export const NON_CANDIDATE =
+  /^(はい|ええ|うん|うーん|あー|えー|あの|えっと|まあ|そう|そうです|そうですね|そうですか|なるほど|なるほどですね|わかりました|承知しました|了解です|ありがとうございます|ありがとうございました|よろしくお願いします|失礼します|こんにちは|おはようございます|お世話になっております|では|それでは|はいはい)[。、！\.\s]*$/
+
+const MIN_CANDIDATE_CHARS = 6
+
+/**
+ * MIRROR of shouldClassify in electron/audio/questionGate.ts. This — not
+ * QUESTION_GATE — is what the app actually filters on, so `--variant gate` scores
+ * this. QUESTION_GATE now only decides whether the classifier is also handed the
+ * audio (see TranscriptQuestionDetector), which this harness cannot replay.
+ */
+export function shouldClassify(text) {
+  const trimmed = (text ?? '').trim()
+  if (!trimmed) return false
+  if (NON_CANDIDATE.test(trimmed)) return false
+  if (hasExplicitQuestionMarker(trimmed)) return true
+  return trimmed.replace(/[。、，．,.！!？?\s]/g, '').length >= MIN_CANDIDATE_CHARS
 }
 
 export function readJsonl(file) {

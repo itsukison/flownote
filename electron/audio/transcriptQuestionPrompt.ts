@@ -83,17 +83,34 @@ const SPEAKER_NOTE: Record<'user' | 'opponent', string> = {
 誰が話したかは判定せず、「質問が発話されたか」だけを判定してください。`,
 }
 
+/**
+ * Added when the utterance's audio is attached, which happens exactly when the text
+ * has no explicit interrogative marker.
+ *
+ * This is the only way to settle the largest class of missed detections: Japanese
+ * marks a great many yes/no questions with rising intonation alone, and AmiVoice
+ * wrote ？ in 1 of 107 captured segments. 「それの事例って何かあります」 with a rise is a
+ * question; the same characters flat are a statement. No amount of prompting
+ * recovers that from text, so the model is given the sound instead.
+ */
+const AUDIO_NOTE = `【音声】として、この発話の音声（WAV）を添付しています。
+テキストには「？」や「か」が無くても、語尾が上昇調（尻上がり）なら質問です。is_question: true としてください。
+語尾が下降・平坦なら質問ではありません。
+テキストと音声が食い違う場合は音声を優先してください。
+question フィールドには、書き起こしのテキストを元に質問文を書いてください（音声から書き起こし直さない）。`
+
 export function buildTranscriptDetectionPrompt(
   channel: 'user' | 'opponent',
   contextLines: string,
-  target: string
+  target: string,
+  hasAudio = false
 ): string {
   return `あなたは日本語のビジネス会話の音声認識テキストを監視する質問検出器です。
 
 ${SPEAKER_NOTE[channel]}
 
 ${SHARED_RULES}
-
+${hasAudio ? `\n${AUDIO_NOTE}\n` : ''}
 【直近の会話】
 ${contextLines || '（なし）'}
 

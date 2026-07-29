@@ -13,7 +13,14 @@
  *
  * No model is called and no socket is opened.
  */
-const { QUESTION_GATE, questionGate, gateCandidate } = require('../../.tmp-test-build/audio/questionGate.js')
+const {
+  QUESTION_GATE,
+  questionGate,
+  gateCandidate,
+  shouldClassify,
+  hasExplicitQuestionMarker,
+} = require('../../.tmp-test-build/audio/questionGate.js')
+const { wavFromPcm16, pushChannelAudio, sliceChannelWav, clearChannelAudio } = require('../../.tmp-test-build/audio/AudioTailBuffer.js')
 const { parseDetectionDecision, TranscriptQuestionDetector } = require('../../.tmp-test-build/audio/TranscriptQuestionDetector.js')
 const { RecentQuestionDedup } = require('../../.tmp-test-build/audio/questionDedup.js')
 const { buildTranscriptDetectionPrompt } = require('../../.tmp-test-build/audio/transcriptQuestionPrompt.js')
@@ -63,6 +70,63 @@ for (const text of [
 // …while the real interrogative forms of the same words still pass.
 for (const text of ['なんですかそれは。', 'なんでそうなるんですか。']) {
   assert(`gate still passes: ${text.slice(0, 24)}`, questionGate(text))
+}
+
+// ── what actually reaches the model ─────────────────────────────────────────
+// shouldClassify is the only filter. QUESTION_GATE above no longer gates; it now
+// only decides whether the audio is attached. These are the cases the old
+// filter-by-marker design silently dropped — all real captured text.
+for (const text of [
+  'TikTokライブやるときの禁止事項とかってあります。',
+  'それの事例って何かあります。',
+  'これってTikTokライブで禁止されてることってあります。',
+  'ご予算のイメージあります。',
+]) {
+  assert(`reaches the model: ${text.slice(0, 22)}`, shouldClassify(text), 'intonation-only question')
+  assert(`…and gets audio attached: ${text.slice(0, 14)}`, !hasExplicitQuestionMarker(text) || /[?？か]/.test(text))
+}
+
+// Rejected outright: nothing downstream can recover these, so the list is short.
+for (const text of ['はい', 'なるほど。', 'そうですね。', 'ありがとうございます。', 'では', 'えっと', 'はいはい']) {
+  assert(`never reaches the model: ${text}`, !shouldClassify(text))
+}
+assert('a short fragment is not worth a call', shouldClassify('まずまず。') === false)
+assert('a short question with a marker still gets through', shouldClassify('実績は？') === true, '5 chars — the length floor must not eat it')
+assert('an acknowledgement followed by a real question gets through', shouldClassify('はい、ご予算はどれくらいですか。') === true)
+
+// ── explicit vs ambiguous decides audio attachment ─────────────────────────
+assert('explicit marker → text is enough', hasExplicitQuestionMarker('ご予算はいくらですか。') === true)
+assert('bare 〜あります → needs the audio', hasExplicitQuestionMarker('それの事例って何かあります。') === false, 'this is the whole point of the audio path')
+
+// ── WAV wrapper ────────────────────────────────────────────────────────────
+{
+  const pcm = Buffer.alloc(3200) // 100ms at 16kHz mono
+  const wav = wavFromPcm16(pcm, 16000)
+  assert('WAV is RIFF/WAVE', wav.slice(0, 4).toString() === 'RIFF' && wav.slice(8, 12).toString() === 'WAVE')
+  assert('WAV declares the rate it was built with', wav.readUInt32LE(24) === 16000, 'a wrong rate here is the audioFormat.ts lesson again')
+  assert('WAV declares mono 16-bit', wav.readUInt16LE(22) === 1 && wav.readUInt16LE(34) === 16)
+  assert('WAV data size matches the payload', wav.readUInt32LE(40) === pcm.length && wav.length === pcm.length + 44)
+}
+
+// ── the tail buffer returns what was pushed, by time ───────────────────────
+{
+  clearChannelAudio()
+  const now = Date.now()
+  const chunk = (v) => {
+    const b = Buffer.alloc(3200)
+    for (let i = 0; i < 1600; i++) b.writeInt16LE(v, i * 2)
+    return b
+  }
+  pushChannelAudio('opponent', chunk(100), now - 5000) // outside a 2s window
+  pushChannelAudio('opponent', chunk(200), now - 800)
+  pushChannelAudio('opponent', chunk(300), now - 300)
+  const clip = sliceChannelWav('opponent', now, 2000)
+  assert('tail buffer returns a clip', !!clip)
+  assert('clip covers only the requested window', clip && clip.ms === 200, `got ${clip && clip.ms}ms — two 100ms chunks`)
+  const empty = sliceChannelWav('user', now, 2000)
+  assert('a channel with no audio returns null, not an empty WAV', empty === null)
+  clearChannelAudio()
+  assert('clearing drops everything', sliceChannelWav('opponent', now, 2000) === null)
 }
 
 // ── stage 1: the split-segment join ─────────────────────────────────────────
@@ -179,7 +243,11 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
   }
 
   {
+    // Note the statement now costs a call: since the gate stopped filtering by
+    // marker, a declarative turn is judged by the model rather than by regex. That
+    // is the trade — ~2x calls at ¥6.5/hr against silently dropped questions.
     const model = stub([
+      '{"is_question": false, "addressed_to": "none", "confidence": 0.05, "question": "", "search_text": ""}',
       '{"is_question": true, "addressed_to": "user", "confidence": 0.94, "question": "その店舗の年商はどのくらいですか？", "search_text": "渋谷店 年商"}',
     ])
     const emitted = []
@@ -190,6 +258,7 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
     })
     d.start()
     d.onSegment(seg('うちの渋谷店の話なんですけど。', 'You'))
+    await settle()
     d.onSegment(seg('その店舗の年商はどのくらいですか。'))
     await settle()
 
@@ -200,9 +269,11 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
     assert('end-to-end: tagged as the transcript detector on the opponent channel', q && q.source === 'transcript' && q.channel === 'opponent')
     assert('end-to-end: latency is anchored on the segment', q && typeof q.detectLatencyMs === 'number' && q.detectLatencyMs >= 0)
     assert('end-to-end: confidence survives', q && q.confidence === 0.94)
-    assert('end-to-end: token usage is reported for billing', usage.length === 1 && usage[0][0] === 120)
-    assert('end-to-end: the prior turn reached the prompt as context', model.prompts[0].includes('自分: うちの渋谷店の話なんですけど。'))
-    assert('end-to-end: the statement turn cost no model call', model.prompts.length === 1)
+    assert('end-to-end: token usage is reported for billing', usage.length === 2 && usage[0][0] === 120)
+    const questionPrompt = model.prompts[1]
+    const promptText = typeof questionPrompt === 'string' ? questionPrompt : questionPrompt[0].text
+    assert('end-to-end: the prior turn reached the prompt as context', promptText.includes('自分: うちの渋谷店の話なんですけど。'))
+    assert('end-to-end: the declarative turn was judged, not filtered', model.prompts.length === 2)
   }
 
   {
@@ -287,6 +358,92 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
     await settle()
     delete process.env.FLOWNOTE_DETECT_SELF_QUESTIONS
     assert('FLOWNOTE_DETECT_SELF_QUESTIONS=0 filters the mic channel too', emitted.length === 0, `got ${emitted.length}`)
+  }
+
+  {
+    // The intonation case end-to-end: text with no marker, audio buffered, so the
+    // classification carries the WAV and the verdict is trusted without a textual
+    // marker to re-check against.
+    clearChannelAudio()
+    const now = Date.now()
+    const pcm = Buffer.alloc(3200)
+    for (let i = 0; i < 1600; i++) pcm.writeInt16LE(500, i * 2)
+    pushChannelAudio('opponent', pcm, now - 400)
+    pushChannelAudio('opponent', pcm, now - 200)
+
+    const model = stub([
+      '{"is_question": true, "addressed_to": "user", "confidence": 0.88, "question": "それの事例って何かあります？", "search_text": "導入事例"}',
+    ])
+    const emitted = []
+    const d = new TranscriptQuestionDetector(model, { onQuestion: (q) => emitted.push(q) })
+    d.start()
+    d.onSegment({ id: 'seg-audio', speaker: 'Speaker', text: 'それの事例って何かあります。', timestamp: now, durationMs: 1200 })
+    await settle()
+    clearChannelAudio()
+
+    const parts = model.prompts[0]
+    assert('ambiguous text sends a multipart request', Array.isArray(parts), 'text + inlineData')
+    assert('the WAV is attached', Array.isArray(parts) && parts[1]?.inlineData?.mimeType === 'audio/wav')
+    assert('the prompt tells the model to use intonation', Array.isArray(parts) && parts[0].text.includes('上昇調'))
+    assert('the intonation-only question becomes a card', emitted.length === 1, `got ${emitted.length}`)
+    assert(
+      'a card with no textual marker survives',
+      emitted[0] && emitted[0].text === 'それの事例って何かあります？',
+      'the text-only sanity check must not apply when the model heard the audio'
+    )
+  }
+
+  {
+    // Explicit marker → no audio, no multipart, and the prompt stays lean.
+    clearChannelAudio()
+    const now = Date.now()
+    pushChannelAudio('opponent', Buffer.alloc(3200), now - 200)
+    const model = stub([
+      '{"is_question": true, "addressed_to": "user", "confidence": 0.95, "question": "ご予算はいくらですか？", "search_text": "予算"}',
+    ])
+    const emitted = []
+    const d = new TranscriptQuestionDetector(model, { onQuestion: (q) => emitted.push(q) })
+    d.start()
+    d.onSegment({ id: 'seg-explicit', speaker: 'Speaker', text: 'ご予算はいくらですか。', timestamp: now, durationMs: 1000 })
+    await settle()
+    clearChannelAudio()
+    assert('explicit text sends no audio', typeof model.prompts[0] === 'string')
+    assert('explicit text omits the audio instructions', typeof model.prompts[0] === 'string' && !model.prompts[0].includes('上昇調'))
+    assert('and still emits', emitted.length === 1)
+  }
+
+  {
+    // A tier that refuses inline audio must cost a little latency, not a detection.
+    clearChannelAudio()
+    const now = Date.now()
+    pushChannelAudio('opponent', Buffer.alloc(3200), now - 200)
+    let calls = 0
+    const model = {
+      prompts: [],
+      getGenerativeModel: () => ({
+        generateContent: async (req) => {
+          calls++
+          model.prompts.push(req)
+          if (Array.isArray(req)) throw new Error('audio input not supported for this model')
+          return {
+            response: {
+              text: () =>
+                '{"is_question": true, "addressed_to": "user", "confidence": 0.7, "question": "事例って何かありますか？", "search_text": "事例"}',
+              usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+            },
+          }
+        },
+      }),
+    }
+    const emitted = []
+    const d = new TranscriptQuestionDetector(model, { onQuestion: (q) => emitted.push(q) })
+    d.start()
+    d.onSegment({ id: 'seg-fallback', speaker: 'Speaker', text: '事例って何かあります。', timestamp: now, durationMs: 1000 })
+    await settle()
+    clearChannelAudio()
+    assert('audio rejection retries text-only', calls === 2, `got ${calls} calls`)
+    assert('the retry is text-only', typeof model.prompts[1] === 'string')
+    assert('the detection survives the audio failure', emitted.length === 1, `got ${emitted.length}`)
   }
 
   {

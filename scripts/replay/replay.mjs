@@ -6,8 +6,9 @@
  *
  * Variants
  *   live    — what the shipped Realtime detector actually emitted (baseline)
- *   gate    — the cheap regex stage-1 filter alone (recall ceiling for the
- *             transcript-driven design, and its cost is zero)
+ *   gate    — the stage-1 filter alone (shouldClassify): what the app admits to
+ *             stage 2, and therefore the recall ceiling of the whole design. Costs
+ *             nothing, so its precision is not the point.
  *   gemini  — gate → one flash-lite call that classifies AND rewrites, i.e. the
  *             proposed stage 2. Measures precision, recall, referent resolution
  *             and per-call latency on the same utterances.
@@ -17,7 +18,7 @@
  * instead of taste.
  */
 import 'dotenv/config'
-import { readJsonl, questionGate, similarity, parseArgs, percentile } from './lib.mjs'
+import { readJsonl, shouldClassify, similarity, parseArgs, percentile } from './lib.mjs'
 
 const { positional, flags } = parseArgs(process.argv.slice(2))
 const logFile = positional[0]
@@ -117,7 +118,7 @@ async function predict(row, index) {
     }
   }
   if (variant === 'gate') {
-    return { predicted: questionGate(row.text), text: row.text, searchText: row.text, latencyMs: 0 }
+    return { predicted: shouldClassify(row.text), text: row.text, searchText: row.text, latencyMs: 0 }
   }
   return classifyWithGemini(row, index)
 }
@@ -165,7 +166,7 @@ function contextFor(row) {
 async function classifyWithGemini(row) {
   // Stage 1: the regex gate. A miss here costs nothing and is counted as a
   // negative — that is the point of measuring the gate's recall separately.
-  if (!flags['no-gate'] && !questionGate(row.text)) {
+  if (!flags['no-gate'] && !shouldClassify(row.text)) {
     return { predicted: false, text: null, latencyMs: 0, gated: true }
   }
   const m = await getModel()

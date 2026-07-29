@@ -81,10 +81,13 @@ There are **two independent audio consumers**, both fed from mic + system audio:
  │      → live segments → overlay transcript → post-session Gemini polish        │
  │                                                                               │
  │  (B) QUESTION DETECTION — OPTIONAL toggle (secondary feature)                 │
- │      DEFAULT: TranscriptQuestionDetector — no audio of its own. Each finalized │
- │      AmiVoice segment from (A) → questionGate regex (free) → one              │
+ │      DEFAULT: TranscriptQuestionDetector. Each finalized AmiVoice segment from  │
+ │      (A) → shouldClassify() (rejects only back-channel/fragments) → one         │
  │      gemini-3.1-flash-lite call that classifies, repairs ASR damage and emits  │
- │      search_text → overlay "questions" tab                                     │
+ │      search_text → overlay "questions" tab.                                    │
+ │      Text with no interrogative marker also carries ~4s of the utterance's WAV  │
+ │      (AudioTailBuffer) so the model can hear rising intonation — 「あります？」 vs  │
+ │      「あります。」 is otherwise invisible. Falls back to text-only on audio error.  │
  │      FLOWNOTE_DETECTOR=realtime switches to OpenAIRealtimeQuestionDetector:    │
  │      two more WebSockets fed the same audio, 'gpt-realtime-mini', text-only,   │
  │      semantic_vad ('auto', interrupt_response:false) + early emit on deltas    │
@@ -118,7 +121,7 @@ Key facts an agent must know:
 |---|---|---|
 | Transcription (prod) | **AmiVoice** `-a-general` (env `AMIVOICE_ENGINE`, prod default aims for `-a-bizmrr`) | `AmiVoiceTranscriptionSession.ts`, `transcription-handlers.ts` |
 | Transcription (fallback) | Deepgram; OpenAI is dev-only (JA hallucinations) | same |
-| Question detection (default) | **AmiVoice transcript → regex gate → `gemini-3.1-flash-lite`** (classify + ASR repair + retrieval-query rewrite in one call) | `TranscriptQuestionDetector.ts`, `questionGate.ts`, `transcriptQuestionPrompt.ts` |
+| Question detection (default) | **AmiVoice transcript → cheap reject filter → `gemini-3.1-flash-lite`** (classify + ASR repair + retrieval-query rewrite in one call; +utterance WAV when the text has no interrogative marker) | `TranscriptQuestionDetector.ts`, `questionGate.ts`, `AudioTailBuffer.ts`, `transcriptQuestionPrompt.ts` |
 | Question detection (alternative) | **OpenAI Realtime `gpt-realtime-mini`**, text-only output, `semantic_vad` (eagerness 'auto', interrupt_response:false). `FLOWNOTE_DETECTOR=realtime` | `OpenAIRealtimeQuestionDetector.ts` |
 | Answer generation | **Gemini `gemini-2.5-flash-lite`** streaming | `response.ts:155`, `ai-handlers.ts` |
 | Embeddings (RAG) | **OpenAI `text-embedding-3-small`** | `rag.ts` |
@@ -191,16 +194,25 @@ Product feedback flagged real-time usability. If you're picking up that work, th
    `getUserMedia`, and the Realtime audio-in tokens are gone. What is **not** settled: accuracy vs
    the Realtime baseline, because no session has been labelled yet. Measured so far on the captured
    logs — AmiVoice's final segment for a question landed 0.9–10.2s *before* the Realtime detector
-   emitted the same question (n=7 matched pairs); the stage-1 gate passes 45% of segments (19/42),
-   i.e. that many flash-lite calls per session. The known regression risk is ASR text quality: 4 of
+   emitted the same question (n=7 matched pairs); stage 1 admits 77% of segments (82/107) ≈ 440
+   flash-lite calls/hour ≈ **¥7/hr**, of which 54% carry audio. The known regression risk is ASR text quality: 4 of
    11 Realtime detections had no recognizable counterpart in the transcript at all (badly garbled
    mic segments — 「なんで…会社は死亡死亡したとしたんですかですか。」), and no gate can recover those.
    Flip back with `FLOWNOTE_DETECTOR=realtime` and compare on the same labels.
 3. **Answer latency** — `embedQuery` (OpenAI round-trip) + pgvector RPC happen only after the user
    clicks. Speculatively pre-fetching RAG at detection time would hide most of it. `response.ts`
    already parallelizes budget/prompt/RAG via `Promise.all`.
-4. **System-audio permission UX** — the #1 cause of "only my voice is captured." Improve onboarding
-   around the macOS "System Audio Recording" grant; there is no system-audio path on Windows.
+4. **System-audio permission UX** — the usual suspect for "only my voice is captured", *but check
+   the rate contract first*: from 2026-03 to 2026-07 the counterpart channel produced 0 transcript
+   segments because audiotee emits 16kHz while AmiVoice/Deepgram/OpenAI each assumed something else
+   (fixed 2026-07, see `audioFormat.ts` and its test). audiotee itself was measured working. Only
+   after `speaker: "Speaker"` segments appear in a log is a permission problem the right diagnosis;
+   there is no system-audio path on Windows at all.
+5. **Prosody is still only consulted when the text is ambiguous.** Japanese marks many yes/no
+   questions with intonation alone and AmiVoice writes ？ in 1 of 107 segments, so segments without
+   a marker are sent with their audio. Open questions: whether a local terminal-F0 feature would be
+   cheaper than the audio tokens, and whether `-a-bizmrr` punctuates interrogatives better than
+   `-a-general` (a 5-minute experiment, needs the entitlement).
 
 ### Measuring detection & retrieval (added 2026-07)
 

@@ -11,6 +11,7 @@ import { DeepgramTranscriptionSession } from '../audio/DeepgramTranscriptionSess
 import { AmiVoiceTranscriptionSession } from '../audio/AmiVoiceTranscriptionSession'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { getTranscriptQuestionDetector } from '../audio/TranscriptQuestionDetector'
+import { clearChannelAudio, pushChannelAudio } from '../audio/AudioTailBuffer'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { generateSessionTitle, generateSummaryForTranscript } from './ai-handlers'
@@ -211,6 +212,7 @@ function stopSessionServices() {
   advisor?.stop()
   advisor = null
   stopConversationContext()
+  clearChannelAudio()
   endLogSession()
 }
 
@@ -546,6 +548,9 @@ export function registerTranscriptionHandlers(
       buf.writeInt16LE(Math.round(s * 32767), i * 2)
     }
     micSession.sendAudio(buf)
+    // Keep the tail addressable so an ambiguous segment can be re-judged with its
+    // intonation. Only while detection is on — otherwise it is pure copying.
+    if (getTranscriptQuestionDetector()?.active) pushChannelAudio('user', buf)
   })
 
   ipcMain.handle('get-transcript-segments', () => {
@@ -560,6 +565,7 @@ export function registerTranscriptionHandlers(
       console.log(`[Transcription] System audio forwarded ${sysAudioChunkCount} chunks`)
     }
     speakerSession?.sendAudio(buf)
+    if (getTranscriptQuestionDetector()?.active) pushChannelAudio('opponent', buf)
   }
 
   function onSystemAudioSilent() {

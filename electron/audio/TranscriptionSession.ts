@@ -6,6 +6,13 @@ export interface TranscriptSegment {
   speaker: 'You' | 'Speaker'
   text: string
   timestamp: number
+  /**
+   * How long the utterance took, when the provider reports it (AmiVoice does, via
+   * starttime/endtime on the final packet). Used to size the audio clip handed to
+   * the question classifier — see AudioTailBuffer. Undefined elsewhere; callers
+   * must have a fallback.
+   */
+  durationMs?: number
 }
 
 export interface TranscriptionCallbacks {

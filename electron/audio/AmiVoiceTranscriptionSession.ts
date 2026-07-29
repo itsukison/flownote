@@ -370,6 +370,7 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
             speaker: this.speaker,
             text,
             timestamp: Date.now(),
+            durationMs: this.parseDurationMs(body),
           }
           console.log(`[AmiVoiceSession] ${this.source} — transcript: "${text.slice(0, 80)}"`)
           this.callbacks.onTranscript(segment)
@@ -390,6 +391,25 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
           this.callbacks.onError(new Error(raw))
         }
         return
+    }
+  }
+
+  /**
+   * Utterance length from the final packet's starttime/endtime (ms, relative to the
+   * AmiVoice session). Only the difference is used — the absolute values restart on
+   * reconnect, so they are not a wall clock. Undefined when absent or implausible.
+   */
+  private parseDurationMs(jsonBody: string): number | undefined {
+    try {
+      const obj = JSON.parse(jsonBody)
+      const r = obj.results?.[0] ?? obj
+      const start = typeof r.starttime === 'number' ? r.starttime : null
+      const end = typeof r.endtime === 'number' ? r.endtime : null
+      if (start === null || end === null) return undefined
+      const ms = end - start
+      return ms > 0 && ms < 60_000 ? ms : undefined
+    } catch {
+      return undefined
     }
   }
 

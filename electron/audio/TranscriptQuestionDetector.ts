@@ -2,7 +2,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { v4 as uuidv4 } from 'uuid'
 import { Question } from './question'
 import { TranscriptSegment } from './TranscriptionSession'
-import { gateCandidate, questionGate } from './questionGate'
+import { gateCandidate, hasExplicitQuestionMarker, shouldClassify } from './questionGate'
+import { sliceChannelWav } from './AudioTailBuffer'
 import { RecentQuestionDedup } from './questionDedup'
 import { buildTranscriptDetectionPrompt } from './transcriptQuestionPrompt'
 import { logEvent } from '../services/detectionLog'
@@ -82,6 +83,15 @@ const RECENT_SEGMENTS = 24
 
 /** A segment this long is a monologue, not a question — not worth a call. */
 const MAX_TARGET_CHARS = 400
+
+/**
+ * Audio attached to a classification when the text is ambiguous. AmiVoice reports
+ * the utterance length, and the clip ends at the moment the final packet arrived,
+ * so the padding covers finalization lag (postTime=300) plus chunk granularity —
+ * the sentence-final contour is the part that must not be clipped.
+ */
+const AUDIO_LAG_PAD_MS = 900
+const AUDIO_FALLBACK_DURATION_MS = 3_500
 
 /** Emitted question text longer than this is the model misbehaving. */
 const MAX_QUESTION_CHARS = 350
@@ -203,16 +213,28 @@ export class TranscriptQuestionDetector {
     const target = segment.text.trim()
     if (!target || target.length > MAX_TARGET_CHARS) return
 
-    const prev = this.previousSameSpeaker(segment)
-    const joinable = prev && segment.timestamp - prev.timestamp <= JOIN_WINDOW_MS ? prev.text : null
-    const via = gateCandidate(target, joinable)
-    if (!via) {
-      // Gate misses are the ceiling on this design's recall and are invisible
-      // otherwise — the harness needs them to score `--variant gate`.
+    if (!shouldClassify(target)) {
+      // Rejections here are the ceiling on recall and are invisible otherwise —
+      // the harness needs them to score `--variant gate`.
       logEvent('gate', { channel, segmentId: segment.id, text: target, passed: false })
       return
     }
-    logEvent('gate', { channel, segmentId: segment.id, text: target, passed: true, via })
+
+    // Explicit marker in this segment, or in it joined to the previous one (AmiVoice
+    // can cut a question before its final particle). Absent one, the text cannot
+    // settle whether this was a question, so the audio goes with it.
+    const prev = this.previousSameSpeaker(segment)
+    const joinable = prev && segment.timestamp - prev.timestamp <= JOIN_WINDOW_MS ? prev.text : null
+    const via = gateCandidate(target, joinable)
+    const explicit = via !== null
+    logEvent('gate', {
+      channel,
+      segmentId: segment.id,
+      text: target,
+      passed: true,
+      explicit,
+      via: via ?? 'none',
+    })
 
     // The joined form re-gates on the next segment too; classify each distinct
     // input once.
@@ -224,19 +246,30 @@ export class TranscriptQuestionDetector {
       return
     }
 
-    void this.classify(segment, target, channel, via)
+    void this.classify(segment, target, channel, explicit)
+  }
+
+  /**
+   * The utterance as sound, for segments the text can't settle. Null when the
+   * buffer has nothing (audio capture stopped, or detection just turned on).
+   */
+  private audioFor(segment: TranscriptSegment, channel: 'user' | 'opponent') {
+    const duration = (segment.durationMs ?? AUDIO_FALLBACK_DURATION_MS) + AUDIO_LAG_PAD_MS
+    return sliceChannelWav(channel, Date.now(), duration)
   }
 
   private async classify(
     segment: TranscriptSegment,
     target: string,
     channel: 'user' | 'opponent',
-    via: 'own' | 'joined'
+    explicit: boolean
   ): Promise<void> {
     this.inFlight++
     const started = Date.now()
+    // Text alone decides an explicit 「〜ですか」; for everything else the rising
+    // intonation is the only evidence there is, so the clip rides along.
+    const clip = explicit ? null : this.audioFor(segment, channel)
     try {
-      const prompt = buildTranscriptDetectionPrompt(channel, this.contextFor(segment), target)
       const model = this.genAI.getGenerativeModel({
         model: MODEL,
         generationConfig: {
@@ -245,16 +278,53 @@ export class TranscriptQuestionDetector {
           responseMimeType: 'application/json',
         },
       })
+      const request = (withAudio: boolean) => {
+        const prompt = buildTranscriptDetectionPrompt(
+          channel,
+          this.contextFor(segment),
+          target,
+          withAudio
+        )
+        return withAudio && clip
+          ? model.generateContent([
+              { text: prompt },
+              { inlineData: { mimeType: 'audio/wav', data: clip.wav.toString('base64') } },
+            ])
+          : model.generateContent(prompt)
+      }
+
+      // A model or tier that won't take inline audio must not cost us the
+      // detection — retry once on text alone and record that it happened.
+      let usedAudio = !!clip
+      let audioError: string | null = null
+      const call = async () => {
+        if (!clip) return request(false)
+        try {
+          return await request(true)
+        } catch (err: any) {
+          audioError = err?.message ?? String(err)
+          usedAudio = false
+          console.warn(`[TranscriptDetector] ${channel} — audio classify failed, retrying text-only:`, audioError)
+          return request(false)
+        }
+      }
 
       const raced = await Promise.race([
-        model.generateContent(prompt),
+        call(),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), CLASSIFY_TIMEOUT_MS)),
       ])
       const latencyMs = Date.now() - started
 
+      const audioMeta = {
+        explicit,
+        audio: usedAudio,
+        audioMs: usedAudio ? clip?.ms ?? null : null,
+        audioError,
+      }
+
       if (!raced) {
         console.warn(`[TranscriptDetector] ${channel} — classify timed out after ${CLASSIFY_TIMEOUT_MS}ms: "${target.slice(0, 40)}"`)
-        logEvent('classify', { channel, segmentId: segment.id, text: target, decision: 'timeout', latencyMs })
+        logEvent('classify', { channel, segmentId: segment.id, text: target, decision: 'timeout', latencyMs, ...audioMeta })
         return
       }
 
@@ -267,7 +337,7 @@ export class TranscriptQuestionDetector {
 
       const decision = parseDetectionDecision(raced.response.text())
       if (!decision) {
-        logEvent('classify', { channel, segmentId: segment.id, text: target, decision: 'unparseable', latencyMs })
+        logEvent('classify', { channel, segmentId: segment.id, text: target, decision: 'unparseable', latencyMs, ...audioMeta })
         return
       }
 
@@ -282,7 +352,7 @@ export class TranscriptQuestionDetector {
         channel,
         segmentId: segment.id,
         text: target,
-        via,
+        ...audioMeta,
         decision: accepted ? 'question' : 'not_question',
         // Logged separately because they fail for different reasons and only the
         // pair tells them apart: a statement (isQuestion false) versus a real
@@ -298,13 +368,14 @@ export class TranscriptQuestionDetector {
 
       // Falling back to the raw segment keeps a detection the model judged real
       // even when it forgot to echo the question text.
-      this.emit(decision.question ?? target, decision, segment, channel, latencyMs)
+      this.emit(decision.question ?? target, decision, segment, channel, latencyMs, usedAudio)
     } catch (err: any) {
       console.warn(`[TranscriptDetector] ${channel} — classify failed (non-fatal):`, err?.message ?? err)
       logEvent('classify', {
         channel,
         segmentId: segment.id,
         text: target,
+        explicit,
         decision: 'error',
         error: err?.message ?? String(err),
         latencyMs: Date.now() - started,
@@ -320,7 +391,8 @@ export class TranscriptQuestionDetector {
     decision: TranscriptDetectionDecision,
     segment: TranscriptSegment,
     channel: 'user' | 'opponent',
-    classifyLatencyMs: number
+    classifyLatencyMs: number,
+    hadAudio: boolean
   ): void {
     const question = text.trim()
     if (!question || question === 'null') return
@@ -328,9 +400,11 @@ export class TranscriptQuestionDetector {
       console.log(`[TranscriptDetector] ${channel} — rejected, too long (${question.length} chars)`)
       return
     }
-    // The repair step is allowed to fix recognition damage, not to invent a
-    // question out of a statement the gate let through.
-    if (!questionGate(question)) {
+    // The repair step may fix recognition damage, not invent a question out of a
+    // statement. Only checkable when the model was working from text alone: an
+    // intonation-only question legitimately has no textual marker to find, which is
+    // the entire reason its audio was attached.
+    if (!hadAudio && !hasExplicitQuestionMarker(question)) {
       console.log(`[TranscriptDetector] ${channel} — rejected, repaired text no longer looks like a question: "${question.slice(0, 60)}"`)
       return
     }

@@ -20,6 +20,11 @@ Event types: `session_start`, `segment`, `segment_dropped`, `interim` (throttled
 to ~1/800ms), `gate`, `classify`, `detection`, `context_snapshot`, `context_memo`,
 `rewrite`, `retrieval`, `answer`, `session_end`.
 
+`gate.explicit` says whether the text alone carried an interrogative marker; when it
+is false the app also sent the utterance's audio, and `classify.audio` / `audioMs` /
+`audioError` record what happened. The harness cannot replay that — `--variant gemini`
+is text-only, so it under-reports recall on intonation-only questions by design.
+
 `gate` and `classify` only appear in sessions run by the transcript detector
 (`FLOWNOTE_DETECTOR=transcript`, the default). Together they make its two failure
 modes directly countable in the log: `gate.passed=false` on a real question is
@@ -76,9 +81,10 @@ what each candidate RAG floor would keep.
 
 - **`live` precision** is the current baseline. Any P1 change must beat it on the
   same labels.
-- **`gate` recall** bounds the transcript-driven design: whatever the gate misses,
-  stage 2 never sees. If recall is low, widen `QUESTION_GATE` in `lib.mjs` — its
-  precision doesn't matter.
+- **`gate` recall** bounds the transcript-driven design: whatever `shouldClassify`
+  rejects, stage 2 never sees. If recall is low, loosen `NON_CANDIDATE` /
+  `MIN_CANDIDATE_CHARS` in `lib.mjs` *and* `electron/audio/questionGate.ts` — its
+  precision costs only tokens (~440 calls/hr ≈ ¥7/hr at 77% admission).
 - **`gemini` latency p95** vs **`live` latency p50** is the answer to "is the
   transcript path fast enough?". Remember the live number starts at
   `speech_stopped`, which `semantic_vad` only declares ~4s in, while the gate can
