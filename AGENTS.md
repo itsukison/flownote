@@ -28,8 +28,12 @@ flownote/
 │   ├── main.ts                   # App entry, window + tray management
 │   ├── preload.ts                # contextBridge — the entire IPC surface
 │   ├── audio/
-│   │   ├── OpenAIRealtimeQuestionDetector.ts  # ⭐ QUESTION DETECTION (OpenAI Realtime WS)
-│   │   ├── questionPrompt.ts                   # JP question-detection system prompt
+│   │   ├── TranscriptQuestionDetector.ts       # ⭐ QUESTION DETECTION (default: AmiVoice transcript → Gemini)
+│   │   ├── questionGate.ts                     # stage-1 regex gate (mirrored in scripts/replay/lib.mjs)
+│   │   ├── transcriptQuestionPrompt.ts         # stage-2 classify + repair + rewrite prompt
+│   │   ├── question.ts, questionDedup.ts       # shared Question shape + cross-channel dedup
+│   │   ├── OpenAIRealtimeQuestionDetector.ts   # alternative detector (FLOWNOTE_DETECTOR=realtime)
+│   │   ├── questionPrompt.ts                   # JP question-detection system prompt (Realtime path)
 │   │   ├── AmiVoiceTranscriptionSession.ts     # ⭐ ACTIVE transcription provider
 │   │   ├── DeepgramTranscriptionSession.ts     # fallback transcription
 │   │   ├── TranscriptionSession.ts             # OpenAI transcription (dev-only, JA hallucinates) + ITranscriptionSession iface
@@ -77,10 +81,13 @@ There are **two independent audio consumers**, both fed from mic + system audio:
  │      → live segments → overlay transcript → post-session Gemini polish        │
  │                                                                               │
  │  (B) QUESTION DETECTION — OPTIONAL toggle (secondary feature)                 │
- │      OpenAIRealtimeQuestionDetector: TWO WebSockets (user + opponent)         │
- │      model = 'gpt-realtime-mini', text-only, semantic_vad (eagerness 'auto',   │
- │      interrupt_response:false) + early emit on deltas                          │
- │      → model emits {"question": "..."} JSON → overlay "questions" tab         │
+ │      DEFAULT: TranscriptQuestionDetector — no audio of its own. Each finalized │
+ │      AmiVoice segment from (A) → questionGate regex (free) → one              │
+ │      gemini-3.1-flash-lite call that classifies, repairs ASR damage and emits  │
+ │      search_text → overlay "questions" tab                                     │
+ │      FLOWNOTE_DETECTOR=realtime switches to OpenAIRealtimeQuestionDetector:    │
+ │      two more WebSockets fed the same audio, 'gpt-realtime-mini', text-only,   │
+ │      semantic_vad ('auto', interrupt_response:false) + early emit on deltas    │
  └───────────────────────────────────────────────────────────────────────────────┘
                                    │  user clicks a question
                                    ▼
@@ -111,13 +118,16 @@ Key facts an agent must know:
 |---|---|---|
 | Transcription (prod) | **AmiVoice** `-a-general` (env `AMIVOICE_ENGINE`, prod default aims for `-a-bizmrr`) | `AmiVoiceTranscriptionSession.ts`, `transcription-handlers.ts` |
 | Transcription (fallback) | Deepgram; OpenAI is dev-only (JA hallucinations) | same |
-| Question detection | **OpenAI Realtime `gpt-realtime-mini`**, text-only output, `semantic_vad` (eagerness 'auto', interrupt_response:false) | `OpenAIRealtimeQuestionDetector.ts` |
+| Question detection (default) | **AmiVoice transcript → regex gate → `gemini-3.1-flash-lite`** (classify + ASR repair + retrieval-query rewrite in one call) | `TranscriptQuestionDetector.ts`, `questionGate.ts`, `transcriptQuestionPrompt.ts` |
+| Question detection (alternative) | **OpenAI Realtime `gpt-realtime-mini`**, text-only output, `semantic_vad` (eagerness 'auto', interrupt_response:false). `FLOWNOTE_DETECTOR=realtime` | `OpenAIRealtimeQuestionDetector.ts` |
 | Answer generation | **Gemini `gemini-2.5-flash-lite`** streaming | `response.ts:155`, `ai-handlers.ts` |
 | Embeddings (RAG) | **OpenAI `text-embedding-3-small`** | `rag.ts` |
 | Vector search | Supabase `pgvector` RPC `match_chunks` (topK 5) | `rag.ts:146` |
 
 Env keys (`.env`): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AMIVOICE_APP_KEY`, `DEEPGRAM_API_KEY`,
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SLACK_CLIENT_ID`, plus optional `AMIVOICE_ENGINE`.
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SLACK_CLIENT_ID`, plus optional `AMIVOICE_ENGINE`,
+`FLOWNOTE_DETECTOR` (`transcript` default | `realtime`), `FLOWNOTE_DETECT_MIN_CONFIDENCE`,
+`FLOWNOTE_DETECT_USER_CHANNEL`, `FLOWNOTE_RAG_MIN_SIMILARITY`, `FLOWNOTE_DETECTION_LOG`.
 
 > ⚠️ `agent/architecture.md` / `productPRD.md` still say the detector is Gemini-Live and the
 > answer model is "Gemini 2.0 Flash" — both are stale. Trust the table above.
@@ -150,19 +160,25 @@ Renderer is Vite+React; Electron main is compiled via `tsc -p electron/tsconfig.
 
 Product feedback flagged real-time usability. If you're picking up that work, the levers are:
 
-1. **Detection latency** — partly addressed 2026-07 with three low-risk speedups that don't
-   hurt accuracy: `interrupt_response:false` (a detection is never cancelled by the next
-   utterance), early question emit from streaming deltas, and per-question latency logging
-   (`[latency] speech_stopped→emit`). Turn detection stays on `semantic_vad` — a `server_vad`
-   @ 250ms attempt was reverted because it chopped natural speech mid-question (truncated
-   questions + statements misread as questions). `gpt-realtime-2.1-mini` was also reverted
-   (reasoning model, phased output incompatible with this detector). `vadEagerness` is the
-   remaining knob ('auto' default; 'high' faster but can split long questions). The real
-   remaining lever is detecting from AmiVoice interim results instead (see item 2).
-2. **Redundancy** — AmiVoice transcription and the OpenAI Realtime detector both run the full
-   audio pipeline in parallel. Since the transcript already exists, questions could be detected
-   from AmiVoice segments (heuristic on `？/ですか/ください` or a cheap Gemini-Flash-Lite call),
-   removing the second audio pipeline and its Realtime token cost entirely. See `agent/docs/pricing.md`.
+1. **Detection latency** — the Realtime path got three low-risk speedups in 2026-07
+   (`interrupt_response:false`, early emit from streaming deltas, `[latency] speech_stopped→emit`
+   logging). `semantic_vad` stayed: a `server_vad` @ 250ms attempt chopped natural speech
+   mid-question, and `gpt-realtime-2.1-mini` was reverted (reasoning model, phased output
+   incompatible with this detector). The bigger lever was item 2, now built. **Still open on the
+   transcript path:** detection can't fire before AmiVoice's `A` (final) packet. Interim `U`
+   hypotheses arrive 1.6–2.3s earlier (p50, captured sessions) and are already logged, so gating
+   stage 1 on interims is the next latency step — at the cost of classifying text that may still
+   change.
+2. **Redundancy — DONE (2026-07, `feature/amivoice-question-detection`).** Detection now runs off
+   the AmiVoice transcript (`TranscriptQuestionDetector`), so the second audio pipeline, the second
+   `getUserMedia`, and the Realtime audio-in tokens are gone. What is **not** settled: accuracy vs
+   the Realtime baseline, because no session has been labelled yet. Measured so far on the captured
+   logs — AmiVoice's final segment for a question landed 0.9–10.2s *before* the Realtime detector
+   emitted the same question (n=7 matched pairs); the stage-1 gate passes 45% of segments (19/42),
+   i.e. that many flash-lite calls per session. The known regression risk is ASR text quality: 4 of
+   11 Realtime detections had no recognizable counterpart in the transcript at all (badly garbled
+   mic segments — 「なんで…会社は死亡死亡したとしたんですかですか。」), and no gate can recover those.
+   Flip back with `FLOWNOTE_DETECTOR=realtime` and compare on the same labels.
 3. **Answer latency** — `embedQuery` (OpenAI round-trip) + pgvector RPC happen only after the user
    clicks. Speculatively pre-fetching RAG at detection time would hide most of it. `response.ts`
    already parallelizes budget/prompt/RAG via `Promise.all`.
@@ -181,10 +197,16 @@ Score changes against it instead of guessing — `scripts/replay/README.md`:
 
 ```bash
 npm run log:labels -- <log.jsonl>                    # label worksheet
-npm run log:replay -- <log.jsonl> --variant live     # shipped Realtime detector
+npm run log:replay -- <log.jsonl> --variant live     # whatever detector produced the log
 npm run log:replay -- <log.jsonl> --variant gate     # regex stage-1 recall ceiling
-npm run log:replay -- <log.jsonl> --variant gemini   # proposed transcript-driven stage 2
+npm run log:replay -- <log.jsonl> --variant gemini   # the shipped transcript stage 2, offline
 ```
+
+The gate in `scripts/replay/lib.mjs` is a mirror of `electron/audio/questionGate.ts` —
+`npm run test:transcript` fails if they drift, because scoring a filter the app doesn't
+ship is worse than not scoring. Logs from the transcript detector also carry `gate`
+(every segment, passed or not) and `classify` (decision, confidence, latency) events,
+so its recall loss is visible without re-running anything.
 
 Two other things changed with it, both aimed at the "right question, wrong
 answer" failure:

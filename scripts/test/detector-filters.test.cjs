@@ -60,10 +60,12 @@ x = fresh()
 x.isDuplicate('実績は？')
 assert('short unrelated question is not swallowed', x.isDuplicate('費用は？') === false)
 
-// window expiry — reach past the 15s window by ageing the entry
+// window expiry — reach past the 15s window by ageing the entry. The recency
+// list now lives in the shared RecentQuestionDedup (electron/audio/questionDedup.ts),
+// which both detectors use.
 x = fresh()
 x.isDuplicate('同じ質問をもう一度いいですか？')
-x.recentEmits[0].at -= 20_000
+x.dedup.recent[0].at -= 20_000
 assert('same question after the window is allowed again', x.isDuplicate('同じ質問をもう一度いいですか？') === false)
 
 // ── prompts ─────────────────────────────────────────────────────────────────

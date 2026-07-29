@@ -1,5 +1,12 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { OpenAIRealtimeQuestionDetector } from '../audio/OpenAIRealtimeQuestionDetector'
+import {
+  TranscriptQuestionDetector,
+  getTranscriptQuestionDetector,
+  setTranscriptQuestionDetector,
+} from '../audio/TranscriptQuestionDetector'
+import { Question } from '../audio/question'
 import { resamplePcm16To24k } from '../audio/AudioResampler'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
 import { checkBudget } from '../services/usageLimiter'
@@ -10,57 +17,119 @@ import { getCurrentTranscriptIdValue } from './transcription-handlers'
 
 type GetWindowFn = () => BrowserWindow | null
 
+/**
+ * Which detector the question-detection toggle starts.
+ *
+ *   transcript — default. Detects from the AmiVoice transcript this session is
+ *                already producing: no second audio pipeline, no Realtime audio
+ *                tokens, and an anchor (the finalized segment) that in the
+ *                captured sessions landed 0.9–10.2s before the Realtime detector
+ *                emitted the same question.
+ *   realtime    — the audio-native OpenAI Realtime detector. Kept because the
+ *                transcript path can only be as good as the ASR text, and that
+ *                trade has not been settled on labelled data yet.
+ *
+ * Set FLOWNOTE_DETECTOR=realtime to A/B the two without switching branches.
+ */
+export type DetectorMode = 'transcript' | 'realtime'
+const DETECTOR_MODE: DetectorMode =
+  process.env.FLOWNOTE_DETECTOR === 'realtime' ? 'realtime' : 'transcript'
+
 let detector: OpenAIRealtimeQuestionDetector | null = null
 let sysAudioChunkCount = 0
 
 export function registerListeningHandlers(
   getOverlayWindow: GetWindowFn,
   getSupabase: GetSupabaseFn,
-  openaiApiKey: string
+  openaiApiKey: string,
+  genAI: GoogleGenerativeAI | null
 ) {
+  console.log(`[Listening] question detector mode: ${DETECTOR_MODE}`)
+
+  /**
+   * Everything that happens to a detected question, whichever detector found it.
+   * Both paths go through here or the A/B compares two features instead of two
+   * detectors.
+   */
+  function handleDetectedQuestion(q: Question) {
+    const win = getOverlayWindow()
+    win?.webContents.send('question-detected', q)
+    // Pin the conversation as it is *now* to this question — by the time the user
+    // taps it, the live transcript may be on another topic. The transcript
+    // detector also hands over an already-resolved retrieval query, which skips
+    // the speculative rewrite call entirely.
+    getConversationContext()?.captureForQuestion(q.id, q.text, q.searchText ?? null)
+    logEvent('detection', {
+      questionId: q.id,
+      source: q.source ?? 'realtime',
+      channel: q.channel ?? null,
+      text: q.text,
+      searchText: q.searchText ?? null,
+      detectLatencyMs: q.detectLatencyMs ?? null,
+      confidence: q.confidence ?? null,
+    })
+    trackNormalizedAndRecord(getSupabase, 'realtime', 0, 0, { incrementQuestions: true })
+
+    // Persist question to database
+    const sb = getSupabase()
+    if (sb) {
+      getCurrentUserId(getSupabase).then((userId) => {
+        if (userId) {
+          sb.from('questions').insert({
+            user_id: userId,
+            question_text: q.text,
+            source_audio_type: q.source ?? 'realtime',
+            session_id: getCurrentTranscriptIdValue(),
+          }).then(({ error }) => {
+            if (error) console.error('[Listening] Failed to persist question:', error.message)
+          })
+        }
+      })
+    }
+  }
+
+  function stopTranscriptDetection() {
+    getTranscriptQuestionDetector()?.stop()
+    setTranscriptQuestionDetector(null)
+  }
+
   ipcMain.handle('start-listening', async () => {
-    if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
     try {
       const budgetCheck = await ensureBudget(getSupabase)
       if (!budgetCheck.allowed) {
         return { success: false, error: budgetCheck.error || 'limit_exceeded' }
       }
 
-      if (detector?.active) return { success: true }
+      if (DETECTOR_MODE === 'transcript') {
+        if (!genAI) return { success: false, error: 'No GEMINI_API_KEY' }
+        if (getTranscriptQuestionDetector()?.active) return { success: true, mode: DETECTOR_MODE }
+
+        const transcriptDetector = new TranscriptQuestionDetector(genAI, {
+          onQuestion: handleDetectedQuestion,
+          onError: (err) => console.error('[Listening] Transcript detector error:', err),
+          onTokenUsage: (inputTokens, outputTokens) => {
+            trackNormalizedAndRecord(getSupabase, 'gemini', inputTokens, outputTokens)
+            const budget = checkBudget()
+            if (!budget.allowed) {
+              console.log('[Listening] Usage limit exceeded after classification — stopping detection')
+              getOverlayWindow()?.webContents.send('usage-limit-exceeded')
+              stopTranscriptDetection()
+            }
+          },
+        })
+        transcriptDetector.start()
+        setTranscriptQuestionDetector(transcriptDetector)
+        // No audio is wired up here on purpose: segments arrive from the
+        // transcription session, which already owns mic + system audio. That
+        // missing wiring is the entire redundancy this mode removes.
+        return { success: true, mode: DETECTOR_MODE }
+      }
+
+      if (!openaiApiKey) return { success: false, error: 'No OPENAI_API_KEY' }
+      if (detector?.active) return { success: true, mode: DETECTOR_MODE }
 
       detector = new OpenAIRealtimeQuestionDetector(openaiApiKey, {
-        onQuestion: (q) => {
-          const win = getOverlayWindow()
-          win?.webContents.send('question-detected', q)
-          // Pin the conversation as it is *now* to this question — by the time
-          // the user taps it, the live transcript may be on another topic.
-          getConversationContext()?.captureForQuestion(q.id, q.text)
-          logEvent('detection', {
-            questionId: q.id,
-            channel: q.channel ?? null,
-            text: q.text,
-            detectLatencyMs: q.detectLatencyMs ?? null,
-            confidence: q.confidence ?? null,
-          })
-          trackNormalizedAndRecord(getSupabase, 'realtime', 0, 0, { incrementQuestions: true })
-
-          // Persist question to database
-          const sb = getSupabase()
-          if (sb) {
-            getCurrentUserId(getSupabase).then((userId) => {
-              if (userId) {
-                sb.from('questions').insert({
-                  user_id: userId,
-                  question_text: q.text,
-                  source_audio_type: 'realtime',
-                  session_id: getCurrentTranscriptIdValue(),
-                }).then(({ error }) => {
-                  if (error) console.error('[Listening] Failed to persist question:', error.message)
-                })
-              }
-            })
-          }
-        },
+        onQuestion: handleDetectedQuestion,
         onError: (err) => {
           console.error('[Handlers] Detector error:', err)
         },
@@ -86,7 +155,7 @@ export function registerListeningHandlers(
       sharedAudioRouter.acquire()
       sharedAudioRouter.on('audio-data', onSystemAudioForDetection)
 
-      return { success: true }
+      return { success: true, mode: DETECTOR_MODE }
     } catch (err: any) {
       console.error('[Handlers] start-listening error:', err)
       return { success: false, error: err.message }
@@ -104,6 +173,7 @@ export function registerListeningHandlers(
 
   ipcMain.handle('stop-listening', async () => {
     try {
+      stopTranscriptDetection()
       sharedAudioRouter.removeListener('audio-data', onSystemAudioForDetection)
       sharedAudioRouter.release()
       await detector?.stop()
@@ -115,6 +185,9 @@ export function registerListeningHandlers(
     }
   })
 
+  // Only the Realtime detector consumes mic audio. In transcript mode the
+  // renderer is told not to capture at all (see useListening); this stays a
+  // no-op for any renderer that didn't get the message.
   ipcMain.on('process-mic-chunk', (_event, float32Array: Float32Array) => {
     if (!detector?.active) return
     const buf = Buffer.alloc(float32Array.length * 2)
@@ -127,10 +200,11 @@ export function registerListeningHandlers(
   })
 
   ipcMain.handle('get-questions', () => {
-    return detector?.getQuestions() ?? []
+    return getTranscriptQuestionDetector()?.getQuestions() ?? detector?.getQuestions() ?? []
   })
 
   ipcMain.handle('clear-questions', () => {
+    getTranscriptQuestionDetector()?.clearQuestions()
     detector?.clearQuestions()
     return { success: true }
   })

@@ -17,8 +17,15 @@ Contents (transcript text, detected questions, retrieved chunks, answers) stay o
 the machine — they are never uploaded. Delete the directory to purge.
 
 Event types: `session_start`, `segment`, `segment_dropped`, `interim` (throttled
-to ~1/800ms), `detection`, `context_snapshot`, `context_memo`, `rewrite`,
-`retrieval`, `answer`, `session_end`.
+to ~1/800ms), `gate`, `classify`, `detection`, `context_snapshot`, `context_memo`,
+`rewrite`, `retrieval`, `answer`, `session_end`.
+
+`gate` and `classify` only appear in sessions run by the transcript detector
+(`FLOWNOTE_DETECTOR=transcript`, the default). Together they make its two failure
+modes directly countable in the log: `gate.passed=false` on a real question is
+recall lost for free, and `classify.decision` is what the model did with the rest
+(`question` / `not_question` / `timeout` / `unparseable` / `error` /
+`skipped_backpressure`). `detection.source` says which detector emitted.
 
 `answer.snapshotAgeMs` is worth watching: it is how long a question sat before
 the user asked for an answer. Large values are exactly the case where resolving
@@ -47,10 +54,14 @@ is fine. Re-running the command preserves labels you already filled in.
 ## 3. Score a variant
 
 ```bash
-npm run log:replay -- <file>.jsonl --variant live      # shipped Realtime detector (baseline)
+npm run log:replay -- <file>.jsonl --variant live      # whatever detector produced this log
 npm run log:replay -- <file>.jsonl --variant gate      # regex stage-1 only — recall ceiling, zero cost
-npm run log:replay -- <file>.jsonl --variant gemini    # proposed stage 2: gate → flash-lite classify + rewrite
+npm run log:replay -- <file>.jsonl --variant gemini    # stage 2 offline: gate → flash-lite classify + rewrite
 ```
+
+`live` scores the detector that wrote the log, so it is only a Realtime *baseline*
+for logs captured with `FLOWNOTE_DETECTOR=realtime`. To compare the two detectors,
+capture one session each way and score both against their own labels.
 
 Useful flags: `--threshold 0.6` (confidence cut for `gemini`), `--model`,
 `--context-turns 4`, `--no-gate` (LLM on every segment, to separate gate recall
@@ -85,3 +96,4 @@ what each candidate RAG floor would keep.
 | `FLOWNOTE_RAG_MIN_SIMILARITY` | 0.3 (placeholder) | the floor table |
 | `FLOWNOTE_DETECT_MIN_CONFIDENCE` | 0 (off) | confidence distribution vs labels |
 | `FLOWNOTE_DETECT_USER_CHANNEL` | 1 (on) | per-channel precision in `--variant live` |
+| `FLOWNOTE_DETECTOR` | `transcript` | set to `realtime` to capture a Realtime baseline session |

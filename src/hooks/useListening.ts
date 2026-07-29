@@ -50,7 +50,12 @@ export function useListening() {
       try {
         const res = await window.electronAPI.startListening()
         if (!res.success) { setError(res.error || t.common.loading); return }
-        await startMicCapture()
+        // The transcript-driven detector reads the transcription session's
+        // segments, so it needs no audio from here. Opening a mic capture for it
+        // would be a second getUserMedia on the same device, feeding an IPC
+        // channel that drops every chunk — which is exactly the redundancy that
+        // detector exists to remove.
+        if (res.mode !== 'transcript') await startMicCapture()
         setListening(true)
         opts?.onStarted?.()
       } catch (e: any) {

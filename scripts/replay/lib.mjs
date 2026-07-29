@@ -3,13 +3,17 @@ import fs from 'node:fs'
 /**
  * Shared helpers for the detection replay harness.
  *
- * The gate below is the candidate stage-1 filter for a transcript-driven
- * detector (AmiVoice segment → cheap regex → LLM classify). It is deliberately
- * recall-oriented: precision is stage 2's job. `npm run log:replay -- --variant gate`
- * measures exactly how recall-oriented it actually is on real sessions.
+ * The gate below is stage 1 of the transcript-driven detector (AmiVoice segment →
+ * cheap regex → LLM classify). It is deliberately recall-oriented: precision is
+ * stage 2's job. `npm run log:replay -- --variant gate` measures exactly how
+ * recall-oriented it actually is on real sessions.
+ *
+ * This is a MIRROR of `QUESTION_GATE` in `electron/audio/questionGate.ts`, which is
+ * what the app ships — scoring a different filter than production is worse than not
+ * scoring at all. `npm run test:transcript` fails if the two literals drift.
  */
 export const QUESTION_GATE =
-  /[?？]|(です|ます|でしょう|ました|ません)か[?？]?\s*$|(ください|下さい|いただけますか|もらえますか|願えますか)|(教えて|聞かせて|伺|いかが|どう(です|でしょう|way)?|どちら|どれ|どの|どこ|いつ|誰|だれ|なぜ|なんで|何|なに|いくら|どのくらい|どれくらい|どんな)/
+  /[?？]|(です|ます|でしょう|ました|ません)か(?!ら)|(ください|下さい|いただけますか|もらえますか|願えますか)|(教えて|聞かせて|伺|いかが|どう(です|でしょう)?|どちら|どれ|どの|どこ|いつ|誰|だれ|なぜ|なんで(?!す)|何|なに|いくら|どのくらい|どれくらい|どんな)/
 
 export function questionGate(text) {
   return QUESTION_GATE.test(text ?? '')

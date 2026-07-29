@@ -57,7 +57,10 @@ declare global {
             }) => Promise<{ x: number; y: number; width: number; height: number } | null>
             onOverlayLayoutChanged: (cb: (layout: OverlayLayout) => void) => () => void
             // ── Audio / question detection ────────────────────────────────────────────
-            startListening: () => Promise<{ success: boolean; error?: string }>
+            // `mode` says which detector started: 'transcript' needs no audio from
+            // the renderer (it reads the transcription session's segments), so the
+            // caller must not open a second mic capture for it.
+            startListening: () => Promise<{ success: boolean; error?: string; mode?: 'transcript' | 'realtime' }>
             stopListening: () => Promise<{ success: boolean; error?: string }>
             processMicChunk: (data: Float32Array) => void
             getQuestions: () => Promise<Question[]>
@@ -204,7 +207,12 @@ declare global {
         id: string
         text: string
         timestamp: number
-        source?: 'realtime'
+        /** Which detector found it — see electron/audio/question.ts. */
+        source?: 'realtime' | 'transcript'
+        channel?: 'user' | 'opponent'
+        detectLatencyMs?: number | null
+        confidence?: number | null
+        searchText?: string | null
     }
 
     interface MeetingAdvice {

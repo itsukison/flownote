@@ -148,13 +148,26 @@ export class ConversationContext {
    * The speculative call only fires for deictic/elliptical questions (a minority),
    * costs ~200 input tokens on a lite model, and is wasted only when the user
    * never asks for that answer.
+   *
+   * `detectorSearchText` is the escape from paying for it at all: the transcript
+   * detector classifies and resolves referents in one call, so when it supplies a
+   * query there is nothing left to rewrite. Passing the same string as the
+   * question means "self-contained" and is treated as no rewrite, which is what
+   * the answer path already expects from a null `resolve`.
    */
-  captureForQuestion(questionId: string, questionText: string): void {
+  captureForQuestion(questionId: string, questionText: string, detectorSearchText?: string | null): void {
     if (!questionId) return
     this.pruneQuestionContexts()
 
     const block = this.buildContextBlock()
-    const resolve = this.needsRewrite(questionText) ? this.resolveSearchQuery(questionText) : null
+    const supplied = (detectorSearchText ?? '').trim()
+    const preResolved = supplied && supplied !== questionText.trim() ? supplied : null
+
+    const resolve: Promise<ResolvedQuery> | null = preResolved
+      ? Promise.resolve({ searchText: preResolved, rewritten: true, latencyMs: 0, reason: 'detector' })
+      : this.needsRewrite(questionText)
+        ? this.resolveSearchQuery(questionText)
+        : null
     // Nothing awaits this until answer time; make sure a rejection can never
     // surface as an unhandled rejection in the main process.
     resolve?.catch(() => undefined)
@@ -164,7 +177,8 @@ export class ConversationContext {
       questionId,
       question: questionText,
       hasBlock: !!block,
-      speculativeRewrite: !!resolve,
+      speculativeRewrite: !!resolve && !preResolved,
+      detectorSearchText: preResolved,
     })
   }
 

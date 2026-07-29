@@ -30,7 +30,7 @@ export function registerHandlers(
   const amivoiceEngine = (process.env.AMIVOICE_ENGINE || '-a-general').trim()
   const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null
 
-  registerListeningHandlers(getOverlayWindow, getSupabaseFn, openaiApiKey)
+  registerListeningHandlers(getOverlayWindow, getSupabaseFn, openaiApiKey, genAI)
   registerResponseHandlers(getOverlayWindow, getSupabaseFn, geminiApiKey)
   registerPromptHandlers(getSupabaseFn)
   registerOnboardingHandlers(getOverlayWindow, getMainWindow, getSupabaseFn)

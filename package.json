@@ -17,7 +17,8 @@
     "app:build:mac": "npm run build && electron-builder --mac",
     "admin:dev": "cd admin && npm run dev",
     "test:detector": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/detector-filters.test.cjs",
-    "test": "npm run test:context && npm run test:detector"
+    "test:transcript": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/transcript-detector.test.cjs",
+    "test": "npm run test:context && npm run test:detector && npm run test:transcript"
   },
   "build": {
     "appId": "com.flownote.app",

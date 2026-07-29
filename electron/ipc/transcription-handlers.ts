@@ -10,6 +10,7 @@ import {
 import { DeepgramTranscriptionSession } from '../audio/DeepgramTranscriptionSession'
 import { AmiVoiceTranscriptionSession } from '../audio/AmiVoiceTranscriptionSession'
 import { sharedAudioRouter } from '../audio/SharedAudioRouter'
+import { getTranscriptQuestionDetector } from '../audio/TranscriptQuestionDetector'
 import { checkBudget } from '../services/usageLimiter'
 import { ensureBudget, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 import { generateSessionTitle, generateSummaryForTranscript } from './ai-handlers'
@@ -429,6 +430,12 @@ export function registerTranscriptionHandlers(
         })
         // Emit raw segment immediately — overlay shows text without any delay
         getOverlayWindow()?.webContents.send('transcript-segment', segment)
+
+        // Question detection, when the user has it on and the transcript-driven
+        // detector is the active one. Deliberately fed the *raw* segment, before
+        // any cleanup: detection latency is the whole point of this path, and the
+        // stage-2 call repairs recognition damage itself. Never throws.
+        getTranscriptQuestionDetector()?.onSegment(segment)
 
         // Fire-and-forget async LLM cleanup; non-fatal if it fails
         // Snapshot prior segments (excluding the one just pushed) for rolling context

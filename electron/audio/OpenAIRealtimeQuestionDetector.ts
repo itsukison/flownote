@@ -1,24 +1,13 @@
 import WebSocket from 'ws'
 import { v4 as uuidv4 } from 'uuid'
 import { buildQuestionDetectionPrompt } from './questionPrompt'
+import type { Question } from './question'
+import { DEDUP_WINDOW_MS, RecentQuestionDedup } from './questionDedup'
 
-export interface Question {
-  id: string
-  text: string
-  timestamp: number
-  source?: 'realtime'
-  /**
-   * Which audio channel produced it: 'opponent' = system audio (the counterpart),
-   * 'user' = the mic (the user's own voice, which is usually a false positive for
-   * "a question the user needs answered"). Carried so the log/harness can score
-   * precision per channel; nothing acts on it yet.
-   */
-  channel?: 'user' | 'opponent'
-  /** speech_stopped → emit, in ms. Null when VAD timing wasn't observed. */
-  detectLatencyMs?: number | null
-  /** Model's self-reported confidence, 0–1. Null when the model didn't supply one. */
-  confidence?: number | null
-}
+// The Question shape moved to ./question when the transcript detector started
+// emitting the same thing. Re-exported (type-only — a value re-export makes the
+// renderer bundle fail to resolve it) so existing importers don't care.
+export type { Question }
 
 /**
  * Minimum confidence to emit. Default 0 — the model now reports a confidence and
@@ -35,12 +24,6 @@ const MIN_CONFIDENCE = Number(process.env.FLOWNOTE_DETECT_MIN_CONFIDENCE ?? 0)
  * A/B it against the logs before changing the default for everyone.
  */
 const DETECT_USER_CHANNEL = process.env.FLOWNOTE_DETECT_USER_CHANNEL !== '0'
-
-/**
- * Cross-channel dedup window. Mic and system audio finalise independently, so the
- * same utterance arrives twice a few seconds apart.
- */
-const DEDUP_WINDOW_MS = 15_000
 
 // Tracks which text events have fired at least once, for first-occurrence logs
 const _seenEventTypes = new Set<string>()
@@ -82,7 +65,7 @@ export class OpenAIRealtimeQuestionDetector {
 
   private isListening = false
   private questions: Question[] = []
-  private recentEmits: { key: string; at: number }[] = []
+  private dedup = new RecentQuestionDedup(DEDUP_WINDOW_MS)
 
   private userRotationTimer: NodeJS.Timeout | null = null
   private opponentRotationTimer: NodeJS.Timeout | null = null
@@ -136,7 +119,7 @@ export class OpenAIRealtimeQuestionDetector {
       return
     }
     this.isListening = true
-    this.recentEmits = []
+    this.dedup.reset()
     console.log(
       `[OpenAIRealtimeDetector] Starting sessions (opponent${DETECT_USER_CHANNEL ? ' + user' : ', user channel DISABLED'})...`
     )
@@ -679,28 +662,9 @@ export class OpenAIRealtimeQuestionDetector {
     }
   }
 
-  /**
-   * The same utterance reaches both channels when the counterpart's voice comes
-   * out of the laptop speakers and back into the mic, and the two sockets
-   * finalise independently. Without this, one question becomes two cards and two
-   * paid answers (the renderer dedupes on question id, which is unique per emit).
-   */
+  /** See RecentQuestionDedup — shared with the transcript detector. */
   private isDuplicate(question: string): boolean {
-    const now = Date.now()
-    this.recentEmits = this.recentEmits.filter((e) => now - e.at < DEDUP_WINDOW_MS)
-
-    const key = question.replace(/[\s、。，．,.？?！!「」『』（）()]/g, '')
-    if (!key) return false
-
-    for (const prev of this.recentEmits) {
-      if (prev.key === key) return true
-      // One channel often catches a slightly clipped version of the other's text.
-      const [shorter, longer] = prev.key.length < key.length ? [prev.key, key] : [key, prev.key]
-      if (longer.includes(shorter) && shorter.length / longer.length >= 0.7) return true
-    }
-
-    this.recentEmits.push({ key, at: now })
-    return false
+    return this.dedup.isDuplicate(question)
   }
 
   private looksLikeQuestion(text: string): boolean {
