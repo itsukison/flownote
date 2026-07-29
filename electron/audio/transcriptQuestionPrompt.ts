@@ -25,7 +25,12 @@
 const SHARED_RULES = `出力は次のJSONのみ。説明・前置き・コードブロックは一切書かない。
 {"is_question": true/false, "addressed_to": "user"|"other"|"none", "confidence": <0.0〜1.0>, "question": "<質問文>", "search_text": "<検索用クエリ>"}
 
-confidence は「これは回答が必要な質問である」という確信度。迷ったら低い値にする。
+2つのフィールドは別の問いに答えます。混ぜないでください。
+- is_question … 発話が「誰かへの質問」であるか
+- addressed_to … その質問に「答えるべき人」は誰か。利用者本人が答えるべきなら "user"、
+  相手やその場の別の人が答えるべきなら（＝利用者自身が投げた質問なら）"other"、質問でなければ "none"
+
+confidence は is_question の確信度。迷ったら低い値にする。
 
 質問として検出するもの（is_question: true）：
 - 直接的な疑問文（「〜ですか？」「いくらですか？」「どのくらいかかりますか？」）
@@ -36,14 +41,9 @@ confidence は「これは回答が必要な質問である」という確信度
 質問として検出しないもの（これらは必ず is_question: false）：
 - 相槌・同意（「なるほどですね」「そうですか」「はい」「ですよね」「わかりました」）
 - 語尾が疑問形の確認・念押し（内容の確認をしているだけの場合）
-- 修辞疑問・独り言・自問（「どうしようかな」「なぜだろう」）
+- 修辞疑問・独り言（「どうしようかな」「なぜだろう」）
 - 話を続けるための前置き（質問本体がまだ来ていない場合）
 - 一般論・提案・説明の文
-
-addressed_to：
-- "user"  … 利用者が答えるべき質問
-- "other" … その場の別の人に向けた質問、または自問
-- "none"  … 質問ではない
 
 question / search_text（is_question が true のときだけ書く。false なら両方 ""）：
 - question: 【判定対象】から質問部分を取り出す。入力は音声認識テキストなので、明らかな認識誤り
@@ -57,13 +57,26 @@ question / search_text（is_question が true のときだけ書く。false な�
 
 const SPEAKER_NOTE: Record<'user' | 'opponent', string> = {
   // System audio: the counterpart. Their questions are the product's whole point.
-  opponent: `【判定対象】は商談・打ち合わせの「相手側」の発話です。相手がこちらに投げかけた質問を検出してください。`,
-  // Microphone: the app's own user. Most of what arrives here is the user
-  // answering, explaining, or thinking aloud — declarative speech that must not
-  // be read as a question. Only a genuine question put to the counterpart counts.
-  user: `【判定対象】は、このアプリの利用者本人（自分側）の発話です。
-利用者が相手に対して実際に投げかけた質問のみを検出してください。
-利用者自身の説明・回答・言い淀み・独り言は、語尾が疑問形に見えても is_question: false とします。`,
+  opponent: `【判定対象】は商談・打ち合わせの「相手側」の発話です。
+相手が利用者に投げかけた質問なら addressed_to: "user" です。`,
+  /**
+   * Microphone. Most of what arrives here is the user answering, explaining or
+   * thinking aloud — declarative speech that must not be read as a question. But
+   * two different things land on this channel and only `addressed_to` separates
+   * them, so the note describes both instead of narrowing `is_question`:
+   *   - the user asking the counterpart something → a question, but not one the
+   *     user needs answered → addressed_to "other"
+   *   - the counterpart's voice coming out of the laptop speakers and back into
+   *     the mic (no headphones) → a question the user must answer → "user"
+   * An earlier version of this note said "detect only questions the user put to
+   * the counterpart", which contradicted the shared rules and made the channel
+   * emit nothing at all.
+   */
+  user: `【判定対象】は、このアプリの利用者本人のマイク音声です。
+多くは利用者自身の説明・回答・言い淀みで、その場合は is_question: false です。
+利用者が相手に投げかけた質問は is_question: true、ただし答えるのは相手なので addressed_to: "other" とします。
+スピーカーから相手の声がマイクに回り込んでいる場合（相手の質問がこの音声に混じっている場合）は、
+相手が利用者に投げた質問として addressed_to: "user" とします。`,
 }
 
 export function buildTranscriptDetectionPrompt(

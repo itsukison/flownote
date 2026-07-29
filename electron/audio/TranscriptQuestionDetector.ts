@@ -32,11 +32,24 @@ import { logEvent } from '../services/detectionLog'
  * socket — when AmiVoice stalls or reconnects, detection stalls with it.
  */
 
-/** Same knob as the Realtime path: 0 = emit everything, log the distribution. */
-const MIN_CONFIDENCE = Number(process.env.FLOWNOTE_DETECT_MIN_CONFIDENCE ?? 0)
-
-/** Same knob as the Realtime path: the user's own mic as a detection channel. */
-const DETECT_USER_CHANNEL = process.env.FLOWNOTE_DETECT_USER_CHANNEL !== '0'
+// Env knobs are read per instance rather than at import so tests can set them.
+const readEnv = () => ({
+  /** Same knob as the Realtime path: 0 = emit everything, log the distribution. */
+  minConfidence: Number(process.env.FLOWNOTE_DETECT_MIN_CONFIDENCE ?? 0),
+  /** Same knob as the Realtime path: the user's own mic as a detection channel. */
+  detectUserChannel: process.env.FLOWNOTE_DETECT_USER_CHANNEL !== '0',
+  /**
+   * Also surface questions the *user* asked (`addressed_to: "other"`), which by
+   * definition they do not need an answer to. Off by default because they are
+   * noise on a card list that means "things to answer".
+   *
+   * Turn it on to test detection solo: with no counterpart audio, every question
+   * on the mic channel is one the user asked, so a correct detector shows nothing
+   * — which is indistinguishable from a broken one. This is also roughly what the
+   * Realtime detector used to do on the mic channel.
+   */
+  detectSelfQuestions: process.env.FLOWNOTE_DETECT_SELF_QUESTIONS === '1',
+})
 
 /** Lite tier — this is on the latency path, and the judgement is a small one. */
 const MODEL = 'gemini-3.1-flash-lite'
@@ -124,6 +137,7 @@ export class TranscriptQuestionDetector {
   private emitDedup = new RecentQuestionDedup()
   /** Dedup of classifier *inputs*, so a joined candidate isn't paid for twice. */
   private inputDedup = new RecentQuestionDedup(JOIN_WINDOW_MS * 2)
+  private readonly env = readEnv()
 
   constructor(
     private genAI: GoogleGenerativeAI,
@@ -144,7 +158,8 @@ export class TranscriptQuestionDetector {
     this.emitDedup.reset()
     this.inputDedup.reset()
     console.log(
-      `[TranscriptDetector] started (model: ${MODEL}, user channel ${DETECT_USER_CHANNEL ? 'on' : 'OFF'})`
+      `[TranscriptDetector] started (model: ${MODEL}, user channel ${this.env.detectUserChannel ? 'on' : 'OFF'}` +
+        `${this.env.detectSelfQuestions ? ', self-questions ON' : ''})`
     )
   }
 
@@ -177,7 +192,7 @@ export class TranscriptQuestionDetector {
     if (this.recent.length > RECENT_SEGMENTS) this.recent.shift()
 
     const channel: 'user' | 'opponent' = segment.speaker === 'You' ? 'user' : 'opponent'
-    if (channel === 'user' && !DETECT_USER_CHANNEL) return
+    if (channel === 'user' && !this.env.detectUserChannel) return
 
     const target = segment.text.trim()
     if (!target || target.length > MAX_TARGET_CHARS) return
@@ -250,15 +265,21 @@ export class TranscriptQuestionDetector {
         return
       }
 
-      // 'other' = asked of someone else, or the speaker asking themselves. Both
-      // are questions the user does not have to answer.
-      const accepted = decision.isQuestion && decision.addressedTo !== 'other'
+      // 'other' means someone other than the user should answer — usually the
+      // user's own question to the counterpart. Dropped unless self-questions are
+      // explicitly enabled (see readEnv).
+      const answerable = decision.addressedTo !== 'other' || this.env.detectSelfQuestions
+      const accepted = decision.isQuestion && answerable
       logEvent('classify', {
         channel,
         segmentId: segment.id,
         text: target,
         via,
         decision: accepted ? 'question' : 'not_question',
+        // Logged separately because they fail for different reasons and only the
+        // pair tells them apart: a statement (isQuestion false) versus a real
+        // question the user doesn't have to answer (addressedTo 'other').
+        isQuestion: decision.isQuestion,
         addressedTo: decision.addressedTo,
         confidence: decision.confidence,
         question: decision.question,
@@ -305,8 +326,8 @@ export class TranscriptQuestionDetector {
       console.log(`[TranscriptDetector] ${channel} — rejected, repaired text no longer looks like a question: "${question.slice(0, 60)}"`)
       return
     }
-    if (decision.confidence !== null && decision.confidence < MIN_CONFIDENCE) {
-      console.log(`[TranscriptDetector] ${channel} — below confidence floor (${decision.confidence} < ${MIN_CONFIDENCE}): "${question.slice(0, 60)}"`)
+    if (decision.confidence !== null && decision.confidence < this.env.minConfidence) {
+      console.log(`[TranscriptDetector] ${channel} — below confidence floor (${decision.confidence} < ${this.env.minConfidence}): "${question.slice(0, 60)}"`)
       return
     }
     if (this.emitDedup.isDuplicate(question)) {

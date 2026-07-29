@@ -127,7 +127,16 @@ Key facts an agent must know:
 Env keys (`.env`): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AMIVOICE_APP_KEY`, `DEEPGRAM_API_KEY`,
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SLACK_CLIENT_ID`, plus optional `AMIVOICE_ENGINE`,
 `FLOWNOTE_DETECTOR` (`transcript` default | `realtime`), `FLOWNOTE_DETECT_MIN_CONFIDENCE`,
-`FLOWNOTE_DETECT_USER_CHANNEL`, `FLOWNOTE_RAG_MIN_SIMILARITY`, `FLOWNOTE_DETECTION_LOG`.
+`FLOWNOTE_DETECT_USER_CHANNEL`, `FLOWNOTE_DETECT_SELF_QUESTIONS`, `FLOWNOTE_RAG_MIN_SIMILARITY`,
+`FLOWNOTE_DETECTION_LOG`.
+
+> **Testing detection alone at your desk:** with no counterpart, every question on the
+> mic channel is one *you* asked, and those are deliberately not cards ("things to
+> answer"). A correct detector shows nothing, which looks identical to a broken one.
+> Set `FLOWNOTE_DETECT_SELF_QUESTIONS=1` to surface them, or drive the real path by
+> playing a recorded call through the speakers so it arrives as system audio.
+> `<userData>/detection-logs/` settles it either way: `gate` says whether the segment
+> reached stage 2, `classify` says what stage 2 decided and why.
 
 > ⚠️ `agent/architecture.md` / `productPRD.md` still say the detector is Gemini-Live and the
 > answer model is "Gemini 2.0 Flash" — both are stale. Trust the table above.

@@ -134,6 +134,19 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
   const userPrompt = buildTranscriptDetectionPrompt('user', '', '御社の実績はどうですか？')
   assert('user prompt frames the app user', userPrompt.includes('利用者本人'))
   assert('empty context is explicit, not blank', userPrompt.includes('（なし）'))
+  // The regression that made the mic channel silent: the note must not narrow
+  // is_question to "questions the user asked" — that job belongs to addressed_to.
+  assert(
+    'mic prompt routes the user\'s own question via addressed_to, not is_question',
+    userPrompt.includes('addressed_to: "other"') && userPrompt.includes('is_question: true'),
+    'both cases on this channel must be reachable'
+  )
+  assert('mic prompt covers speaker bleed', userPrompt.includes('回り込'))
+  assert(
+    'the two fields are defined as different questions',
+    userPrompt.includes('混ぜないでください'),
+    'the contradiction between them is what silenced the channel'
+  )
 
   // ── the whole path, with the model stubbed out ────────────────────────────
   // Everything above is a unit. This drives the real onSegment → gate → classify
@@ -225,6 +238,44 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
     await settle()
     assert('end-to-end: rejected judgement emits nothing', emitted.length === 0, `got ${emitted.length}`)
     assert('end-to-end: both calls were made', model.prompts.length === 2)
+  }
+
+  {
+    // The mic channel's two cases, which only addressed_to separates. A question
+    // the user asked is dropped; the counterpart's question bleeding through the
+    // speakers into the mic is kept. Getting this wrong once already made the
+    // whole channel silent — the prompt told the model to judge "did the user ask
+    // this", while the acceptance rule wanted "must the user answer this".
+    const model = stub([
+      '{"is_question": true, "addressed_to": "other", "confidence": 0.9, "question": "ご予算はどれくらいですか？", "search_text": "予算"}',
+      '{"is_question": true, "addressed_to": "user", "confidence": 0.9, "question": "御社の導入実績はどれくらいですか？", "search_text": "導入実績"}',
+    ])
+    const emitted = []
+    const d = new TranscriptQuestionDetector(model, { onQuestion: (q) => emitted.push(q) })
+    d.start()
+    d.onSegment(seg('ご予算はどれくらいですか。', 'You'))
+    await settle()
+    assert('mic: a question the user asked is not a card', emitted.length === 0, `got ${emitted.length}`)
+    d.onSegment(seg('御社の導入実績はどれくらいですか。', 'You'))
+    await settle()
+    assert('mic: a counterpart question bleeding into the mic is a card', emitted.length === 1, `got ${emitted.length}`)
+    assert('mic: the bled-through card is tagged to the user channel', emitted[0] && emitted[0].channel === 'user')
+  }
+
+  {
+    // FLOWNOTE_DETECT_SELF_QUESTIONS=1 — what makes solo testing possible, since
+    // with no counterpart every mic question is one the user asked.
+    process.env.FLOWNOTE_DETECT_SELF_QUESTIONS = '1'
+    const model = stub([
+      '{"is_question": true, "addressed_to": "other", "confidence": 0.9, "question": "ご予算はどれくらいですか？", "search_text": "予算"}',
+    ])
+    const emitted = []
+    const d = new TranscriptQuestionDetector(model, { onQuestion: (q) => emitted.push(q) })
+    d.start()
+    d.onSegment(seg('ご予算はどれくらいですか。', 'You'))
+    await settle()
+    delete process.env.FLOWNOTE_DETECT_SELF_QUESTIONS
+    assert('self-questions switch surfaces the user\'s own question', emitted.length === 1, `got ${emitted.length}`)
   }
 
   {
