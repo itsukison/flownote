@@ -125,5 +125,8 @@ export const en = {
     advice: 'AI Advice',
     adviceDismiss: 'Dismiss',
     generateAnswer: 'Generate answer support',
+    sources: 'Sources',
+    sourcesMore: '+{n} more',
+    openSource: 'Open source',
   },
 }

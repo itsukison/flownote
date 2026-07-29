@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { searchSimilar } from '../services/rag'
-import { searchMcpSource } from '../services/mcpClient'
+import { searchSimilar, type SearchResult } from '../services/rag'
+import { searchMcpSource, type McpSearchResult } from '../services/mcpClient'
 import { getConversationContext } from '../services/conversationContext'
 import { logEvent } from '../services/detectionLog'
 import { ensureBudget, trackTypedTokenUsage, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
@@ -18,6 +18,21 @@ const SCRIPT_MODEL = 'gemini-2.5-flash-lite'
 const SUPPORT_MODEL = 'gemini-3.1-flash-lite'
 
 export type ResponseMode = 'script' | 'support'
+
+/**
+ * Where the answer's context came from. Sent to the overlay with `response-done`
+ * so the answer card can show a source line. 'document' entries deep-link into
+ * the main window's documents page; MCP entries open the exact result URL when
+ * the server returned one, otherwise the configured knowledge-source URL.
+ */
+export type AnswerSource =
+  | { kind: 'document'; documentId: string; collectionId: string; name: string }
+  | { kind: 'mcp'; name: string; url: string }
+
+type RetrievalResult =
+  | ({ kind: 'document' } & SearchResult)
+  | ({ kind: 'mcp' } & McpSearchResult)
+  | { kind: 'none'; chunks: string[]; tokensUsed: number }
 
 // Hardcoded default prompts — always available, no DB dependency
 const HARDCODED_BASE_PROMPT = `ビジネス会話をリアルタイムでサポートするAIアシスタントです。
@@ -51,20 +66,33 @@ const HARDCODED_RAG_PROMPT = `ビジネス会話をリアルタイムでサポ�
 質問: {{question}}`
 
 // Support mode: material for the user to build their own answer from, not a
-// script to read. Bullet points, facts and numbers first.
+// script to read. Fact-first bullet points — every bullet must carry something
+// concrete (a number, a name, a condition), never a vague paraphrase.
 const HARDCODED_SUPPORT_PROMPT = `会話中に相手から質問が来ました。ユーザーが自分の言葉で回答を組み立てるための支援メモを作成してください。
 
-【ルール】
-- 読み上げ原稿ではなく、回答の材料となる箇条書き（3〜5点）を出力する
-- 各項目は簡潔に（40字程度まで）。事実・数字・具体例を優先する
-- 参考資料がある場合はその要点を最優先で使う（出典表記は不要）
-- 前置き・挨拶・締めの文は書かない。箇条書きのみ出力する
-- 必ずMarkdownの箇条書き形式で出力する：各行を「- 」で始め、1項目ごとに改行する。「・」は使わない
+【出力形式】
+- Markdownの箇条書きのみ出力する。各行は「- 」で始める。「・」・見出し・太字は使わない
+- 5〜7項目。各項目は60字以内
+- 前置き・挨拶・締めの文は書かない
 
-【出力形式の例】
-- 導入実績は120社、継続率は95%
-- 初期費用は無料、月額は3万円から
-- 導入期間は平均2週間
+【構成】
+- 1項目目: 「結論:」に続けて、質問への直接的な答えを一文で
+- 中間の項目: 【参考資料】から拾った具体情報。数値・固有名詞・日付・条件は資料の表現のまま使い、曖昧に言い換えない
+- 最後の項目（任意）: 注意点、または会話を前に進める一言（例: 相手に確認すると良い点）
+
+【ルール】
+- 【参考資料】に具体情報がある場合、各項目に必ず1つ以上の具体的事実（数字・固有名詞・日付・条件）を含める。含められない項目は書かない
+- 「詳しくは資料を確認」のような中身のない項目は禁止
+- 「その店舗」「この案件」などの指示語は【会話の文脈】から具体名に置き換えて書く
+- 【参考資料】に質問の答えがない場合: 1項目目を「- 資料に直接の記載なし」とし、残りは一般論と分かる書き方にする。資料にあるように見せかけて数字や事実を作らない
+- 出典表記（「資料によると」等）は不要
+
+【出力例】質問「導入実績と費用感は？」（【参考資料】あり）
+- 結論: 導入実績120社・継続率95%、費用は初期無料・月額3万円から
+- 製造業が最多の42社、次いで小売28社
+- 月額は従量制で100時間まで3万円、超過分は1時間300円
+- 導入期間は平均2週間。契約は1年単位の自動更新
+- 補助金の対象かどうかは相手の業種を確認すると良い
 
 {{context}}
 質問: {{question}}`
@@ -187,14 +215,17 @@ export function registerResponseHandlers(
         return r.searchText
       }
 
-      const emptyResult = { chunks: [] as string[], tokensUsed: 0 }
+      const emptyResult: RetrievalResult = { kind: 'none', chunks: [], tokensUsed: 0 }
 
       const [budgetCheck, { basePrompt, ragPrompt }, ragResult] = await Promise.all([
         ensureBudget(getSupabase),
         getSelectedPrompts(getSupabase),
         mcpSourceId
           ? resolveQuery()
-              .then((q) => getCurrentUserId(getSupabase).then((userId) => searchMcpSource(userId, mcpSourceId, q)))
+              .then((q) => getCurrentUserId(getSupabase).then(async (userId): Promise<RetrievalResult> => ({
+                kind: 'mcp',
+                ...await searchMcpSource(userId, mcpSourceId, q),
+              })))
               .catch((e) => {
                 console.warn('[Handlers] MCP search failed, proceeding without context:', e)
                 return emptyResult
@@ -202,7 +233,7 @@ export function registerResponseHandlers(
           : (collectionId && supabase)
             ? resolveQuery()
                 .then((q) =>
-                  searchSimilar(supabase, q, collectionId).then((r) => {
+                  searchSimilar(supabase, q, collectionId).then((r): RetrievalResult => {
                     logEvent('retrieval', {
                       questionId: qId,
                       searchText: q,
@@ -211,7 +242,7 @@ export function registerResponseHandlers(
                       dropped: r.droppedCount,
                       similarities: r.allSimilarities,
                     })
-                    return r
+                    return { kind: 'document', ...r }
                   })
                 )
                 .catch((e) => {
@@ -226,9 +257,24 @@ export function registerResponseHandlers(
         return { success: false, error: budgetCheck.error || 'limit_exceeded' }
       }
 
+      // Sources for the answer footer. Only include sources whose content was
+      // actually injected into this answer.
+      const sources: AnswerSource[] = []
+      if (ragResult.chunks.length > 0) {
+        if (ragResult.kind === 'mcp') {
+          for (const s of ragResult.sources) sources.push({ kind: 'mcp', name: s.name, url: s.url })
+        } else if (ragResult.kind === 'document') {
+          for (const s of ragResult.sources) {
+            sources.push({ kind: 'document', documentId: s.documentId, collectionId: collectionId!, name: s.name })
+          }
+        }
+      }
+
+      // Label chunks so the model treats them as distinct sources instead of
+      // blending them into one undifferentiated blob.
       let contextBlock = ''
       if (ragResult.chunks.length > 0) {
-        contextBlock = ragResult.chunks.join('\n\n') + '\n\n'
+        contextBlock = ragResult.chunks.map((c, i) => `【資料${i + 1}】\n${c}`).join('\n\n') + '\n\n'
       }
       if (ragResult.tokensUsed > 0) trackTypedTokenUsage(getSupabase, ragResult.tokensUsed, 'embedding_tokens')
 
@@ -272,7 +318,7 @@ export function registerResponseHandlers(
 
       const model = genAI.getGenerativeModel({
         model: mode === 'support' ? SUPPORT_MODEL : SCRIPT_MODEL,
-        generationConfig: { temperature: 0.7, maxOutputTokens: mode === 'support' ? 600 : 1300 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: mode === 'support' ? 1000 : 1300 },
       })
 
       const result = await model.generateContentStream(prompt)
@@ -298,6 +344,7 @@ export function registerResponseHandlers(
         question,
         answer: answerText,
         hadDocumentContext: ragResult.chunks.length > 0,
+        sourceCount: sources.length,
         hadConversationContext: !!conversationBlock,
         usedSnapshot: !!snapshot,
         snapshotAgeMs: snapshot ? startedAt - snapshot.at : null,
@@ -313,7 +360,7 @@ export function registerResponseHandlers(
         }
       }
 
-      win.webContents.send('response-done', { questionId: qId })
+      win.webContents.send('response-done', { questionId: qId, sources })
       return { success: true }
     } catch (err: any) {
       console.error('[Handlers] generate-response error:', err)

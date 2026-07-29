@@ -185,6 +185,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('doc:search', query, collectionId),
   getDocumentFileUrl: (filePath: string, fileEtag?: string) =>
     ipcRenderer.invoke('doc:get-file-url', filePath, fileEtag),
+  // Overlay → jump to the source document of an answer (opens in main window)
+  openSourceDocument: (payload: { documentId: string; collectionId: string }) =>
+    ipcRenderer.invoke('doc:open-source', payload),
+  // Main window side: fired when the overlay asks to open a source document
+  onOpenDocument: (cb: (payload: { documentId: string; collectionId: string }) => void) => {
+    const fn = (_: any, payload: any) => cb(payload)
+    ipcRenderer.on('main-window:open-document', fn)
+    return () => ipcRenderer.removeListener('main-window:open-document', fn)
+  },
 
   // ── MCP Knowledge Sources ─────────────────────────────────────────────────
   mcpListSources: () => ipcRenderer.invoke('mcp:list-sources'),

@@ -181,14 +181,16 @@ export function useDocuments(options: UseDocumentsOptions = {}) {
     }
   }
 
-  const loadDocuments = async (colId: string) => {
+  const loadDocuments = async (colId: string): Promise<Doc[]> => {
     const requestId = ++documentsRequestIdRef.current
     try {
-      const docs = await window.electronAPI.listDocuments(colId)
-      if (documentsRequestIdRef.current === requestId) setDocuments(docs)
+      const loadedDocuments = await window.electronAPI.listDocuments(colId)
+      if (documentsRequestIdRef.current === requestId) setDocuments(loadedDocuments)
+      return loadedDocuments
     } catch (err: any) {
       console.error(err)
       toast.error(t.documents.failedToLoadDocuments)
+      return []
     } finally {
       if (documentsRequestIdRef.current === requestId) setDocumentsLoading(false)
     }

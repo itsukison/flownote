@@ -39,7 +39,7 @@ export default function OverlayApp() {
     const { error: listenError, toggleListening, forceStop: forceStopListening } = useListening()
     const { advice, dismissAdvice } = useAdvice()
     const overlay = useOverlayMode()
-    const { questions, answers, generateAnswer, clearAll } = useResponseStream({
+    const { questions, answers, answerSources, generateAnswer, clearAll } = useResponseStream({
         // While the detection toggle is on, detected questions are answered
         // automatically with supporting bullet points — no click required.
         autoAnswer: questionDetectionOn,
@@ -317,9 +317,17 @@ export default function OverlayApp() {
 
             questions={questions}
             answers={answers}
+            answerSources={answerSources}
             questionIndex={questionIndex}
             onQuestionIndex={setQuestionIndex}
             onGenerateAnswer={(q) => generateAnswer(q, selectedCollectionId)}
+            onOpenSource={(s) => {
+                if (s.kind === 'document') {
+                    window.electronAPI?.openSourceDocument({ documentId: s.documentId, collectionId: s.collectionId })
+                } else {
+                    window.electronAPI?.openExternal(s.url)
+                }
+            }}
             onClearQuestions={clearAll}
             unseenCount={newQuestionCount}
 

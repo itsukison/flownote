@@ -74,9 +74,13 @@ export type NotchOverlayProps = {
 
   questions: Question[]
   answers: Record<string, Answer>
+  /** Retrieval sources per question id — shown as a quiet footer under done answers. */
+  answerSources: Record<string, AnswerSource[]>
   questionIndex: number
   onQuestionIndex: (i: number) => void
   onGenerateAnswer: (q: Question) => void
+  /** Open a source document in the main window or an MCP result in the browser. */
+  onOpenSource: (s: AnswerSource) => void
   onClearQuestions: () => void
   unseenCount: number
 
@@ -178,6 +182,57 @@ function DotRail({ count, index, onIndex }: { count: number; index: number; onIn
         />
       ))}
     </div>
+  )
+}
+
+/**
+ * Where an answer came from. Quiet by design: one line below the answer, never
+ * inside it, so confirming the source costs a glance and reading the answer
+ * costs nothing extra. Every displayed source name is actionable.
+ */
+function SourceLine({
+  sources,
+  onOpen,
+  compact = false,
+}: {
+  sources: AnswerSource[] | undefined
+  onOpen: (s: AnswerSource) => void
+  /** Single clamped line for the space-tight card; the panel wraps instead. */
+  compact?: boolean
+}) {
+  if (!sources || sources.length === 0) return null
+  if (compact) {
+    const first = sources[0]
+    return (
+      <p className="mt-1 fn-t-quiet" style={clamp(1)}>
+        {t.overlay.sources}:{' '}
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpen(first) }}
+          title={t.overlay.openSource}
+          className="underline decoration-white/20 underline-offset-2 hover:text-fog transition-colors cursor-pointer"
+        >
+          {first.name}
+        </button>
+        {sources.length > 1 && ` ${t.overlay.sourcesMore.replace('{n}', String(sources.length - 1))}`}
+      </p>
+    )
+  }
+  return (
+    <p className="mt-2.5 fn-t-quiet">
+      {t.overlay.sources}:{' '}
+      {sources.map((s, i) => (
+        <span key={`${s.kind}-${i}`}>
+          {i > 0 && '、'}
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpen(s) }}
+            title={t.overlay.openSource}
+            className="underline decoration-white/20 underline-offset-2 hover:text-fog transition-colors cursor-pointer"
+          >
+            {s.name}
+          </button>
+        </span>
+      ))}
+    </p>
   )
 }
 
@@ -668,7 +723,12 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                     gets body text, not a caption. */}
                 <div className="mt-1.5 fn-t-body">
                   {latestAnswer?.text ? (
-                    <p style={clamp(3)}>{latestAnswer.text}</p>
+                    <>
+                      <p style={clamp(3)}>{latestAnswer.text}</p>
+                      {latestAnswer.status === 'done' && (
+                        <SourceLine sources={p.answerSources[latest.id]} onOpen={p.onOpenSource} compact />
+                      )}
+                    </>
                   ) : latestAnswer?.status === 'streaming' ? (
                     <Thinking />
                   ) : (
@@ -910,7 +970,12 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                         space says so more quietly than a hairline would. */}
                     <div className="mt-3.5 fn-t-body fn-notch-prose">
                       {answer?.text ? (
-                        <MarkdownRenderer content={answer.text} />
+                        <>
+                          <MarkdownRenderer content={answer.text} />
+                          {answer.status === 'done' && (
+                            <SourceLine sources={p.answerSources[question.id]} onOpen={p.onOpenSource} />
+                          )}
+                        </>
                       ) : answer?.status === 'streaming' ? (
                         <Thinking />
                       ) : (

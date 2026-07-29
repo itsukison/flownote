@@ -20,6 +20,14 @@ declare global {
     type OverlayPresentation = 'notch' | 'classic'
     type OverlayMode = 'collapsed' | 'card' | 'expanded'
 
+    /**
+     * Where an answer's context came from. Documents open in the main window;
+     * MCP results open in the system browser.
+     */
+    type AnswerSource =
+        | { kind: 'document'; documentId: string; collectionId: string; name: string }
+        | { kind: 'mcp'; name: string; url: string }
+
     interface OverlayLayout {
         /** true only on built-in displays with a physical camera cutout */
         hasNotch: boolean
@@ -70,7 +78,7 @@ declare global {
             onSystemAudioResumed: (cb: () => void) => () => void
             onQuestionDetected: (cb: (q: Question) => void) => () => void
             onResponseChunk: (cb: (data: { questionId: string | null; text: string }) => void) => () => void
-            onResponseDone: (cb: (data: { questionId: string | null }) => void) => () => void
+            onResponseDone: (cb: (data: { questionId: string | null; sources?: AnswerSource[] }) => void) => () => void
             onAdviceReceived: (cb: (advice: MeetingAdvice) => void) => () => void
             // ── Transcription ──────────────────────────────────────────────────────
             startTranscription: () => Promise<{ success: boolean; error?: string; transcriptId?: string }>
@@ -115,6 +123,8 @@ declare global {
             updateTextDocument: (id: string, text: string, expectedUpdatedAt?: string) => Promise<{ success: boolean; error?: string; updatedAt?: string; serverContent?: string; serverUpdatedAt?: string; serverName?: string }>
             searchDocuments: (query: string, collectionId: string) => Promise<string[]>
             getDocumentFileUrl: (filePath: string, fileEtag?: string) => Promise<{ success: boolean; error?: string; url?: string }>
+            openSourceDocument: (payload: { documentId: string; collectionId: string }) => Promise<{ success: boolean; error?: string }>
+            onOpenDocument: (cb: (payload: { documentId: string; collectionId: string }) => void) => () => void
             // ── MCP Knowledge Sources ─────────────────────────────────────────────────
             mcpListSources: () => Promise<McpSource[]>
             mcpAddSource: (payload: { name: string; url: string; token?: string }) => Promise<{ success: boolean; source?: McpSource; tools?: McpTool[]; error?: string }>

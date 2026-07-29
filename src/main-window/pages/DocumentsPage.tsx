@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import {
   Plus,
   Upload,
@@ -93,13 +94,69 @@ export default function DocumentsPage({
   loading: externalLoading,
   onRefresh,
   isOrgMember,
+  sourceTarget,
+  onSourceTargetHandled,
 }: {
   collections?: Collection[]
   loading?: boolean
   onRefresh?: () => void
   isOrgMember?: boolean
+  sourceTarget?: { documentId: string; collectionId: string } | null
+  onSourceTargetHandled?: () => void
 }) {
   const docs = useDocuments({ initialCollections, externalLoading, onRefresh })
+  const [highlightedDocumentId, setHighlightedDocumentId] = useState<string | null>(null)
+  const openingSourceRef = useRef<string | null>(null)
+
+  // A source click originates in the overlay window. Once MainApp navigates here,
+  // reveal the referenced folder and open every format this page can preview or
+  // edit. Other formats stay highlighted so the user still lands on the file.
+  useEffect(() => {
+    if (!sourceTarget) {
+      openingSourceRef.current = null
+      return
+    }
+    if (docs.loading) return
+    const key = `${sourceTarget.collectionId}:${sourceTarget.documentId}`
+    if (openingSourceRef.current === key) return
+
+    const collection = docs.collections.find((item) => item.id === sourceTarget.collectionId)
+    if (!collection) {
+      openingSourceRef.current = key
+      toast.error(t.documents.failedToOpenDocument)
+      onSourceTargetHandled?.()
+      return
+    }
+
+    openingSourceRef.current = key
+    void (async () => {
+      docs.setSearchQuery('')
+      docs.setSelectedCol(collection)
+      const loadedDocuments = await docs.loadDocuments(collection.id)
+      const sourceDocument = loadedDocuments.find((item) => item.id === sourceTarget.documentId)
+      if (!sourceDocument) {
+        toast.error(t.documents.failedToOpenDocument)
+        onSourceTargetHandled?.()
+        return
+      }
+
+      setHighlightedDocumentId(sourceDocument.id)
+      requestAnimationFrame(() => {
+        document.getElementById(`document-${sourceDocument.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+
+      const ext = sourceDocument.name.split('.').pop()?.toLowerCase() || ''
+      const isImage = (sourceDocument.file_type?.startsWith('image/') ?? false) ||
+        ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)
+      const isPdf = sourceDocument.file_type === 'application/pdf' || ext === 'pdf'
+      if (isPdf || isImage) {
+        docs.setPreviewDoc(sourceDocument)
+      } else if (ext === 'txt' || ext === 'md') {
+        await docs.openDocumentForEditing(sourceDocument)
+      }
+      onSourceTargetHandled?.()
+    })()
+  }, [sourceTarget, docs.loading, docs.collections]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleVisibilityChange = async (itemId: string, visibility: VisibilityLevel) => {
     const result = await window.electronAPI?.setVisibility('collections', itemId, visibility)
@@ -243,6 +300,7 @@ export default function DocumentsPage({
                   onEditingNameChange={docs.setEditingName}
                   onCommitEdit={() => docs.commitInlineEdit('document')}
                   onCancelEdit={docs.cancelInlineEdit}
+                  highlightedDocumentId={highlightedDocumentId}
                 />
               )}
             </div>

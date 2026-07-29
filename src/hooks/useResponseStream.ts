@@ -26,6 +26,7 @@ export function useResponseStream(options?: {
 }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({})
+  const [sources, setSources] = useState<Record<string, AnswerSource[]>>({})
   const [generating, setGenerating] = useState(false)
 
   const optionsRef = useRef(options)
@@ -127,10 +128,13 @@ export function useResponseStream(options?: {
         })
       }
     })
-    const offDone = window.electronAPI.onResponseDone(({ questionId }) => {
+    const offDone = window.electronAPI.onResponseDone(({ questionId, sources }) => {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       flushBuffers()
       const id = questionId ?? activeRef.current
+      if (id && sources?.length) {
+        setSources((prev) => ({ ...prev, [id]: sources }))
+      }
       if (id) finalize(id)
     })
     return () => {
@@ -147,6 +151,7 @@ export function useResponseStream(options?: {
   const clearAll = useCallback(() => {
     setQuestions([])
     setAnswers({})
+    setSources({})
     questionTextRef.current.clear()
     buffersRef.current.clear()
     finalizedRef.current.clear()
@@ -159,6 +164,7 @@ export function useResponseStream(options?: {
   return {
     questions,
     answers,
+    answerSources: sources,
     generating,
     generateAnswer,
     clearAll,

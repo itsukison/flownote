@@ -195,6 +195,9 @@ export const ja = {
     advice: 'AIアドバイス',
     adviceDismiss: '閉じる',
     generateAnswer: '回答サポートを生成',
+    sources: '出典',
+    sourcesMore: 'ほか{n}件',
+    openSource: '資料を開く',
     notch: {
       idle: '待機中',
       listening: '録音中',

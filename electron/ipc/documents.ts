@@ -38,7 +38,7 @@ async function ensureDocBudget(getSupabase: () => SupabaseClient | null): Promis
 }
 
 export function registerDocumentHandlers(
-    _getMainWindow: GetWindowFn,
+    getMainWindow: GetWindowFn,
     getOverlayWindow: GetWindowFn,
     getSupabase: () => SupabaseClient | null
 ) {
@@ -427,6 +427,24 @@ export function registerDocumentHandlers(
             console.error('[RAG] doc:update-text-document error:', err)
             return { success: false, error: err.message }
         }
+    })
+
+    // ── Jump-to-source (overlay answer footer) ────────────────────────────────
+    // Shows the main window and asks it to open the given document; the
+    // renderer (MainApp → DocumentsPage) owns navigation and the preview modal.
+    ipcMain.handle('doc:open-source', (_event, payload: { documentId: string; collectionId: string }) => {
+        const win = getMainWindow()
+        if (!win || !payload?.documentId || !payload?.collectionId) {
+            return { success: false, error: 'no_window' }
+        }
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+        win.webContents.send('main-window:open-document', {
+            documentId: payload.documentId,
+            collectionId: payload.collectionId,
+        })
+        return { success: true }
     })
 
     // ── Search (used by overlay AI response) ──────────────────────────────────

@@ -144,6 +144,7 @@ export default function MainApp() {
     const [activationChecked, setActivationChecked] = useState(false)
     const [user, setUser] = useState<any>(null)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
+    const [sourceDocumentTarget, setSourceDocumentTarget] = useState<{ documentId: string; collectionId: string } | null>(null)
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         try { return localStorage.getItem('sidebarCollapsed') === 'true' } catch { return false }
     })
@@ -190,6 +191,13 @@ export default function MainApp() {
             window.removeEventListener('keydown', handleKeyDown)
         }
     }, [])
+
+    useEffect(() => {
+        return window.electronAPI?.onOpenDocument((payload) => {
+            setSourceDocumentTarget(payload)
+            navigate('/documents')
+        })
+    }, [navigate])
 
     const loadCollections = async () => {
         try {
@@ -351,7 +359,16 @@ export default function MainApp() {
                                     <main className="flex-1 overflow-auto">
                                         <Routes>
                                             <Route path="/" element={<Navigate to="/documents" replace />} />
-                                            <Route path="/documents" element={<DocumentsPage collections={collections} loading={collectionsLoading} onRefresh={refreshCollections} isOrgMember={isOrgMember} />} />
+                                            <Route path="/documents" element={(
+                                                <DocumentsPage
+                                                    collections={collections}
+                                                    loading={collectionsLoading}
+                                                    onRefresh={refreshCollections}
+                                                    isOrgMember={isOrgMember}
+                                                    sourceTarget={sourceDocumentTarget}
+                                                    onSourceTargetHandled={() => setSourceDocumentTarget(null)}
+                                                />
+                                            )} />
                                             <Route path="/prompts" element={<PromptsPage prompts={prompts} loading={promptsLoading} selectedIds={promptsSelectedIds} onRefresh={refreshPrompts} isOrgMember={isOrgMember} />} />
                                             <Route path="/history" element={<HistoryPage />} />
                                             <Route path="/workflow/*" element={<WorkflowPage isOrgMember={isOrgMember} />} />

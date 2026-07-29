@@ -145,6 +145,13 @@ export async function storeDocument(
  */
 export const DEFAULT_MIN_SIMILARITY = Number(process.env.FLOWNOTE_RAG_MIN_SIMILARITY ?? 0.3)
 
+export interface SourceDocument {
+    documentId: string
+    name: string
+    /** Best (highest) similarity among the kept chunks from this document. */
+    similarity: number
+}
+
 export interface SearchResult {
     chunks: string[]
     /** Similarity of each kept chunk, same order as `chunks`. */
@@ -153,6 +160,12 @@ export interface SearchResult {
     allSimilarities: number[]
     droppedCount: number
     tokensUsed: number
+    /**
+     * Documents the kept chunks came from, best similarity first, one entry per
+     * document. Empty when the RPC predates source metadata (content/similarity
+     * only) — callers must treat this as "unknown", not "no sources".
+     */
+    sources: SourceDocument[]
 }
 
 export async function searchSimilar(
@@ -164,18 +177,34 @@ export async function searchSimilar(
 ): Promise<SearchResult> {
     const { embedding: queryEmbedding, tokensUsed } = await embedQuery(query)
 
-    const { data, error } = await supabase.rpc('match_chunks', {
+    const rpcArgs = {
         query_embedding: queryEmbedding,
         match_collection_id: collectionId,
         match_count: topK,
-    })
+    }
+    let { data, error } = await supabase.rpc('match_chunks_with_sources', rpcArgs)
+
+    // Release-safe rollout: answers keep working when the desktop app updates
+    // before the schema migration. The footer is simply absent on this path.
+    if (error && (error.code === 'PGRST202' || /match_chunks_with_sources/i.test(error.message ?? ''))) {
+        console.warn('[RAG] Source metadata RPC unavailable — using legacy match_chunks')
+        const legacy = await supabase.rpc('match_chunks', rpcArgs)
+        data = legacy.data
+        error = legacy.error
+    }
 
     if (error) {
         console.error('[RAG] Search error:', error)
-        return { chunks: [], similarities: [], allSimilarities: [], droppedCount: 0, tokensUsed }
+        return { chunks: [], similarities: [], allSimilarities: [], droppedCount: 0, tokensUsed, sources: [] }
     }
 
-    const rows = (data ?? []) as { content: string; similarity: number | null }[]
+    // Rows from the rollout fallback lack document metadata (see SearchResult.sources).
+    const rows = (data ?? []) as {
+        content: string
+        similarity: number | null
+        document_id?: string | null
+        document_name?: string | null
+    }[]
     const allSimilarities = rows.map((r) => (typeof r.similarity === 'number' ? r.similarity : NaN))
     // Keep rows with no similarity value (defensive — older RPC versions).
     const kept = rows.filter((r) => typeof r.similarity !== 'number' || r.similarity >= minSimilarity)
@@ -187,12 +216,25 @@ export async function searchSimilar(
         )
     }
 
+    // Rows arrive ordered best-first, so the first occurrence of each document
+    // carries its best similarity.
+    const seen = new Map<string, SourceDocument>()
+    for (const r of kept) {
+        if (!r.document_id || !r.document_name || seen.has(r.document_id)) continue
+        seen.set(r.document_id, {
+            documentId: r.document_id,
+            name: r.document_name,
+            similarity: typeof r.similarity === 'number' ? r.similarity : NaN,
+        })
+    }
+
     return {
         chunks: kept.map((r) => r.content),
         similarities: kept.map((r) => (typeof r.similarity === 'number' ? r.similarity : NaN)),
         allSimilarities,
         droppedCount: rows.length - kept.length,
         tokensUsed,
+        sources: [...seen.values()],
     }
 }
 

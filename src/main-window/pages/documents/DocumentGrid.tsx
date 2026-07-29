@@ -46,6 +46,7 @@ interface DocumentGridProps {
   onEditingNameChange: (v: string) => void
   onCommitEdit: () => void
   onCancelEdit: () => void
+  highlightedDocumentId?: string | null
 }
 
 export function DocumentGrid({
@@ -59,6 +60,7 @@ export function DocumentGrid({
   onEditingNameChange,
   onCommitEdit,
   onCancelEdit,
+  highlightedDocumentId,
 }: DocumentGridProps) {
   return (
     <>
@@ -67,13 +69,16 @@ export function DocumentGrid({
         return (
           <div
             key={doc.id}
+            id={`document-${doc.id}`}
             onContextMenu={(e) => onContextMenu(e, 'document', doc)}
             onClick={(e) => {
               e.stopPropagation()
               if (editingId === doc.id) return
               onDocClick(doc)
             }}
-            className="group flex flex-col items-center justify-start w-[110px] gap-2 p-2 cursor-pointer transition-all border-transparent relative"
+            className={`group flex flex-col items-center justify-start w-[110px] gap-2 p-2 cursor-pointer transition-all border-transparent relative rounded-xl ${
+              highlightedDocumentId === doc.id ? 'bg-white/[0.07] ring-1 ring-white/25' : ''
+            }`}
           >
             <div className="w-full aspect-[3/4] bg-[#1a1a1d] border border-white/10 rounded-lg flex flex-col shadow-sm overflow-hidden relative transition-all group-hover:bg-[#222225] group-hover:border-white/20">
               <div className={`flex-1 w-full relative overflow-hidden flex flex-col gap-1.5 mt-1 ${hasVisualPreview ? 'p-0' : 'p-3'}`}>
