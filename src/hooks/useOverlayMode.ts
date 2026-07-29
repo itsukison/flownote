@@ -6,15 +6,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * Three sizes, and the rules for moving between them:
  *
  *   collapsed  a notch-sized pill at top-center. The resting state. Status only.
- *   card       a glanceable strip: one cue and nothing else. Reached by hovering the pill,
- *              or raised automatically when the session has something to say — a detected
- *              question, or a piece of meeting advice.
+ *   card       a glanceable strip showing exactly one thing. Raised automatically when the
+ *              session has something to say — a detected question, or a piece of meeting
+ *              advice — and then that cue is the one thing. Reached by hovering the pill too,
+ *              and there the one thing is the tail of the live transcript, since no cue asked
+ *              for the user's attention. `alertKind` is what tells the two apart.
  *   expanded   the full panel (transcript / questions / history / Q&A input).
  *
- * Why a middle state at all: a full 560px panel appearing unprompted during a live call
- * covers the other person's face. The card is the smallest thing that answers "what did
- * they just ask me, and what do I say" without taking the screen — and it costs nothing
- * to ignore, because it retreats on its own.
+ * Why a middle state at all: the full panel appearing unprompted during a live call covers
+ * the other person's face. The card is the smallest thing that answers "what did they just
+ * ask me, and what do I say" without taking the screen — and it costs nothing to ignore,
+ * because it retreats on its own.
  *
  * `expanded` is the one mode nothing automatic can leave: once the user has opened the
  * panel it stays put until they collapse it. That's why there is no separate pin — being

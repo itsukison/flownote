@@ -12,13 +12,18 @@ const t = ja
 /**
  * The notch presentation, designed for the notch rather than ported to it.
  *
- * Three principles, which is why this doesn't look like the classic panel:
+ * Four principles, which is why this doesn't look like the classic panel:
  *
  *   1. No dividers. Hierarchy comes from spacing, weight and opacity. Every hairline is
  *      one more edge competing with the hardware cutout it's supposed to merge with.
- *   2. One thing is the subject. Collapsed it's status; on the card it's the question;
- *      expanded it's whichever lens you chose. Nothing is permanently on screen "just in case".
+ *   2. One thing is the subject. Collapsed it's status; on the card it's whatever raised it,
+ *      or the live conversation if the user raised it themselves; expanded it's whichever lens
+ *      you chose. Nothing is permanently on screen "just in case".
  *   3. Controls are capsules on a single row, sized for a glance, not a settings page.
+ *   4. Four type sizes, no more — `fn-t-meta` / `fn-t-ui` / `fn-t-body` / `fn-t-subject`,
+ *      defined once in index.css with their colours attached. Never write an arbitrary
+ *      `text-[Npx]` here: a size that isn't in the scale reads as a mistake, not a rank.
+ *      Bodies and subjects are chalk, meta is pearl; `ash` is for disabled controls only.
  *
  * The feature set is deliberately narrow: transcript + ask-about-it, detected questions +
  * their answers with paging, the two capture toggles, and the reference-doc picker.
@@ -139,12 +144,12 @@ function Capsule({
       aria-pressed={on}
       className={[
         'group flex items-center gap-1.5 h-[26px] pl-2 pr-2.5 rounded-full',
-        'text-[11px] font-medium tracking-[-0.1px] whitespace-nowrap transition-all duration-200',
+        'fn-t-ui whitespace-nowrap transition-all duration-200',
         disabled
           ? 'bg-white/[0.03] text-ash cursor-not-allowed'
           : on
             ? 'bg-chalk text-void cursor-pointer'
-            : 'bg-white/[0.08] text-pearl hover:bg-white/[0.14] hover:text-chalk cursor-pointer',
+            : 'bg-white/[0.08] hover:bg-white/[0.14] cursor-pointer',
       ].join(' ')}
     >
       {children}
@@ -168,7 +173,7 @@ function DotRail({ count, index, onIndex }: { count: number; index: number; onIn
           onClick={() => onIndex(i)}
           aria-label={`${i + 1}`}
           className={`cursor-pointer rounded-full transition-all duration-200 ${
-            i === index ? 'w-3.5 h-[3px] bg-chalk' : 'w-[3px] h-[3px] bg-pearl/55 hover:bg-pearl/80'
+            i === index ? 'w-3.5 h-[3px] bg-chalk' : 'w-[3px] h-[3px] bg-pearl/70 hover:bg-pearl'
           }`}
         />
       ))}
@@ -205,11 +210,11 @@ function DocPicker({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 max-w-[132px] h-[26px] px-2 rounded-full text-[11px] text-pearl hover:text-chalk hover:bg-white/[0.08] transition-colors cursor-pointer"
+        className="flex items-center gap-1 max-w-[150px] h-[26px] px-2 rounded-full fn-t-ui hover:bg-white/[0.08] transition-colors cursor-pointer"
       >
-        <Files size={11} className="shrink-0 opacity-70" />
+        <Files size={11} className="shrink-0" />
         <span className="truncate">{selected ? selected.name : t.overlay.notch.noDocs}</span>
-        <ChevronDown size={10} className={`shrink-0 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={10} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       <AnimatePresence>
@@ -231,7 +236,7 @@ function DocPicker({
               />
             ))}
             {docs.length === 0 && (
-              <p className="px-2.5 py-2 text-[11px] text-fog">{t.overlay.notch.noDocsAvailable}</p>
+              <p className="px-2.5 py-2 fn-t-ui fn-t-quiet">{t.overlay.notch.noDocsAvailable}</p>
             )}
           </motion.div>
         )}
@@ -244,7 +249,7 @@ function DocRow({ label, active, onClick }: { label: string; active: boolean; on
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 w-full px-2.5 py-[7px] rounded-lg text-left text-[12px] text-chalk hover:bg-white/[0.1] transition-colors cursor-pointer"
+      className="flex items-center gap-2 w-full px-2.5 py-[7px] rounded-lg text-left fn-t-ui hover:bg-white/[0.1] transition-colors cursor-pointer"
     >
       <Check size={11} className={active ? 'opacity-100 text-chalk' : 'opacity-0'} />
       <span className="truncate">{label}</span>
@@ -289,7 +294,7 @@ function PresentationPopover({
             transition={FADE}
             className="absolute right-0 top-[26px] z-50 w-[168px] rounded-xl bg-[#141417] shadow-[0_16px_40px_rgba(0,0,0,0.6)] p-2.5 origin-top-right"
           >
-            <p className="text-[10px] tracking-[0.04em] text-fog mb-2">{t.overlay.notch.presentation}</p>
+            <p className="fn-t-meta mb-2">{t.overlay.notch.presentation}</p>
             <div className="flex items-center gap-1">
               {([
                 ['notch', t.overlay.notch.presentationNotch],
@@ -298,10 +303,10 @@ function PresentationPopover({
                 <button
                   key={key}
                   onClick={() => { setOpen(false); if (key !== presentation) onSelect(key) }}
-                  className={`flex-1 h-[24px] rounded-full text-[11px] font-medium transition-colors ${
+                  className={`flex-1 h-[24px] rounded-full fn-t-ui transition-colors ${
                     key === presentation
-                      ? 'bg-white/[0.12] text-chalk cursor-default'
-                      : 'text-fog hover:text-chalk hover:bg-white/[0.08] cursor-pointer'
+                      ? 'bg-white/[0.12] cursor-default'
+                      : 'text-pearl hover:text-chalk hover:bg-white/[0.08] cursor-pointer'
                   }`}
                 >
                   {label}
@@ -332,10 +337,10 @@ function IconBtn({
       title={label}
       className={`flex items-center justify-center w-[22px] h-[22px] rounded-full transition-colors ${
         disabled
-          ? 'text-iron cursor-default'
+          ? 'text-ash cursor-default'
           : active
             ? 'bg-white/[0.12] text-chalk cursor-pointer'
-            : 'text-fog hover:text-chalk hover:bg-white/[0.1] cursor-pointer'
+            : 'text-pearl hover:text-chalk hover:bg-white/[0.1] cursor-pointer'
       }`}
     >
       {children}
@@ -369,8 +374,8 @@ function AdviceBanner({ advice, onDismiss }: { advice: MeetingAdvice; onDismiss:
       <div className="mx-3 mb-2 flex items-start gap-2.5 rounded-[14px] bg-white/[0.055] pl-3 pr-1.5 py-2.5">
         <Lightbulb size={12} className="mt-[2px] shrink-0 text-chalk" />
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-medium tracking-[0.1em] text-fog">{ADVICE_KIND_LABEL[advice.kind]}</p>
-          <p className="mt-1 text-[12px] font-[450] text-chalk leading-[1.6]">{advice.message}</p>
+          <p className="fn-t-meta tracking-[0.1em]">{ADVICE_KIND_LABEL[advice.kind]}</p>
+          <p className="mt-1 fn-t-body">{advice.message}</p>
         </div>
         <IconBtn onClick={onDismiss} label={t.overlay.adviceDismiss}><X size={11} /></IconBtn>
       </div>
@@ -393,7 +398,7 @@ function PillMarkers({
     <>
       {hasAdvice && <Lightbulb size={10} className="text-pearl" />}
       {unseenCount > 0 && (
-        <span className="min-w-[15px] px-1 rounded-full bg-chalk text-void text-[9px] font-semibold tabular-nums text-center leading-[15px]">
+        <span className="min-w-[16px] px-1 rounded-full bg-chalk fn-t-meta text-void font-semibold tracking-normal tabular-nums text-center leading-[16px]">
           {unseenCount > 9 ? '9' : unseenCount}
         </span>
       )}
@@ -404,7 +409,105 @@ function PillMarkers({
 function Hint({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-center h-full px-10">
-      <p className="text-[12px] text-fog text-center leading-relaxed">{children}</p>
+      <p className="fn-t-body fn-t-quiet text-center">{children}</p>
+    </div>
+  )
+}
+
+/**
+ * "思考中…" while an answer streams.
+ *
+ * The label is ours rather than the Loader's own `text` prop, because that prop is fixed at
+ * `text-sm` + font-medium — 14px, which lands between two steps of the scale and read as big
+ * as the 15px question it sat underneath. Passing text="" keeps the animated dots, which
+ * inherit their size from this span like any other body text.
+ */
+function Thinking() {
+  return (
+    <span className="fn-t-body fn-t-quiet inline-flex items-center">
+      {t.overlay.thinking}
+      <Loader variant="loading-dots" text="" />
+    </span>
+  )
+}
+
+/** One transcript line, wherever it appears. The other side's speech is the subject
+ *  questions come from; own speech is context, so it sits one step back. */
+function Line({ own, children }: { own: boolean; children: React.ReactNode }) {
+  return <p className={`fn-t-body ${own ? 'fn-t-quiet' : ''}`}>{children}</p>
+}
+
+type TailLine = { speaker: string; text: string; lead: boolean }
+
+/** Flattened tail of the conversation, newest last. `lead` marks a change of speaker. */
+function transcriptTail(
+  segments: Segment[],
+  partial: { speaker: string; text?: string } | null | undefined,
+  max: number
+): TailLine[] {
+  const flat: { speaker: string; text: string }[] = []
+  for (const g of segments) {
+    for (const line of splitTranscriptLines(g.lines)) flat.push({ speaker: g.speaker, text: line })
+  }
+  if (partial?.text) flat.push({ speaker: partial.speaker, text: partial.text })
+  const tail = flat.slice(-max)
+  return tail.map((l, i) => ({ ...l, lead: i === 0 || tail[i - 1].speaker !== l.speaker }))
+}
+
+/**
+ * The hovered card's default subject: the tail of the conversation.
+ *
+ * Hovering used to be answered with "no question detected yet" — true, and useless. The
+ * transcript is the one thing that is always worth showing, so a glance is never wasted.
+ *
+ * Bottom-aligned and scrollable: the newest line is the one being spoken, but a line that
+ * scrolled past two seconds ago is exactly what someone opening the card wants to re-read,
+ * and clipping it made the card a dead end. It follows the conversation until the user
+ * scrolls back, same rule as the expanded panel.
+ *
+ * `min-h-full` on the inner column rather than `justify-end` on the scroller: justify-end on
+ * a scroll container puts the overflow past the *start* edge, where no scrollbar can reach it.
+ */
+function CardTranscript({ lines }: { lines: TailLine[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const followRef = useRef(true)
+  // Only fade the top edge when something is actually cut off up there — at the top of the
+  // scroll the same gradient just makes the first line look broken.
+  const [atTop, setAtTop] = useState(true)
+
+  const onScroll = () => {
+    const el = ref.current
+    if (!el) return
+    followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+    setAtTop(el.scrollTop < 4)
+  }
+
+  const last = lines[lines.length - 1]
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (followRef.current) el.scrollTop = el.scrollHeight
+    setAtTop(el.scrollTop < 4)
+  }, [lines.length, last?.text])
+
+  return (
+    <div
+      ref={ref}
+      onScroll={onScroll}
+      // No click handling of its own: a wheel gesture never fires one, and the whole card is
+      // still click-to-expand.
+      className={`h-full overflow-y-auto fn-notch-scroll ${atTop ? '' : 'fn-notch-tail-fade'}`}
+    >
+      <div className="flex min-h-full flex-col justify-end gap-[3px]">
+        {lines.map((l, i) => (
+          <Line key={i} own={l.speaker === 'You'}>
+            {l.lead && (
+              <span className="fn-t-meta mr-1.5">{l.speaker === 'You' ? t.overlay.you : t.overlay.speaker}</span>
+            )}
+            {l.text}
+          </Line>
+        ))}
+      </div>
     </div>
   )
 }
@@ -470,7 +573,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
         ) : (
           <div className="absolute inset-0 flex items-center justify-center gap-2">
             <Dot on={p.transcribing} accent={p.detectionOn} />
-            <span className="text-[10px] tracking-[0.04em] text-pearl tabular-nums">
+            <span className="fn-t-meta tabular-nums">
               {p.transcribing ? p.elapsedLabel : 'Flownote'}
             </span>
             <PillMarkers unseenCount={p.unseenCount} hasAdvice={!!p.advice} placeholder={false} />
@@ -482,8 +585,22 @@ export default function NotchOverlay(p: NotchOverlayProps) {
 
   /* ── card: one cue, glanceable, retreats on its own ─────────────── */
   if (p.mode === 'card') {
-    // Advice and questions share the card, never split it: two things at 172px is neither.
+    // Advice and questions share the card, never split it: two things at this height is neither.
     const adviceCard = p.alertKind === 'advice' && !!p.advice
+    /**
+     * A question owns the card when the card was raised *for* one — which includes the whole
+     * time the cursor rests on it, since hovering an alert keeps `alertKind` set.
+     *
+     * A card the user opened from the resting pill has no cue behind it, and there the subject
+     * is the conversation. Hovering used to be answered with "no question detected yet", which
+     * made the most common glance the least useful one; and a question from four minutes ago
+     * isn't what someone who hovers the notch mid-sentence came to read either.
+     */
+    const questionCard = p.alertKind === 'question' && !!latest
+    // Enough history that scrolling back is worth doing, not so much that the card becomes the
+    // panel — the full transcript is one click away, and this one has to stay cheap to render
+    // while segments arrive every couple of seconds.
+    const tail = adviceCard || questionCard ? [] : transcriptTail(p.groupedSegments, p.partialSegment, 60)
     const dwellMs = p.alertKind === 'advice' ? ADVICE_DWELL_MS : ALERT_DWELL_MS
     return (
       <div
@@ -499,11 +616,14 @@ export default function NotchOverlay(p: NotchOverlayProps) {
             ) : (
               <Dot on={p.transcribing} accent={p.detectionOn} />
             )}
-            <span className="text-[10px] font-medium tracking-[0.02em] text-pearl">
+            <span className="fn-t-meta">
               {adviceCard
                 ? t.overlay.advice
-                : latest ? t.overlay.notch.detected : p.transcribing ? t.overlay.notch.listening : 'Flownote'}
+                : questionCard ? t.overlay.notch.detected : p.transcribing ? t.overlay.notch.listening : 'Flownote'}
             </span>
+            {!adviceCard && !questionCard && p.transcribing && (
+              <span className="fn-t-meta tabular-nums opacity-70">{p.elapsedLabel}</span>
+            )}
           </div>
           {/* Opening is the only action a question card needs — it retreats by itself. Advice
               gets a dismiss instead: nothing will supersede it, so it has to be let go. */}
@@ -526,17 +646,14 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                 exit={{ opacity: 0 }}
                 transition={FADE}
               >
-                <p className="text-[10px] font-medium tracking-[0.1em] text-fog">
+                <p className="fn-t-meta tracking-[0.1em]">
                   {ADVICE_KIND_LABEL[p.advice.kind]}
                 </p>
-                <p
-                  className="mt-1.5 font-display text-[14px] text-chalk tracking-[-0.3px] leading-[1.45]"
-                  style={clamp(3)}
-                >
+                <p className="mt-1.5 fn-t-subject" style={clamp(3)}>
                   {p.advice.message}
                 </p>
               </motion.div>
-            ) : latest ? (
+            ) : questionCard && latest ? (
               <motion.div
                 key={latest.id}
                 initial={{ opacity: 0, y: 3 }}
@@ -544,23 +661,35 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                 exit={{ opacity: 0 }}
                 transition={FADE}
               >
-                <p className="font-display text-[14px] text-chalk tracking-[-0.35px] leading-[1.35]" style={clamp(2)}>
+                <p className="fn-t-subject" style={clamp(2)}>
                   {latest.text}
                 </p>
-                <div className="mt-1.5 text-[12px] text-fog leading-[1.55]">
+                {/* The answer under a question is the reason the card is worth reading, so it
+                    gets body text, not a caption. */}
+                <div className="mt-1.5 fn-t-body">
                   {latestAnswer?.text ? (
                     <p style={clamp(3)}>{latestAnswer.text}</p>
                   ) : latestAnswer?.status === 'streaming' ? (
-                    <Loader variant="loading-dots" text={t.overlay.thinking} className="text-pearl" />
+                    <Thinking />
                   ) : (
-                    <span className="text-fog">{t.overlay.notch.tapToAnswer}</span>
+                    <span className="fn-t-quiet">{t.overlay.notch.tapToAnswer}</span>
                   )}
                 </div>
               </motion.div>
+            ) : tail.length > 0 ? (
+              <motion.div
+                key="tail"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={FADE}
+                className="h-full"
+              >
+                <CardTranscript lines={tail} />
+              </motion.div>
             ) : (
               <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={FADE}>
-                <p className="text-[12px] text-fog leading-relaxed">
-                  {p.transcribing ? t.overlay.notch.noQuestionYet : t.overlay.notch.tapToOpen}
+                <p className="fn-t-body fn-t-quiet">
+                  {p.transcribing ? t.overlay.transcribing : t.overlay.notch.tapToOpen}
                 </p>
               </motion.div>
             )}
@@ -598,7 +727,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
           {p.qaOpen ? (
             <button
               onClick={p.onQaBack}
-              className={`flex items-center gap-1 text-[11px] text-pearl hover:text-chalk transition-colors cursor-pointer ${floating ? 'no-drag' : ''}`}
+              className={`flex items-center gap-1 fn-t-ui text-pearl hover:text-chalk transition-colors cursor-pointer ${floating ? 'no-drag' : ''}`}
             >
               <ChevronUp size={11} className="-rotate-90" />
               {t.common.back}
@@ -606,7 +735,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
           ) : (
             <>
               <Dot on={p.transcribing} accent={p.detectionOn} />
-              <span className="text-[10px] tracking-[0.04em] text-pearl tabular-nums">
+              <span className="fn-t-meta tabular-nums">
                 {p.transcribing ? p.elapsedLabel : 'Flownote'}
               </span>
             </>
@@ -629,17 +758,17 @@ export default function NotchOverlay(p: NotchOverlayProps) {
           first would flash "not signed in" at every launch. */}
       {!p.ready ? (
         <div className="flex-1 flex items-center justify-center">
-          <Loader variant="dots" className="text-fog" />
+          <Loader variant="dots" className="text-pearl" />
         </div>
       ) : !p.signedIn ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center">
-          <p className="text-[13px] text-chalk">{t.overlay.notSignedIn}</p>
-          <p className="text-[12px] text-fog leading-relaxed">{t.overlay.loginFromMain}</p>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center">
+          <p className="fn-t-subject">{t.overlay.notSignedIn}</p>
+          <p className="fn-t-body fn-t-quiet">{t.overlay.loginFromMain}</p>
         </div>
       ) : p.limitExceeded ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center">
-          <p className="text-[13px] text-chalk">{t.activation.limitReached}</p>
-          <p className="text-[12px] text-fog leading-relaxed">{t.activation.limitReachedHint}</p>
+          <p className="fn-t-subject">{t.activation.limitReached}</p>
+          <p className="fn-t-body fn-t-quiet">{t.activation.limitReachedHint}</p>
         </div>
       ) : (
         <>
@@ -647,7 +776,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
               working, on one line, always reachable. */}
           <div className="shrink-0 flex items-center gap-1.5 px-3 pb-2.5">
             <Capsule on={p.transcribing} onClick={p.onToggleListen} label={t.overlay.notch.record}>
-              <span className={`w-[6px] h-[6px] rounded-full ${p.transcribing ? 'bg-void' : 'bg-fog'}`} />
+              <span className={`w-[6px] h-[6px] rounded-full ${p.transcribing ? 'bg-void' : 'bg-pearl'}`} />
               {p.transcribing ? t.overlay.notch.recording : t.overlay.notch.record}
             </Capsule>
             <Capsule
@@ -672,7 +801,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                 <button
                   key={key}
                   onClick={() => setLens(key)}
-                  className="relative flex items-center gap-1.5 px-2.5 h-[24px] rounded-full text-[11px] font-medium tracking-[-0.1px] cursor-pointer"
+                  className="relative flex items-center gap-1.5 px-2.5 h-[24px] rounded-full fn-t-ui cursor-pointer"
                 >
                   {lens === key && (
                     <motion.span
@@ -681,7 +810,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                       className="absolute inset-0 rounded-full bg-white/[0.08]"
                     />
                   )}
-                  <span className={`relative z-10 transition-colors ${lens === key ? 'text-chalk' : 'text-fog hover:text-chalk'}`}>
+                  <span className={`relative z-10 transition-colors ${lens === key ? 'text-chalk' : 'text-pearl hover:text-chalk'}`}>
                     {label}
                   </span>
                   {badge > 0 && key !== lens && (
@@ -693,7 +822,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
               {lens === 'ask' && qCount > 0 && (
                 <button
                   onClick={p.onClearQuestions}
-                  className="px-2 h-[24px] text-[11px] text-fog hover:text-pearl transition-colors cursor-pointer"
+                  className="px-2 h-[24px] fn-t-ui text-pearl hover:text-chalk transition-colors cursor-pointer"
                 >
                   {t.overlay.clear}
                 </button>
@@ -706,7 +835,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
           </AnimatePresence>
 
           {p.error && (
-            <p className="shrink-0 px-4 pb-1.5 text-[11px] text-amber/90 leading-snug">{p.error}</p>
+            <p className="shrink-0 px-4 pb-1.5 fn-t-body text-amber">{p.error}</p>
           )}
 
           {/* Content */}
@@ -714,12 +843,12 @@ export default function NotchOverlay(p: NotchOverlayProps) {
             <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto fn-notch-scroll">
               {p.qaOpen ? (
                 <div className="px-4 pt-1.5 pb-4">
-                  <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-snug">{p.qaQuestion}</p>
-                  <div className="mt-4 text-[13px] font-[450] text-chalk leading-[1.75] fn-notch-prose">
+                  <p className="fn-t-subject">{p.qaQuestion}</p>
+                  <div className="mt-3.5 fn-t-body fn-notch-prose">
                     {p.qaAnswer ? (
                       <MarkdownRenderer content={p.qaAnswer} />
                     ) : (
-                      <Loader variant="loading-dots" text={t.overlay.thinking} className="text-pearl" />
+                      <Thinking />
                     )}
                   </div>
                 </div>
@@ -731,27 +860,24 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                     {p.groupedSegments.map((g, i) => (
                       <div key={i}>
                         <div className="flex items-baseline gap-1.5 mb-[3px]">
-                          <span className={`text-[10px] font-medium tracking-[0.04em] ${g.speaker === 'You' ? 'text-fog' : 'text-chalk'}`}>
+                          <span className={`fn-t-meta ${g.speaker === 'You' ? '' : 'text-chalk'}`}>
                             {g.speaker === 'You' ? t.overlay.you : t.overlay.speaker}
                           </span>
-                          <span className="text-[10px] text-fog tabular-nums">{p.formatTimestamp(g.timestamp)}</span>
+                          <span className="fn-t-meta tabular-nums opacity-70">{p.formatTimestamp(g.timestamp)}</span>
                         </div>
                         {/* The other side's speech is the subject — that's where questions come
-                            from. Own speech is present for context, so it sits back. */}
+                            from. Own speech is present for context, so it sits one step back. */}
                         <div className="space-y-1">
                           {splitTranscriptLines(g.lines).map((line, j) => (
-                            <p
-                              key={j}
-                              className={`text-[13px] font-[450] leading-[1.7] ${g.speaker === 'You' ? 'text-pearl' : 'text-chalk'}`}
-                            >
-                              {line}
-                            </p>
+                            <Line key={j} own={g.speaker === 'You'}>{line}</Line>
                           ))}
                         </div>
                       </div>
                     ))}
+                    {/* Interim hypothesis: same size as a settled line, one step quieter, because
+                        it is about to be replaced by one. */}
                     {p.partialSegment?.text && (
-                      <p className="text-[13px] font-[450] leading-[1.7] text-fog">{p.partialSegment.text}</p>
+                      <Line own>{p.partialSegment.text}</Line>
                     )}
                   </div>
                 )
@@ -768,7 +894,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                     {/* Where you are in the set. Reading a question out of context is the one
                         way this view can mislead, so position comes before the question. */}
                     <div className="flex items-center gap-2 mb-2.5">
-                      <span className="text-[10px] font-medium tracking-[0.1em] text-pearl tabular-nums">
+                      <span className="fn-t-meta tracking-[0.1em] tabular-nums">
                         {t.overlay.notch.lensAsk} {qIndex + 1} / {qCount}
                       </span>
                       {answer?.status === 'streaming' && (
@@ -776,21 +902,21 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                       )}
                     </div>
 
-                    <p className="font-display text-[15px] text-chalk tracking-[-0.4px] leading-[1.45]">
+                    <p className="fn-t-subject">
                       {question.text}
                     </p>
 
                     {/* Wide gap instead of a rule: the answer is a separate block, and the
                         space says so more quietly than a hairline would. */}
-                    <div className="mt-4 text-[13px] font-[450] text-chalk leading-[1.75] fn-notch-prose">
+                    <div className="mt-3.5 fn-t-body fn-notch-prose">
                       {answer?.text ? (
                         <MarkdownRenderer content={answer.text} />
                       ) : answer?.status === 'streaming' ? (
-                        <Loader variant="loading-dots" text={t.overlay.thinking} className="text-pearl" />
+                        <Thinking />
                       ) : (
                         <button
                           onClick={() => p.onGenerateAnswer(question)}
-                          className="h-[28px] px-3.5 rounded-full bg-chalk text-void text-[11px] font-medium hover:bg-white transition-colors cursor-pointer"
+                          className="h-[28px] px-3.5 rounded-full bg-chalk fn-t-ui text-void hover:bg-white transition-colors cursor-pointer"
                         >
                           {t.overlay.generateAnswer}
                         </button>
@@ -842,7 +968,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                       key={qp.id}
                       onClick={() => p.onQuickPrompt(qp.content)}
                       disabled={p.asking}
-                      className="shrink-0 h-[24px] px-2.5 rounded-full bg-white/[0.08] text-[11px] text-pearl hover:bg-white/[0.14] hover:text-chalk disabled:opacity-40 transition-colors cursor-pointer whitespace-nowrap"
+                      className="shrink-0 h-[24px] px-2.5 rounded-full bg-white/[0.08] fn-t-ui hover:bg-white/[0.14] disabled:opacity-40 transition-colors cursor-pointer whitespace-nowrap"
                     >
                       {qp.name}
                     </button>
@@ -858,7 +984,7 @@ export default function NotchOverlay(p: NotchOverlayProps) {
                   onChange={(e) => p.onAskChange(e.target.value)}
                   placeholder={t.overlay.askAboutTranscript}
                   disabled={p.asking}
-                  className="flex-1 bg-transparent text-[13px] text-chalk placeholder:text-ash outline-none"
+                  className="flex-1 bg-transparent fn-t-body leading-none placeholder:text-fog outline-none"
                 />
                 <AnimatePresence>
                   {p.askValue.trim() && !p.asking && (

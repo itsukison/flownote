@@ -206,7 +206,6 @@ export const ja = {
       nextQuestion: '次の質問',
       tapToAnswer: 'クリックして回答を表示',
       tapToOpen: 'クリックしてパネルを開く',
-      noQuestionYet: 'まだ質問は検出されていません',
       record: '録音',
       recording: '録音中',
       detect: '質問検出',

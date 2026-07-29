@@ -22,9 +22,15 @@ const EAR_WIDTH = 26
 /** Collapsed width on displays with no notch to merge with. */
 const NOTCHLESS_PILL_WIDTH = 190
 
-const PANEL_WIDTH = 400
-const CARD_HEIGHT = 172
-const EXPANDED_HEIGHT = 560
+/**
+ * Notch proportions, not panel proportions. The first pass inherited the old floating
+ * panel's 400×560 and it read as a column hanging off the menu bar. A notch surface wants
+ * the opposite ratio: wide enough that a line of Japanese transcript doesn't wrap every
+ * eight characters, short enough that opening it doesn't cover the other person's face.
+ */
+const PANEL_WIDTH = 460
+const CARD_HEIGHT = 184
+const EXPANDED_HEIGHT = 470
 
 /**
  * Classic is the same panel, detached — so it opens at the same size the notch expands to

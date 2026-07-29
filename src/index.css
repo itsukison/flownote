@@ -290,6 +290,61 @@ html.theme-warm ::-webkit-scrollbar-thumb {
     border-radius: 16px;
   }
 
+  /* ── Notch type scale ────────────────────────────────────────────────────
+     Four steps, each with one job. Nothing in the overlay should pick a size
+     outside them — at this width a fifth size stops reading as hierarchy and
+     starts reading as inconsistency (which is what 9/10/11/12/12.5/13/14/15 did).
+
+       fn-t-meta     10px   eyebrows, speaker names, timestamps, counters
+       fn-t-ui       11px   interactive labels: capsules, tabs, menu rows, buttons
+       fn-t-body     13px   everything you actually read: transcript, answers, hints
+       fn-t-subject  15px   the one thing a view is about (a question, an advice line)
+
+     Colour ships with the size instead of being picked per element, because that
+     is where the old panel drifted: `fog` (#a1a1aa) and `ash` on a #08080a ground
+     lose their stems at 10–12px, so answers and reference labels read as greyed
+     out. Everything readable is now chalk or pearl; `fn-t-quiet` is the only step
+     down, and `ash` survives for disabled controls only — a state, not a rank. */
+  .fn-t-meta {
+    font-size: 10px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--color-pearl);
+  }
+  .fn-t-ui {
+    font-size: 11px;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: -0.1px;
+    color: var(--color-chalk);
+  }
+  .fn-t-body {
+    font-size: 13px;
+    line-height: 1.7;
+    font-weight: 450;
+    color: var(--color-chalk);
+  }
+  .fn-t-subject {
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 500;
+    letter-spacing: -0.35px;
+    color: var(--color-chalk);
+  }
+  /* Same size, one step back in emphasis: the context half of a pair — own speech
+     beside the other side's, a hint beside the content it explains. */
+  .fn-t-quiet {
+    color: var(--color-pearl);
+  }
+
+  /* The card shows the tail of the conversation, so the top edge is a cut, not an
+     end. Fading it says "there is more above" without a scrollbar or a rule. */
+  .fn-notch-tail-fade {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+  }
+
   /* Scrollbars are chrome; at this size they cost more than they inform. */
   .fn-notch-scroll {
     scrollbar-width: none;
@@ -311,8 +366,10 @@ html.theme-warm ::-webkit-scrollbar-thumb {
   .fn-notch-prose li {
     margin: 0.15em 0;
   }
+  /* Headings stay at body size and earn their rank from weight — a fifth type size
+     inside a 13px answer would fight the scale above. */
   .fn-notch-prose :is(h1, h2, h3, h4) {
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--color-chalk);
     margin: 0.7em 0 0.3em;
