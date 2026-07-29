@@ -4,6 +4,7 @@ import {
   TranscriptionCallbacks,
   TranscriptSegment,
 } from './TranscriptionSession'
+import { amivoiceAudioFormat, sampleRateFor } from './audioFormat'
 
 let segmentCounter = 0
 
@@ -24,6 +25,8 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
   private source: 'user' | 'opponent'
   private speaker: 'You' | 'Speaker'
   private needsDownsample: boolean
+  /** Rate of the audio this session is fed, and therefore the rate it declares. */
+  private inputRate: number
   private callbacks: TranscriptionCallbacks
   // Engine profile. -a-general is the universal default (available on every plan).
   // Specialized engines like -a-bizmrr (business meetings), -a-bizfinance,
@@ -67,8 +70,20 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
     this.appKey = appKey
     this.source = source
     this.speaker = source === 'user' ? 'You' : 'Speaker'
-    // Mic is 16kHz native; system audio has been upsampled to 24kHz upstream
-    this.needsDownsample = source === 'opponent'
+    /**
+     * Both channels are 16kHz (see audioFormat.ts), so neither is resampled and
+     * the declared format matches what is sent.
+     *
+     * This used to be `source === 'opponent'`, on the premise that "system audio
+     * has been upsampled to 24kHz upstream". Nothing upsamples it: audiotee is
+     * spawned at 16000 and reports `sample_rate: 16000.0, channels: 1,
+     * bits_per_channel: 16` on startup. The counterpart's audio was therefore
+     * decimated 3:2 and then declared 16kHz — reaching AmiVoice 1.5x fast and
+     * ~7 semitones high, which produced no finalized utterances at all: across 11
+     * logged sessions the opponent channel emitted 0 segments to the mic's 56.
+     */
+    this.inputRate = sampleRateFor(source)
+    this.needsDownsample = false
     this.callbacks = callbacks
     this.engine = engine
     console.log(`[AmiVoiceSession] ${this.source} — initialized (engine: ${this.engine}, downsample: ${this.needsDownsample})`)
@@ -259,7 +274,9 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
     socket.on('open', () => {
       console.log(`[AmiVoiceSession] ${this.source} — WebSocket OPEN, sending 's' start command`)
       // Start command: s <audioFormat> <engine> authorization=<appKey> [params]
-      // Audio format '16K' = 16kHz PCM16 LE mono
+      // The format token is derived from the rate this session is actually fed
+      // (audioFormat.ts) — hard-coding it is how the opponent channel came to
+      // declare 16K for audio that had been decimated as if it were 24kHz.
       // resultUpdatedInterval=200 → interim hypothesis ('U') packets every ~200ms
       //   so the overlay can paint progressive text as the speaker talks (Notta-style).
       // keepFillerToken=0 → engine strips えーっと/あのー automatically.
@@ -268,7 +285,7 @@ export class AmiVoiceTranscriptionSession implements ITranscriptionSession {
       //   true silence. postTime: trailing weak-audio ms before commit (default 550 →
       //   300). decayTime: ms before postTime threshold relaxes (default 5000 →
       //   2000). Quoted because the value contains spaces.
-      const startCmd = `s 16K ${this.engine} authorization=${this.appKey} resultUpdatedInterval=200 keepFillerToken=0 segmenterProperties="postTime=300 decayTime=2000"`
+      const startCmd = `s ${amivoiceAudioFormat(this.inputRate)} ${this.engine} authorization=${this.appKey} resultUpdatedInterval=200 keepFillerToken=0 segmenterProperties="postTime=300 decayTime=2000"`
       socket.send(startCmd)
     })
 

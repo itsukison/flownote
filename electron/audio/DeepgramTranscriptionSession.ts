@@ -4,6 +4,7 @@ import {
   TranscriptionCallbacks,
   TranscriptSegment,
 } from './TranscriptionSession'
+import { sampleRateFor } from './audioFormat'
 
 let segmentCounter = 0
 
@@ -54,7 +55,10 @@ export class DeepgramTranscriptionSession implements ITranscriptionSession {
     this.apiKey = apiKey
     this.source = source
     this.speaker = source === 'user' ? 'You' : 'Speaker'
-    this.sampleRate = source === 'user' ? 16000 : 24000
+    // This said 24000 for the opponent, so Deepgram was decoding the counterpart's
+    // speech 1.5x slow — the same mismatch AmiVoiceTranscriptionSession had. Both
+    // channels are 16kHz; audioFormat.ts is the single source for that.
+    this.sampleRate = sampleRateFor(source)
     this.callbacks = callbacks
     console.log(`[DeepgramSession] ${this.source} — initialized (model: ${this.modelName}, sr: ${this.sampleRate})`)
   }

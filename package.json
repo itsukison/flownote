@@ -18,7 +18,9 @@
     "admin:dev": "cd admin && npm run dev",
     "test:detector": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/detector-filters.test.cjs",
     "test:transcript": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/transcript-detector.test.cjs",
-    "test": "npm run test:context && npm run test:detector && npm run test:transcript"
+    "test:sources": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/answer-sources.test.cjs",
+    "test": "npm run test:context && npm run test:detector && npm run test:transcript && npm run test:sources && npm run test:audio-format",
+    "test:audio-format": "tsc -p electron/tsconfig.json --outDir .tmp-test-build && node scripts/test/audio-format.test.cjs"
   },
   "build": {
     "appId": "com.flownote.app",

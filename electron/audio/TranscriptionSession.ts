@@ -1,4 +1,5 @@
 import WebSocket from 'ws'
+import { resamplePcm16To24k } from './AudioResampler'
 
 export interface TranscriptSegment {
   id: string
@@ -146,10 +147,16 @@ export class TranscriptionSession implements ITranscriptionSession {
         console.log(`[TranscriptionSession] ${this.source} — audio heartbeat: ${this.audioChunkCount} chunks`)
       }
 
+      // `input_audio_format: 'pcm16'` means 24kHz mono LE to the Realtime API, but
+      // both of our channels are 16kHz (mic natively, system audio because
+      // SystemAudioCapture spawns audiotee with --sample-rate 16000). Sending 16kHz
+      // unconverted made the decoder hear everything 1.5x slow, which is a plausible
+      // contributor to the JA hallucinations that made this provider dev-only.
+      // ipc/listening.ts does the same conversion for the Realtime detector.
       this.socket.send(
         JSON.stringify({
           type: 'input_audio_buffer.append',
-          audio: pcmBuffer.toString('base64'),
+          audio: resamplePcm16To24k(pcmBuffer).toString('base64'),
         })
       )
     } catch (e) {

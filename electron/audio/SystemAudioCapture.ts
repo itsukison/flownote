@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 import { app } from 'electron'
+import { SYSTEM_AUDIO_SAMPLE_RATE } from './audioFormat'
 
 export class SystemAudioCapture extends EventEmitter {
   private audioTeeProcess: ChildProcess | null = null
@@ -71,7 +72,9 @@ export class SystemAudioCapture extends EventEmitter {
 
     console.log('[SystemAudio] Spawning audiotee process...')
 
-    this.audioTeeProcess = spawn(binaryPath, ['--sample-rate', '16000', '--chunk-duration', '0.2'], {
+    // The rate is declared in audioFormat.ts, which every consumer of this stream
+    // reads. Changing it here alone is how the opponent channel silently broke.
+    this.audioTeeProcess = spawn(binaryPath, ['--sample-rate', String(SYSTEM_AUDIO_SAMPLE_RATE), '--chunk-duration', '0.2'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       env: process.env,
