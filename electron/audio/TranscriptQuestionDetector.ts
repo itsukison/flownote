@@ -39,16 +39,22 @@ const readEnv = () => ({
   /** Same knob as the Realtime path: the user's own mic as a detection channel. */
   detectUserChannel: process.env.FLOWNOTE_DETECT_USER_CHANNEL !== '0',
   /**
-   * Also surface questions the *user* asked (`addressed_to: "other"`), which by
-   * definition they do not need an answer to. Off by default because they are
-   * noise on a card list that means "things to answer".
+   * Surface questions heard on the mic channel even though they may be the user's
+   * own — which is what the Realtime detector effectively did, and the behaviour
+   * this product shipped with.
    *
-   * Turn it on to test detection solo: with no counterpart audio, every question
-   * on the mic channel is one the user asked, so a correct detector shows nothing
-   * — which is indistinguishable from a broken one. This is also roughly what the
-   * Realtime detector used to do on the mic channel.
+   * On by default because the alternative requires knowing who spoke, and nothing
+   * here does: the mic channel carries the user's speech *and* the counterpart's
+   * voice bleeding out of the laptop speakers, under one device label. Filtering
+   * it means guessing, and a wrong guess silently drops a question the user needed.
+   * The cost of not guessing is a card the user didn't need — visible, ignorable,
+   * and cheap since answers are click-triggered.
+   *
+   * FLOWNOTE_DETECT_SELF_QUESTIONS=0 restores strict filtering (mic questions only
+   * when the model says a participant is being asked). Worth trying once system
+   * audio is confirmed to deliver the counterpart on its own channel.
    */
-  detectSelfQuestions: process.env.FLOWNOTE_DETECT_SELF_QUESTIONS === '1',
+  detectSelfQuestions: process.env.FLOWNOTE_DETECT_SELF_QUESTIONS !== '0',
 })
 
 /** Lite tier — this is on the latency path, and the judgement is a small one. */
@@ -265,11 +271,13 @@ export class TranscriptQuestionDetector {
         return
       }
 
-      // 'other' means someone other than the user should answer — usually the
-      // user's own question to the counterpart. Dropped unless self-questions are
-      // explicitly enabled (see readEnv).
-      const answerable = decision.addressedTo !== 'other' || this.env.detectSelfQuestions
-      const accepted = decision.isQuestion && answerable
+      // 'other' = aimed at a third party in the room, or the speaker's own
+      // rhetorical question. On the opponent channel that is a clean reject. On the
+      // mic channel it is also what the model says about a question the user asked,
+      // which is indistinguishable from speaker bleed — so unless strict filtering
+      // is asked for, the mic channel doesn't filter on it (see readEnv).
+      const trustAddressee = channel === 'opponent' || !this.env.detectSelfQuestions
+      const accepted = decision.isQuestion && (!trustAddressee || decision.addressedTo !== 'other')
       logEvent('classify', {
         channel,
         segmentId: segment.id,

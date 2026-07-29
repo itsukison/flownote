@@ -130,13 +130,21 @@ Env keys (`.env`): `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AMIVOICE_APP_KEY`, `DEEP
 `FLOWNOTE_DETECT_USER_CHANNEL`, `FLOWNOTE_DETECT_SELF_QUESTIONS`, `FLOWNOTE_RAG_MIN_SIMILARITY`,
 `FLOWNOTE_DETECTION_LOG`.
 
-> **Testing detection alone at your desk:** with no counterpart, every question on the
-> mic channel is one *you* asked, and those are deliberately not cards ("things to
-> answer"). A correct detector shows nothing, which looks identical to a broken one.
-> Set `FLOWNOTE_DETECT_SELF_QUESTIONS=1` to surface them, or drive the real path by
-> playing a recorded call through the speakers so it arrives as system audio.
-> `<userData>/detection-logs/` settles it either way: `gate` says whether the segment
-> reached stage 2, `classify` says what stage 2 decided and why.
+> **The mic channel does not filter by who asked** (`FLOWNOTE_DETECT_SELF_QUESTIONS`,
+> default on). The speaker label is a *device* label — `'You'` = mic session,
+> `'Speaker'` = system-audio session — so the user's own speech and the counterpart's
+> voice bleeding out of the laptop speakers arrive under one label, and no amount of
+> prompting separates them from text: 「なんでこの会社に入りたいと思ったんですか」 reads the
+> same whoever said it. Two attempts to filter it (see git log) each made the channel
+> silently emit nothing. The opponent channel *does* filter on `addressed_to`, where
+> 'other' means the counterpart asked a third party or themselves.
+>
+> Debug with `<userData>/detection-logs/`: `gate.passed` says whether a segment
+> reached stage 2, `classify.isQuestion` + `classify.addressedTo` say what stage 2
+> decided. **Watch the speaker mix, too** — as of 2026-07 every logged session on the
+> dev machine has 0 system-audio segments (56 mic, 0 `Speaker`), so the counterpart
+> path is still unproven. Play a recorded call through the speakers and check for
+> `speaker: "Speaker"` segments before trusting it.
 
 > ⚠️ `agent/architecture.md` / `productPRD.md` still say the detector is Gemini-Live and the
 > answer model is "Gemini 2.0 Flash" — both are stale. Trust the table above.

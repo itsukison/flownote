@@ -27,8 +27,8 @@ const SHARED_RULES = `出力は次のJSONのみ。説明・前置き・コード
 
 2つのフィールドは別の問いに答えます。混ぜないでください。
 - is_question … 発話が「誰かへの質問」であるか
-- addressed_to … その質問に「答えるべき人」は誰か。利用者本人が答えるべきなら "user"、
-  相手やその場の別の人が答えるべきなら（＝利用者自身が投げた質問なら）"other"、質問でなければ "none"
+- addressed_to … その質問の宛先。この会話の当事者どちらかに向けた質問なら "user"、
+  その場の第三者に向けた質問や話者自身の自問なら "other"、質問でなければ "none"
 
 confidence は is_question の確信度。迷ったら低い値にする。
 
@@ -55,28 +55,32 @@ question / search_text（is_question が true のときだけ書く。false な�
   場合は question と同じ文を入れる
 - 文脈にない情報を推測で追加しない`
 
+/**
+ * Per-channel framing.
+ *
+ * Note what neither note asks for: who spoke. The channel is a *device* label
+ * ('You' = mic session, 'Speaker' = system-audio session — see
+ * AmiVoiceTranscriptionSession), so on the mic channel both the user's own speech
+ * and the counterpart's voice bleeding out of the laptop speakers arrive labelled
+ * identically. An earlier version of this file asked the model to tell those apart
+ * from the text, which is not inferable — 「なんでこの会社に入りたいと思ったんですか」
+ * reads the same whoever said it — and it silently dropped real questions. Both
+ * notes now ask only what the text can answer: is this a question, and is it aimed
+ * at a participant or at nobody.
+ */
 const SPEAKER_NOTE: Record<'user' | 'opponent', string> = {
   // System audio: the counterpart. Their questions are the product's whole point.
   opponent: `【判定対象】は商談・打ち合わせの「相手側」の発話です。
-相手が利用者に投げかけた質問なら addressed_to: "user" です。`,
-  /**
-   * Microphone. Most of what arrives here is the user answering, explaining or
-   * thinking aloud — declarative speech that must not be read as a question. But
-   * two different things land on this channel and only `addressed_to` separates
-   * them, so the note describes both instead of narrowing `is_question`:
-   *   - the user asking the counterpart something → a question, but not one the
-   *     user needs answered → addressed_to "other"
-   *   - the counterpart's voice coming out of the laptop speakers and back into
-   *     the mic (no headphones) → a question the user must answer → "user"
-   * An earlier version of this note said "detect only questions the user put to
-   * the counterpart", which contradicted the shared rules and made the channel
-   * emit nothing at all.
-   */
+相手が会話の当事者に投げかけた質問なら addressed_to: "user" です。
+相手がその場の第三者に聞いている場合や自問の場合は "other" とし、これは検出対象外です。`,
+  // Microphone. Mostly the user answering, explaining or thinking aloud —
+  // declarative speech that must not be read as a question. Questions that do
+  // appear here are surfaced regardless of who asked them, so this note does not
+  // ask about the asker at all.
   user: `【判定対象】は、このアプリの利用者本人のマイク音声です。
 多くは利用者自身の説明・回答・言い淀みで、その場合は is_question: false です。
-利用者が相手に投げかけた質問は is_question: true、ただし答えるのは相手なので addressed_to: "other" とします。
-スピーカーから相手の声がマイクに回り込んでいる場合（相手の質問がこの音声に混じっている場合）は、
-相手が利用者に投げた質問として addressed_to: "user" とします。`,
+この音声には、スピーカーから回り込んだ相手の声が混ざっていることもあります。
+誰が話したかは判定せず、「質問が発話されたか」だけを判定してください。`,
 }
 
 export function buildTranscriptDetectionPrompt(
