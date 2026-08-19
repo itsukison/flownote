@@ -6,6 +6,7 @@ import { gateCandidate, hasExplicitQuestionMarker, shouldClassify } from './ques
 import { sliceChannelWav } from './AudioTailBuffer'
 import { RecentQuestionDedup } from './questionDedup'
 import { buildTranscriptDetectionPrompt } from './transcriptQuestionPrompt'
+import { buildTranscriptWindow } from './transcriptWindow'
 import { logEvent } from '../services/detectionLog'
 
 /**
@@ -74,12 +75,28 @@ const MAX_IN_FLIGHT = 2
 /** How far back a same-speaker segment can be and still be joined for the gate. */
 const JOIN_WINDOW_MS = 4_000
 
-/** Prior turns handed to the classifier as 【直近の会話】. */
-const CONTEXT_TURNS = 4
-const CONTEXT_MAX_CHARS = 600
+/**
+ * Prior conversation handed to the classifier as 【直近の会話】.
+ *
+ * This is the window the referent resolution actually happens in: `search_text`
+ * comes out of this call and, per the captured logs, it is what every answer ends
+ * up retrieving on — the second-chance rewrite in ConversationContext fired in
+ * 0 of 11 detections. A 4-turn cap made that window ~10 seconds of speech (median
+ * AmiVoice segment: 12 chars), so 「そのボタン」 was resolved against nothing and the
+ * demonstrative was simply dropped: 「これによって質問件数なども？」 → 「質問件数 影響」.
+ *
+ * Budgeted in characters instead. 900 is ~2.5 minutes of talk and ~700 extra input
+ * tokens per classification — ≈¥1/hr at the measured 440 calls/hour, against the
+ * ¥60/hr of transcription it rides on.
+ */
+const CONTEXT_MAX_CHARS = 900
 
-/** Rolling window of segments kept for context/join. */
-const RECENT_SEGMENTS = 24
+/**
+ * Rolling window of segments kept for context/join. Must comfortably exceed what
+ * CONTEXT_MAX_CHARS can hold (~67 segments at the median length) or this becomes
+ * the real limit on how far back a referent can be resolved.
+ */
+const RECENT_SEGMENTS = 80
 
 /** A segment this long is a monologue, not a question — not worth a call. */
 const MAX_TARGET_CHARS = 400
@@ -281,7 +298,7 @@ export class TranscriptQuestionDetector {
       const request = (withAudio: boolean) => {
         const prompt = buildTranscriptDetectionPrompt(
           channel,
-          this.contextFor(segment),
+          this.contextFor(),
           target,
           withAudio
         )
@@ -451,18 +468,13 @@ export class TranscriptQuestionDetector {
     return null
   }
 
-  /** Prior turns, speaker-labelled, newest last — same shape the memo/rewrite use. */
-  private contextFor(segment: TranscriptSegment): string {
-    const lines: string[] = []
-    let used = 0
-    for (let i = this.recent.length - 2; i >= 0 && lines.length < CONTEXT_TURNS; i--) {
-      const s = this.recent[i]
-      const line = `${s.speaker === 'You' ? '自分' : '相手'}: ${s.text}`
-      if (used + line.length > CONTEXT_MAX_CHARS) break
-      used += line.length
-      lines.unshift(line)
-    }
-    return lines.join('\n')
+  /**
+   * Prior turns, speaker-labelled, newest last — same shape the memo/rewrite use.
+   * The segment under judgement is the last element of `recent` and is excluded:
+   * it is supplied separately as 【判定対象】.
+   */
+  private contextFor(): string {
+    return buildTranscriptWindow(this.recent.slice(0, -1), CONTEXT_MAX_CHARS)
   }
 }
 

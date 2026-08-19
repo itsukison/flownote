@@ -208,7 +208,46 @@ Product feedback flagged real-time usability. If you're picking up that work, th
    (fixed 2026-07, see `audioFormat.ts` and its test). audiotee itself was measured working. Only
    after `speaker: "Speaker"` segments appear in a log is a permission problem the right diagnosis;
    there is no system-audio path on Windows at all.
-5. **Prosody is still only consulted when the text is ambiguous.** Japanese marks many yes/no
+5. **Referent resolution ("it doesn't know which button") — fixed 2026-08, verify on a
+   live call.** Three independent causes, all measured on `<userData>/detection-logs/`:
+   - *The context window was ~14 seconds.* Every consumer capped by **segment count**,
+     which is the wrong unit for AmiVoice (median finalized segment: 12 chars). The
+     answer tail's 6-segment cap covered a median of **14.4s** using 109 of its 800-char
+     budget; the detector's 4-turn window ~10s. Both now budget characters via
+     `electron/audio/transcriptWindow.ts` (mirrored in `scripts/replay/lib.mjs`, drift
+     test in `test:transcript`), and merge consecutive same-speaker segments into one
+     line. Measured reach on the 97-segment session: **14.4s → 126s median / 160s max**.
+   - *The rewrite that had the most context never ran.* `ConversationContext.resolve
+     SearchQuery()` fired in **0 of 11** captured detections: `captureForQuestion` treated
+     any detector `search_text` differing from the question as "already resolved", and
+     stage 2 is also told to keyword-ify, so it always differs. The detector was dropping
+     referents rather than resolving them (「これによって質問件数なども？」 → `質問件数 影響`;
+     「その松屋の具体的な数字」 → `松屋 TikTokショップ 成功事例 具体的な数字`). The detector's
+     query is now a **fallback only** — a deictic question always gets the rewrite, which
+     sees the memo plus a 1000-char tail, and degrades to the detector's query then the
+     raw question. Deliberately *not* solved by asking stage 2 for a `resolved` flag: that
+     call has no latency headroom (see item 6).
+   - *The answer prompt still got the raw demonstrative.* Only retrieval saw the resolved
+     query. The rewrite now also returns `resolved_question` (question verbatim, referent
+     substituted) and `response.ts` puts that in every prompt shape's question slot. The
+     overlay card still shows the verbatim question. `buildContextBlock()` also carries
+     its own "resolve demonstratives from this" instruction, so user-authored prompts
+     from the DB get it too.
+
+   Only populated on the retrieval path — a no-collection answer keeps the question as
+   asked and relies on the context block. Regress against
+   `2026-07-29T08-51-24-*.jsonl`, which contains both bad rewrites above.
+
+6. **Stage-2 classification times out on most audio calls (open, unfixed).** Across the
+   captured sessions **15 of 24** classifications carrying audio hit `CLASSIFY_TIMEOUT_MS`
+   (2500ms); with-audio latency p50 is 2503ms — i.e. *the median audio classification is
+   the timeout itself*. Text-only p50 is 1102ms. Since ~54% of gated segments carry audio
+   (item 7), this is silently eating a large share of detections, and it means the stage-2
+   call has **no headroom for additional output fields**. Unknown whether the fix is a
+   longer timeout, a smaller clip (`AUDIO_LAG_PAD_MS` + `AUDIO_FALLBACK_DURATION_MS`
+   currently send up to ~4.4s of WAV), or splitting audio into a second call.
+
+7. **Prosody is still only consulted when the text is ambiguous.** Japanese marks many yes/no
    questions with intonation alone and AmiVoice writes ？ in 1 of 107 segments, so segments without
    a marker are sent with their audio. Open questions: whether a local terminal-F0 feature would be
    cheaper than the audio tokens, and whether `-a-bizmrr` punctuates interrogatives better than

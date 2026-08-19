@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { TranscriptSegment } from '../audio/TranscriptionSession'
+import { buildTranscriptWindow } from '../audio/transcriptWindow'
 import { GetSupabaseFn, trackNormalizedAndRecord } from '../ipc/shared'
 import { logEvent } from './detectionLog'
 
@@ -14,8 +15,9 @@ import { logEvent } from './detectionLog'
  *   (i)  a rolling ~400-char memo of the meeting (entities, purpose, open items),
  *        refreshed on a timer — the compression layer, so we never ship the full
  *        transcript to the answer model
- *   (ii) a verbatim tail of the last few turns — cheap, and where most referents
- *        actually resolve
+ *   (ii) a verbatim tail of the recent conversation — cheap, and where most
+ *        referents actually resolve. Budgeted in characters, not turns: see
+ *        `buildTranscriptWindow` for why a turn count silently made this 14s wide
  *   (iii) `resolveSearchQuery()` — rewrites a deictic question into a
  *        self-contained retrieval query using (i)+(ii)
  *
@@ -33,11 +35,22 @@ const MEMO_MIN_NEW_CHARS = 200
 const MEMO_MAX_CHARS = 400
 const MEMO_SOURCE_WINDOW_CHARS = 5_000
 
-const TAIL_MAX_SEGMENTS = 6
-const TAIL_MAX_CHARS = 800
+/**
+ * How far back the verbatim tail reaches. Budgeted in characters, not segments —
+ * see `buildTranscriptWindow` for why the old 6-segment cap only ever covered a
+ * median of 14.4 seconds.
+ *
+ * 1500 characters is ~4.5 minutes of talk at the ~330 chars/min measured on the
+ * captured sessions, which is deliberately more than the 31–91s it takes the memo
+ * to produce its first output: until then the tail is the *only* context there is,
+ * and 4 of 6 answers in one captured session were generated with no memo at all.
+ * After that the memo's own 5000-char source window always reaches back further
+ * than the tail, so the two overlap and nothing falls in the gap between them.
+ */
+const TAIL_MAX_CHARS = 1_500
 
 const REWRITE_TIMEOUT_MS = 1_500
-const REWRITE_MAX_TAIL_CHARS = 600
+const REWRITE_MAX_TAIL_CHARS = 1_000
 
 // Per-question context snapshots. A question can be answered long after it was
 // asked (the overlay lists it and the user clicks when they get a chance), by
@@ -49,7 +62,15 @@ const MAX_QUESTION_CONTEXTS = 50
 const QUESTION_CONTEXT_TTL_MS = 30 * 60_000
 
 export interface ResolvedQuery {
+  /** Retrieval query — what gets embedded. */
   searchText: string
+  /**
+   * The question with its demonstratives replaced by concrete names, for the
+   * *answer* prompt. Null when nothing was resolved, in which case the answer
+   * path keeps the question exactly as it was asked. Never shown in the overlay:
+   * the card stays verbatim so the user recognises what they heard.
+   */
+  resolvedQuestion: string | null
   rewritten: boolean
   latencyMs: number
   reason: string
@@ -88,15 +109,20 @@ const MEMO_PROMPT = `会議の音声認識テキストから、後続の処理�
 - 指示語（その、あの等）は使わず、必ず具体名で書く
 - 出力はJSONのみ`
 
-const REWRITE_PROMPT = `会話中に出た質問を、文書検索用の自己完結したクエリに書き換えます。
+const REWRITE_PROMPT = `会話中に出た質問から、指示語を解決した「自己完結した質問文」と「検索用クエリ」を作ります。
 
 出力は次のJSONのみ：
-{"search_text": "<書き換え後のクエリ>", "resolved": true または false}
+{"resolved_question": "<指示語を解決した質問文>", "search_text": "<検索用クエリ>", "resolved": true または false}
 
 ルール：
-- 質問に含まれる指示語（その店舗、あの案件、これ 等）を、文脈から特定できる具体名に置き換える
-- 検索クエリとして最適化する：固有名詞・数値・キーワード中心の簡潔な表現にする（疑問文である必要はない）
-- 文脈から特定できない場合は、質問文をそのまま search_text に入れ、resolved を false にする
+- 質問に含まれる指示語（その店舗、あの案件、これ、そのボタン 等）が指す対象を文脈から特定し、
+  具体名に置き換える。指示語を削除するだけにしない
+- resolved_question: 元の質問文の言い回し・敬語・語尾はそのままに、指示語だけを具体名に
+  差し替えた「質問文」。要約・言い換え・情報の追加はしない
+  （例:「そのボタンはどう実装しますか」→「保存ボタンはどう実装しますか」）
+- search_text: 同じ解決結果を検索クエリにしたもの。固有名詞・数値・キーワード中心の簡潔な
+  表現にする（疑問文である必要はない）
+- 文脈から特定できない場合は、resolved を false にし、resolved_question には質問文をそのまま入れる
 - 文脈にない情報を推測で追加しない
 - 出力はJSONのみ`
 
@@ -149,11 +175,20 @@ export class ConversationContext {
    * costs ~200 input tokens on a lite model, and is wasted only when the user
    * never asks for that answer.
    *
-   * `detectorSearchText` is the escape from paying for it at all: the transcript
-   * detector classifies and resolves referents in one call, so when it supplies a
-   * query there is nothing left to rewrite. Passing the same string as the
-   * question means "self-contained" and is treated as no rewrite, which is what
-   * the answer path already expects from a null `resolve`.
+   * `detectorSearchText` is the transcript detector's own query for this question.
+   * It is used as a *fallback*, never as evidence that the referent was resolved.
+   * That distinction is the whole fix: this method used to treat any detector query
+   * differing from the question as "already resolved" and skip the rewrite — but the
+   * stage-2 prompt also tells the model to keyword-ify, so it always differs, and
+   * this rewrite fired in 0 of 11 captured detections. The detector's queries were
+   * dropping referents rather than resolving them (「これによって質問件数なども？」 →
+   * 「質問件数 影響」), and nothing downstream noticed.
+   *
+   * So a deictic question now always gets this rewrite, which is strictly better
+   * placed to resolve it: it sees the rolling memo plus a 1000-char tail, where the
+   * detector saw 900 chars and no memo, and it is off the detection latency path
+   * (that call already times out on 15 of 24 audio classifications — there is no
+   * headroom there to ask stage 2 for anything more).
    */
   captureForQuestion(questionId: string, questionText: string, detectorSearchText?: string | null): void {
     if (!questionId) return
@@ -161,12 +196,21 @@ export class ConversationContext {
 
     const block = this.buildContextBlock()
     const supplied = (detectorSearchText ?? '').trim()
-    const preResolved = supplied && supplied !== questionText.trim() ? supplied : null
+    const fallback = supplied && supplied !== questionText.trim() ? supplied : null
 
-    const resolve: Promise<ResolvedQuery> | null = preResolved
-      ? Promise.resolve({ searchText: preResolved, rewritten: true, latencyMs: 0, reason: 'detector' })
-      : this.needsRewrite(questionText)
-        ? this.resolveSearchQuery(questionText)
+    const resolve: Promise<ResolvedQuery> | null = this.needsRewrite(questionText)
+      ? this.resolveSearchQuery(questionText, fallback)
+      : fallback
+        ? // Self-contained question, but the detector wrote a tighter query for it.
+          // Worth keeping for retrieval; there is no referent to resolve, so the
+          // answer prompt keeps the question as asked.
+          Promise.resolve({
+            searchText: fallback,
+            resolvedQuestion: null,
+            rewritten: true,
+            latencyMs: 0,
+            reason: 'detector',
+          })
         : null
     // Nothing awaits this until answer time; make sure a rejection can never
     // surface as an unhandled rejection in the main process.
@@ -177,8 +221,8 @@ export class ConversationContext {
       questionId,
       question: questionText,
       hasBlock: !!block,
-      speculativeRewrite: !!resolve && !preResolved,
-      detectorSearchText: preResolved,
+      speculativeRewrite: this.needsRewrite(questionText),
+      detectorSearchText: fallback,
     })
   }
 
@@ -215,18 +259,9 @@ export class ConversationContext {
     return this.memo
   }
 
-  /** Last few turns verbatim, speaker-labelled, newest last. */
-  getTail(maxChars = TAIL_MAX_CHARS, maxSegments = TAIL_MAX_SEGMENTS): string {
-    const segments = this.getSegments()
-    const lines: string[] = []
-    let used = 0
-    for (let i = segments.length - 1; i >= 0 && lines.length < maxSegments; i--) {
-      const line = `${segments[i].speaker === 'You' ? '自分' : '相手'}: ${segments[i].text}`
-      if (used + line.length > maxChars) break
-      used += line.length
-      lines.unshift(line)
-    }
-    return lines.join('\n')
+  /** The recent conversation verbatim, speaker-labelled, newest last. */
+  getTail(maxChars = TAIL_MAX_CHARS): string {
+    return buildTranscriptWindow(this.getSegments(), maxChars)
   }
 
   /**
@@ -239,19 +274,29 @@ export class ConversationContext {
     const parts = ['【会話の文脈】']
     if (this.memo) parts.push(`（これまでの要点）${this.memo}`)
     if (tail) parts.push('（直近の発言）', tail)
+    // Travels with the block, so it also reaches user-authored prompts from the
+    // DB — those cannot be edited from here and none of them say this.
+    parts.push('※質問に「その」「これ」等の指示語が含まれる場合は、上記の文脈から指す対象を特定して回答すること。')
     return parts.join('\n')
   }
 
   /**
-   * Rewrite a question into a self-contained retrieval query. Never throws and
-   * never blocks longer than REWRITE_TIMEOUT_MS — on any failure the original
-   * question is returned unchanged.
+   * Resolve a question's referents against the conversation: a self-contained
+   * question for the answer prompt, and a retrieval query for `embedQuery`.
+   *
+   * Never throws and never blocks longer than REWRITE_TIMEOUT_MS. On any failure it
+   * degrades to `detectorSearchText` (the transcript detector's own query for this
+   * question, which is at least keyword-optimised) and then to the raw question, so
+   * a slow or broken rewrite can only cost quality, never an answer.
    */
-  async resolveSearchQuery(question: string): Promise<ResolvedQuery> {
+  async resolveSearchQuery(question: string, detectorSearchText?: string | null): Promise<ResolvedQuery> {
     const started = Date.now()
+    const degraded = (detectorSearchText ?? '').trim() || question
     const fallback = (reason: string) => ({
-      searchText: question,
-      rewritten: false,
+      searchText: degraded,
+      // Only the model can resolve a referent; a fallback never claims to have.
+      resolvedQuestion: null,
+      rewritten: degraded !== question,
       latencyMs: Date.now() - started,
       reason,
     })
@@ -305,8 +350,16 @@ export class ConversationContext {
       const searchText = typeof parsed?.search_text === 'string' ? parsed.search_text.trim() : ''
       if (!searchText || searchText === question) return fallback('unchanged')
 
+      // The model is asked to echo the question verbatim when it cannot identify
+      // the referent, so an unchanged or self-declared-unresolved rewrite must not
+      // reach the answer prompt claiming to be resolved.
+      const rq = typeof parsed?.resolved_question === 'string' ? parsed.resolved_question.trim() : ''
+      const resolvedQuestion =
+        parsed?.resolved !== false && rq && rq !== question.trim() ? rq : null
+
       return {
         searchText,
+        resolvedQuestion,
         rewritten: true,
         latencyMs: Date.now() - started,
         reason: parsed?.resolved === false ? 'unresolved_referent' : 'rewritten',
@@ -344,7 +397,7 @@ export class ConversationContext {
       this.lastMemoAt = now
       this.lastMemoCharCount = totalChars
 
-      const window = this.getTail(MEMO_SOURCE_WINDOW_CHARS, Number.MAX_SAFE_INTEGER)
+      const window = this.getTail(MEMO_SOURCE_WINDOW_CHARS)
       const prompt = [
         MEMO_PROMPT,
         '',

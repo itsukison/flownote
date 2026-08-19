@@ -24,6 +24,7 @@ const { wavFromPcm16, pushChannelAudio, sliceChannelWav, clearChannelAudio } = r
 const { parseDetectionDecision, TranscriptQuestionDetector } = require('../../.tmp-test-build/audio/TranscriptQuestionDetector.js')
 const { RecentQuestionDedup } = require('../../.tmp-test-build/audio/questionDedup.js')
 const { buildTranscriptDetectionPrompt } = require('../../.tmp-test-build/audio/transcriptQuestionPrompt.js')
+const { buildTranscriptWindow } = require('../../.tmp-test-build/audio/transcriptWindow.js')
 
 let failures = 0
 const assert = (name, cond, extra = '') => {
@@ -141,6 +142,42 @@ assert('a joinable question is attributed to the segment that already qualifies'
 assert('gate returns null when neither form qualifies', gateCandidate('ありがとうございます。', 'では') === null)
 assert('empty segment is never a candidate', gateCandidate('   ', 'なぜですか') === null)
 
+// ── the context window handed to stage 2 ───────────────────────────────────
+// The referent resolution happens inside that window, so how wide it is *is* the
+// feature. It used to be capped at 4 segments, which on AmiVoice output (median
+// segment: 12 chars) meant ~10 seconds — 「そのボタン」 had nothing to resolve against.
+{
+  // 40 segments of typical AmiVoice length, alternating speaker every 4.
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    id: `w${i}`,
+    speaker: i % 8 < 4 ? 'Speaker' : 'You',
+    text: `発言${String(i).padStart(2, '0')}あいうえおかきくけこ`,
+    timestamp: i,
+  }))
+  const win = buildTranscriptWindow(many, 900)
+  assert(
+    'the window reaches far past the old 4-segment cap',
+    win.includes('発言00') && win.includes('発言39'),
+    `covered ${win.length} chars`
+  )
+  assert(
+    'consecutive same-speaker segments merge into one labelled line',
+    win.split('\n').length === 10,
+    `${win.split('\n').length} lines for 40 segments in 10 speaker runs`
+  )
+  assert('lines are speaker-labelled', win.startsWith('相手: ') && win.includes('\n自分: '))
+
+  const tight = buildTranscriptWindow(many, 60)
+  assert('the character budget is respected', tight.length <= 80, `${tight.length} chars`)
+  assert('the budget keeps the NEWEST turns', tight.includes('発言39') && !tight.includes('発言00'))
+
+  assert('empty input yields empty context', buildTranscriptWindow([], 900) === '')
+  assert(
+    'a single over-budget segment is kept rather than returning nothing',
+    buildTranscriptWindow([{ id: 'x', speaker: 'You', text: 'あ'.repeat(200), timestamp: 1 }], 10).length > 0
+  )
+}
+
 // ── the harness must gate identically to the app ────────────────────────────
 ;(async () => {
   const lib = await import('../replay/lib.mjs')
@@ -149,6 +186,18 @@ assert('empty segment is never a candidate', gateCandidate('   ', 'なぜです�
     String(lib.QUESTION_GATE) === String(QUESTION_GATE),
     `harness ${String(lib.QUESTION_GATE).slice(0, 40)}… vs app ${String(QUESTION_GATE).slice(0, 40)}…`
   )
+  {
+    const segs = [
+      { id: 'a', speaker: 'Speaker', text: 'このボタンを右上に置きます。', timestamp: 1 },
+      { id: 'b', speaker: 'Speaker', text: 'あとで色も決めます。', timestamp: 2 },
+      { id: 'c', speaker: 'You', text: 'わかりました。', timestamp: 3 },
+    ]
+    assert(
+      'scripts/replay/lib.mjs context window matches electron/audio/transcriptWindow.ts',
+      lib.buildTranscriptWindow(segs, 900) === buildTranscriptWindow(segs, 900),
+      `harness ${JSON.stringify(lib.buildTranscriptWindow(segs, 900))} vs app ${JSON.stringify(buildTranscriptWindow(segs, 900))}`
+    )
+  }
 
   // ── stage 2: the JSON contract ────────────────────────────────────────────
   const ok = parseDetectionDecision(

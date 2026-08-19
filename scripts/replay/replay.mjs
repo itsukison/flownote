@@ -18,12 +18,12 @@
  * instead of taste.
  */
 import 'dotenv/config'
-import { readJsonl, shouldClassify, similarity, parseArgs, percentile } from './lib.mjs'
+import { readJsonl, shouldClassify, similarity, parseArgs, percentile, buildTranscriptWindow } from './lib.mjs'
 
 const { positional, flags } = parseArgs(process.argv.slice(2))
 const logFile = positional[0]
 if (!logFile) {
-  console.error('usage: npm run log:replay -- <log.jsonl> [--labels labels.jsonl] [--variant live|gate|gemini] [--model M] [--threshold 0.5] [--context-turns 4]')
+  console.error('usage: npm run log:replay -- <log.jsonl> [--labels labels.jsonl] [--variant live|gate|gemini] [--model M] [--threshold 0.5] [--context-chars 900]')
   process.exit(1)
 }
 
@@ -31,7 +31,10 @@ const variant = flags.variant || 'live'
 const labelsFile = flags.labels || logFile.replace(/\.jsonl$/, '') + '.labels.jsonl'
 const model = flags.model || 'gemini-3.1-flash-lite'
 const confidenceThreshold = Number(flags.threshold ?? 0.5)
-const contextTurns = Number(flags['context-turns'] ?? 4)
+// Mirrors CONTEXT_MAX_CHARS in electron/audio/TranscriptQuestionDetector.ts. A
+// segment-count cap is what made the app's window ~10 seconds wide (median
+// AmiVoice segment: 12 chars), so the harness budgets characters too.
+const contextChars = Number(flags['context-chars'] ?? 900)
 const concurrency = Number(flags.concurrency ?? 4)
 
 const events = readJsonl(logFile)
@@ -159,8 +162,8 @@ async function getModel() {
 
 function contextFor(row) {
   const idx = segments.findIndex((s) => s.id === row.seg_id)
-  const prior = idx > 0 ? segments.slice(Math.max(0, idx - contextTurns), idx) : []
-  return prior.map((s) => `${s.speaker === 'You' ? '自分' : '相手'}: ${s.text}`).join('\n')
+  const prior = idx > 0 ? segments.slice(0, idx) : []
+  return buildTranscriptWindow(prior, contextChars)
 }
 
 async function classifyWithGemini(row) {

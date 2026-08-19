@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { searchSimilar, type SearchResult } from '../services/rag'
 import { searchMcpSource, type McpSearchResult } from '../services/mcpClient'
-import { getConversationContext } from '../services/conversationContext'
+import { getConversationContext, type ResolvedQuery } from '../services/conversationContext'
 import { logEvent } from '../services/detectionLog'
 import { ensureBudget, trackTypedTokenUsage, trackNormalizedAndRecord, getCurrentUserId, GetSupabaseFn } from './shared'
 
@@ -187,6 +187,13 @@ export function registerResponseHandlers(
       // 年商は？」 has no content word to embed. The rewrite is gated (only fires
       // on deictic/elliptical questions) and hard-timeboxed, so the common case
       // pays nothing and the worst case falls back to the raw question.
+      //
+      // One rewrite answers two questions — what to retrieve on, and what to ask
+      // the answer model — so resolveQuery() parks its full result here for the
+      // prompt builder below. (TS can't see the assignment through the closure,
+      // hence the cast at the read site.)
+      let resolved: ResolvedQuery | null = null
+
       const resolveQuery = async (): Promise<string> => {
         if (!collectionId) return question
         // A snapshot with no pending rewrite means the question was already
@@ -197,10 +204,12 @@ export function registerResponseHandlers(
         if (!pending && !conversation) return question
 
         const r = await (pending ?? conversation!.resolveSearchQuery(question))
+        resolved = r
         logEvent('rewrite', {
           questionId: qId,
           original: question,
           searchText: r.searchText,
+          resolvedQuestion: r.resolvedQuestion,
           rewritten: r.rewritten,
           reason: r.reason,
           latencyMs: r.latencyMs,
@@ -209,7 +218,8 @@ export function registerResponseHandlers(
         if (r.rewritten) {
           console.log(
             `[Handlers] search query rewritten (${r.reason}, ${r.latencyMs}ms${pending ? ', speculative' : ''}): ` +
-              `"${question}" → "${r.searchText}"`
+              `"${question}" → "${r.searchText}"` +
+              (r.resolvedQuestion ? ` | question → "${r.resolvedQuestion}"` : '')
           )
         }
         return r.searchText
@@ -278,6 +288,19 @@ export function registerResponseHandlers(
       }
       if (ragResult.tokensUsed > 0) trackTypedTokenUsage(getSupabase, ragResult.tokensUsed, 'embedding_tokens')
 
+      /**
+       * What the answer model is asked, as opposed to what the user sees on the
+       * card. 「そのボタンはどう実装しますか」 reaches the model as 「保存ボタンはどう
+       * 実装しますか」 when the referent was resolved — retrieval was already being
+       * resolved this way, but the prompt still carried the raw demonstrative and
+       * the model had to re-derive the referent from 【会話の文脈】 on its own.
+       *
+       * Only populated on the retrieval path (a collection is selected), because
+       * that is the only path that already pays for the rewrite. Without one, the
+       * question stands as asked and the context block's instruction carries it.
+       */
+      const promptQuestion = (resolved as ResolvedQuery | null)?.resolvedQuestion ?? question
+
       // Compressed conversation state (rolling memo + last few turns). Null when
       // there is no live transcript, so the no-transcript prompt is unchanged.
       // It goes into the same {{context}} slot as the documents but under its own
@@ -293,7 +316,7 @@ export function registerResponseHandlers(
         const contextText = withConversation(docs).trim()
         prompt = HARDCODED_SUPPORT_PROMPT
           .replace(/{{context}}/g, contextText)
-          .replace(/{{question}}/g, question)
+          .replace(/{{question}}/g, promptQuestion)
       } else if (isRag) {
         const selectedPrompt = ragPrompt
         const template = selectedPrompt.content
@@ -304,16 +327,16 @@ export function registerResponseHandlers(
         if (hasAny) {
           prompt = template
             .replace(/{{context}}/g, contextText)
-            .replace(/{{question}}/g, question)
+            .replace(/{{question}}/g, promptQuestion)
           if (!hasContext) prompt = `${prompt}\n\n${contextText}`
-          if (!hasQuestion) prompt = `${prompt}\n\n質問: ${question}`
+          if (!hasQuestion) prompt = `${prompt}\n\n質問: ${promptQuestion}`
         } else {
-          prompt = `${template}\n\n${contextText}\n\n質問: ${question}`
+          prompt = `${template}\n\n${contextText}\n\n質問: ${promptQuestion}`
         }
       } else {
         prompt = conversationBlock
-          ? `${basePrompt.content}\n\n${conversationBlock}\n\n質問: ${question}`
-          : `${basePrompt.content}\n\n質問: ${question}`
+          ? `${basePrompt.content}\n\n${conversationBlock}\n\n質問: ${promptQuestion}`
+          : `${basePrompt.content}\n\n質問: ${promptQuestion}`
       }
 
       const model = genAI.getGenerativeModel({
@@ -342,6 +365,7 @@ export function registerResponseHandlers(
         questionId: qId,
         mode,
         question,
+        promptQuestion: promptQuestion !== question ? promptQuestion : null,
         answer: answerText,
         hadDocumentContext: ragResult.chunks.length > 0,
         sourceCount: sources.length,

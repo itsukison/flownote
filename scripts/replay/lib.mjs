@@ -44,6 +44,40 @@ export function shouldClassify(text) {
   return trimmed.replace(/[。、，．,.！!？?\s]/g, '').length >= MIN_CANDIDATE_CHARS
 }
 
+/**
+ * MIRROR of `buildTranscriptWindow` in electron/audio/transcriptWindow.ts —
+ * character-budgeted, consecutive same-speaker segments merged. Scoring a
+ * different context window than the app builds is scoring a different detector.
+ * `scripts/test/transcript-detector.test.cjs` fails if the two drift.
+ */
+export function buildTranscriptWindow(segments, maxChars) {
+  const picked = []
+  let used = 0
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const text = segments[i]?.text?.trim()
+    if (!text) continue
+    const cost = text.length + 1
+    if (picked.length > 0 && used + cost > maxChars) break
+    used += cost
+    picked.push(segments[i])
+  }
+  picked.reverse()
+
+  const lines = []
+  let lastSpeaker = null
+  for (const s of picked) {
+    const label = s.speaker === 'You' ? '自分' : '相手'
+    const text = s.text.trim()
+    if (label === lastSpeaker) {
+      lines[lines.length - 1] += ` ${text}`
+    } else {
+      lines.push(`${label}: ${text}`)
+      lastSpeaker = label
+    }
+  }
+  return lines.join('\n')
+}
+
 export function readJsonl(file) {
   return fs
     .readFileSync(file, 'utf-8')
