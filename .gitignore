@@ -47,3 +47,6 @@ pannel.png
 
 # Scratch build for scripts/test
 .tmp-test-build
+
+# TypeScript incremental build state
+*.tsbuildinfo
